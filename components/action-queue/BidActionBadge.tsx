@@ -17,7 +17,7 @@ export function BidActionBadge({ action, suggest }: { action: BidAction | string
         {action}
       </span>
       {suggest && suggest !== '—' && (
-        <span className="text-[10px] text-gray-500 font-mono">{suggest}</span>
+        <span className="text-[10px] text-slate-500 font-mono">{suggest}</span>
       )}
     </div>
   );

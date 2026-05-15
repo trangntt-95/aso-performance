@@ -80,8 +80,8 @@ function Pill({
       className={cn(
         'px-2.5 py-1 rounded-full border text-xs transition shrink-0',
         active
-          ? 'bg-gray-900 text-white border-gray-900'
-          : 'bg-white text-gray-700 border-gray-200 hover:border-gray-400',
+          ? 'bg-slate-900 text-white border-gray-900'
+          : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400',
       )}
     >
       {children}
@@ -114,9 +114,9 @@ export function FiltersBar({ rows, value, onChange }: Props) {
     value.status !== 'unresolved';
 
   return (
-    <div className="space-y-2 sticky top-[57px] z-20 bg-gray-50 py-2 -mx-4 px-4 md:-mx-6 md:px-6 border-b">
+    <div className="space-y-2 sticky top-[57px] z-20 bg-slate-50 py-2 -mx-4 px-4 md:-mx-6 md:px-6 border-b">
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
         <Input
           value={value.search}
           onChange={(e) => set('search', e.target.value)}
@@ -125,7 +125,7 @@ export function FiltersBar({ rows, value, onChange }: Props) {
         />
       </div>
       <div className="flex flex-wrap gap-1.5 items-center">
-        <span className="text-[10px] uppercase tracking-wide text-gray-500 mr-1">Priority</span>
+        <span className="text-[10px] uppercase tracking-wide text-slate-500 mr-1">Priority</span>
         {PRIORITIES.map((p) => (
           <Pill key={p.value} active={value.priority === p.value} onClick={() => set('priority', p.value)}>
             {p.label}
@@ -133,13 +133,13 @@ export function FiltersBar({ rows, value, onChange }: Props) {
         ))}
       </div>
       <div className="flex flex-wrap gap-1.5 items-center">
-        <span className="text-[10px] uppercase tracking-wide text-gray-500 mr-1">Surface</span>
+        <span className="text-[10px] uppercase tracking-wide text-slate-500 mr-1">Surface</span>
         {SURFACES.map((s) => (
           <Pill key={s.value} active={value.surface === s.value} onClick={() => set('surface', s.value)}>
             {s.label}
           </Pill>
         ))}
-        <span className="text-[10px] uppercase tracking-wide text-gray-500 ml-2 mr-1">Alert</span>
+        <span className="text-[10px] uppercase tracking-wide text-slate-500 ml-2 mr-1">Alert</span>
         {ALERT_PATTERNS.map((a) => (
           <Pill key={a.value} active={value.alertPattern === a.value} onClick={() => set('alertPattern', a.value)}>
             {a.label}
@@ -147,7 +147,7 @@ export function FiltersBar({ rows, value, onChange }: Props) {
         ))}
       </div>
       <div className="flex flex-wrap gap-1.5 items-center">
-        <span className="text-[10px] uppercase tracking-wide text-gray-500 mr-1">Status</span>
+        <span className="text-[10px] uppercase tracking-wide text-slate-500 mr-1">Status</span>
         {STATUSES.map((s) => (
           <Pill key={s.value} active={value.status === s.value} onClick={() => set('status', s.value)}>
             {s.label}
@@ -155,7 +155,7 @@ export function FiltersBar({ rows, value, onChange }: Props) {
         ))}
       </div>
       <div className="flex flex-wrap gap-1.5 items-center">
-        <span className="text-[10px] uppercase tracking-wide text-gray-500 mr-1">Category</span>
+        <span className="text-[10px] uppercase tracking-wide text-slate-500 mr-1">Category</span>
         <Pill active={value.category === 'all'} onClick={() => set('category', 'all')}>
           All
         </Pill>
@@ -166,7 +166,7 @@ export function FiltersBar({ rows, value, onChange }: Props) {
         ))}
       </div>
       <div className="flex flex-wrap gap-1.5 items-center">
-        <span className="text-[10px] uppercase tracking-wide text-gray-500 mr-1">Country</span>
+        <span className="text-[10px] uppercase tracking-wide text-slate-500 mr-1">Country</span>
         <Pill active={value.country === 'all'} onClick={() => set('country', 'all')}>
           All
         </Pill>

@@ -1,5 +1,5 @@
-import { ActionQueueTable } from '@/components/action-queue/ActionQueueTable';
+import { OverviewDashboard } from '@/components/overview/OverviewDashboard';
 
-export default function ActionQueuePage() {
-  return <ActionQueueTable />;
+export default function OverviewPage() {
+  return <OverviewDashboard />;
 }

@@ -7,11 +7,11 @@ export function AlertBadge({ alert, compact }: { alert: AlertType | string; comp
   return (
     <span
       className={cn(
-        'inline-flex items-center px-2 py-0.5 rounded text-xs whitespace-nowrap',
+        'inline-flex items-center px-2 py-0.5 rounded',
         s.bg,
         s.text,
         s.bold && 'font-semibold',
-        compact ? 'max-w-[10rem] truncate' : 'max-w-[16rem] truncate',
+        compact ? 'text-[11px]' : 'text-xs',
       )}
       title={alert}
     >

@@ -54,13 +54,18 @@ export function GeoOpportunityTable() {
     [grouped],
   );
   const allRows = useMemo(() => grouped.flatMap((g) => g.rows), [grouped]);
+  const windowsUsed = useMemo(() => {
+    const set = new Set<string>();
+    grouped.forEach((g) => g.rows.forEach((r) => set.add(r.window)));
+    return Array.from(set).sort();
+  }, [grouped]);
 
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <AlertCircle className="h-10 w-10 text-red-500 mb-3" />
         <div className="font-semibold">Couldn’t load geo opportunities</div>
-        <div className="text-sm text-gray-600">{(error as Error).message}</div>
+        <div className="text-sm text-slate-600">{(error as Error).message}</div>
       </div>
     );
   }
@@ -69,9 +74,29 @@ export function GeoOpportunityTable() {
     <div className="space-y-3">
       <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded p-3 text-xs text-blue-900">
         <Target className="h-4 w-4 mt-0.5 shrink-0" />
-        <div>
-          Rows where organic is strong but paid isn’t bidding (MISSING) or pos &gt; 3 (WEAK). Each row carries a
-          suggested target camp + bid range from the sheet. Export per-country CSV to import into Shopify Ads.
+        <div className="flex-1 space-y-1.5">
+          <div>
+            Rows where organic is strong but paid isn’t bidding (<b>PAID MISSING</b>) or position &gt; 3
+            (<b>PAID WEAK</b>). Each row has a suggested target camp + bid range. Export per-country CSV to paste
+            into Shopify Ads.
+          </div>
+          {windowsUsed.length > 0 && !isLoading && (
+            <div className="text-[11px] flex flex-wrap items-center gap-1.5">
+              <span className="font-semibold">Time window used:</span>
+              {windowsUsed.map((w) => (
+                <span
+                  key={w}
+                  className="inline-flex items-center font-mono bg-white border border-blue-200 px-1.5 py-0.5 rounded"
+                >
+                  {w}
+                </span>
+              ))}
+              <span className="text-blue-700">
+                — typically <code className="bg-white px-1 rounded">L90+L30</code> = organic strong over the last 90 days
+                × paid status over the last 30 days.
+              </span>
+            </div>
+          )}
         </div>
       </div>
       <div className="flex flex-wrap gap-2 items-center">
@@ -84,8 +109,8 @@ export function GeoOpportunityTable() {
               className={cn(
                 'px-2.5 py-1 rounded-full border text-xs transition',
                 mode === m.value
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-700 border-gray-200 hover:border-gray-400',
+                  ? 'bg-slate-900 text-white border-gray-900'
+                  : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400',
               )}
             >
               {m.label}
@@ -98,7 +123,7 @@ export function GeoOpportunityTable() {
           placeholder="Search…"
           className="h-8 max-w-xs"
         />
-        <div className="ml-auto flex items-center gap-2 text-xs text-gray-500">
+        <div className="ml-auto flex items-center gap-2 text-xs text-slate-500">
           <span>
             {totalRows} opp{totalRows === 1 ? '' : 's'} · {grouped.length} countr{grouped.length === 1 ? 'y' : 'ies'}
           </span>
@@ -112,7 +137,7 @@ export function GeoOpportunityTable() {
           ))}
         </div>
       ) : grouped.length === 0 ? (
-        <div className="border rounded-lg bg-white py-16 text-center text-sm text-gray-500">
+        <div className="border rounded-lg bg-white py-16 text-center text-sm text-slate-500">
           No 🎯 opportunities match these filters.
         </div>
       ) : (

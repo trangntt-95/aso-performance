@@ -3,6 +3,8 @@ import type {
   AlertType,
   BidAction,
   Category,
+  DynamicBasketItem,
+  ExecutiveSummary,
   FunnelBreakdown,
   HistoryRow,
   KeywordRow,
@@ -14,6 +16,7 @@ import type {
   Tier1WatchRow,
   Verdict,
   Window,
+  WowMetric,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -36,6 +39,16 @@ const str = (v: unknown): string => {
 const isWindowKey = (v: unknown): v is Window =>
   ['L3', 'L7', 'L14', 'L30', 'L90', 'L365', 'L90+L30'].includes(String(v));
 
+const toSurfaceLabel = (raw: unknown): 'organic' | 'paid' => {
+  const v = str(raw).toLowerCase();
+  return v === 'paid' || v === 'search_ad' ? 'paid' : 'organic';
+};
+
+const toSurface = (raw: unknown): Surface => {
+  const v = str(raw).toLowerCase();
+  return v === 'paid' || v === 'search_ad' ? 'search_ad' : 'search';
+};
+
 // ---------------------------------------------------------------------------
 // Action_Queue
 // Row 1 = title, Row 2 = headers, Row 3+ = data (no TOTAL row).
@@ -48,14 +61,12 @@ export function parseActionQueue(rows: string[][]): ActionQueueRow[] {
     .map((row): ActionQueueRow | null => {
       const keyword = str(row[3]);
       if (!keyword || keyword === 'TOTAL') return null;
-      const surfaceRaw = str(row[4]).toLowerCase();
-      const surface = surfaceRaw === 'search_ad' ? 'paid' : 'organic';
       return {
         priority: (str(row[0]) || 'P3') as Priority,
         score: num(row[1]),
         category: (str(row[2]) || 'Unknown') as Category,
         keyword,
-        surface,
+        surface: toSurfaceLabel(row[4]),
         country: str(row[5]) || '(global)',
         window: (str(row[6]) || 'L7') as Window,
         alert: (str(row[7]) || 'OK') as AlertType,
@@ -87,7 +98,7 @@ export function parseKeywordTab(rows: string[][], hasCountry: boolean): KeywordR
       const searchTerm = str(row[i++]);
       if (!searchTerm) return null;
       const country = hasCountry ? str(row[i++]) || undefined : undefined;
-      const surface = (str(row[i++]).toLowerCase() || 'search') as Surface;
+      const surface = toSurface(row[i++]);
 
       return {
         category,
@@ -130,7 +141,7 @@ export function parseSnapshot(rows: string[][], hasCountry: boolean): SnapshotRo
       const searchTerm = str(row[i++]);
       if (!searchTerm) return null;
       const country = hasCountry ? str(row[i++]) || undefined : undefined;
-      const surface = (str(row[i++]).toLowerCase() || 'search') as Surface;
+      const surface = toSurface(row[i++]);
       return {
         category,
         searchTerm,
@@ -155,12 +166,83 @@ export function parseSnapshot(rows: string[][], hasCountry: boolean): SnapshotRo
 
 const SUMMARY_WINDOWS: Window[] = ['L3', 'L7', 'L14', 'L30', 'L90'];
 
+function parseExecSummary(rows: string[][]): ExecutiveSummary | undefined {
+  const startIdx = rows.findIndex((r) => str(r?.[0]).includes('EXECUTIVE SUMMARY'));
+  if (startIdx === -1) return undefined;
+  const out: ExecutiveSummary = {};
+  for (let i = startIdx + 1; i < Math.min(rows.length, startIdx + 20); i++) {
+    const r = rows[i] || [];
+    const k = str(r[0]).trim();
+    if (!k) continue;
+    if (k.startsWith('🎯') || k.includes('COMPARISON') || k.includes('VERDICT')) break;
+    if (k === 'overall_health') {
+      out.overallHealth = { value: str(r[1]), visual: str(r[2]), status: str(r[3]) };
+    } else if (k === 'trend_sparkline_L3_to_L90') {
+      out.trendSparkline = str(r[1]);
+    } else if (k === 'top_concern') {
+      out.topConcern = { value: str(r[1]), status: str(r[3]) };
+    } else if (k === 'top_opportunity') {
+      out.topOpportunity = { value: str(r[1]), status: str(r[3]) };
+    } else if (k === 'install_per_day_L7') {
+      out.installPerDayL7 = num(r[1]);
+      out.installTargetText = str(r[2]);
+    } else if (k === 'install_vs_target') {
+      out.installVsTarget = num(r[1]);
+      out.installPacingVisual = str(r[2]);
+      out.installPacingStatus = str(r[3]);
+    } else if (k === 'quarter_install_target_range') {
+      out.quarterTargetText = str(r[1]);
+      out.cpiTargetText = str(r[2]);
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function parseWow(rows: string[][]): WowMetric[] {
+  const startIdx = rows.findIndex((r) => str(r?.[0]).includes('WoW COMPARISON'));
+  if (startIdx === -1) return [];
+  const out: WowMetric[] = [];
+  for (let i = startIdx + 2; i < Math.min(rows.length, startIdx + 12); i++) {
+    const r = rows[i] || [];
+    const metric = str(r[0]).trim();
+    if (!metric || metric === 'Metric') continue;
+    if (metric.startsWith('📊') || metric.includes('VERDICT') || metric.includes('FUNNEL')) break;
+    out.push({
+      metric,
+      thisPeriod: num(r[1]),
+      lastPeriod: num(r[2]),
+      deltaValue: num(r[3]),
+      deltaPct: num(r[4]),
+      status: str(r[6]),
+    });
+  }
+  return out;
+}
+
+function parseBasket(rows: string[][]): DynamicBasketItem[] {
+  const startIdx = rows.findIndex((r) => str(r?.[0]).includes('Dynamic Basket'));
+  if (startIdx === -1) return [];
+  const out: DynamicBasketItem[] = [];
+  for (let i = startIdx + 2; i < Math.min(rows.length, startIdx + 15); i++) {
+    const r = rows[i] || [];
+    const rank = Number(r[0]);
+    const term = str(r[1]).trim();
+    if (!Number.isFinite(rank) || rank <= 0 || !term) break;
+    out.push({
+      rank,
+      searchTerm: term,
+      l90Users: num(r[2]),
+    });
+  }
+  return out;
+}
+
 export function parseMarketIndex(rows: string[][]): MarketIndexData {
   const summary: MarketIndexSummaryRow[] = [];
   const funnels: FunnelBreakdown[] = [];
   const narratives: Partial<Record<Window, string>> = {};
   if (!rows || rows.length === 0) {
-    return { summary, funnels, narratives };
+    return { summary, funnels, narratives, wow: [], basket: [] };
   }
 
   let i = 0;
@@ -225,7 +307,14 @@ export function parseMarketIndex(rows: string[][]): MarketIndexData {
     i++;
   }
 
-  return { summary, funnels, narratives };
+  return {
+    summary,
+    funnels,
+    narratives,
+    executiveSummary: parseExecSummary(rows),
+    wow: parseWow(rows),
+    basket: parseBasket(rows),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -248,12 +337,12 @@ export function parseTier1Watch(rows: string[][]): Tier1WatchRow[] {
       continue;
     }
 
-    if (!cell0 || cell0.toUpperCase() === 'TOTAL') continue;
+    if (!cell0 || cell0.toUpperCase() === 'TOTAL' || cell0 === 'Category') continue;
     const searchTerm = str(r[1]);
-    if (!searchTerm) continue;
+    if (!searchTerm || searchTerm === 'Search Term') continue;
     const country = str(r[2]);
-    if (!country) continue;
-    const surface = (str(r[3]).toLowerCase() || 'search') as Surface;
+    if (!country || country === 'Country') continue;
+    const surface = toSurface(r[3]);
 
     out.push({
       category: (cell0 || 'Unknown') as Category,
@@ -278,17 +367,22 @@ export function parseTier1Watch(rows: string[][]): Tier1WatchRow[] {
 // ---------------------------------------------------------------------------
 
 export function parseHistory(rows: string[][]): HistoryRow[] {
-  if (!rows || rows.length < 3) return [];
+  if (!rows || rows.length === 0) return [];
   return rows
-    .slice(2)
     .map((row): HistoryRow | null => {
       if (!row || row.length === 0) return null;
-      const snapshotDate = str(row[0]);
+      const rawDate = row[0];
       const searchTerm = str(row[1]);
-      if (!snapshotDate || !searchTerm) return null;
-      const surface = (str(row[2]).toLowerCase() || 'search') as Surface;
+      if (rawDate === undefined || rawDate === null || rawDate === '' || !searchTerm) return null;
+      // Skip header rows: cell[0] must be a numeric date serial or ISO date string
+      const dateNumeric = typeof rawDate === 'number' ? rawDate : Number(rawDate);
+      const looksLikeDate =
+        (Number.isFinite(dateNumeric) && dateNumeric > 20000 && dateNumeric < 90000) ||
+        /^\d{4}-\d{2}-\d{2}/.test(str(rawDate));
+      if (!looksLikeDate) return null;
+      const surface = toSurface(row[2]);
       return {
-        snapshotDate,
+        snapshotDate: typeof rawDate === 'number' ? rawDate : str(rawDate),
         searchTerm,
         surface,
         usersL7D: num(row[3]),

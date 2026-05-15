@@ -7,6 +7,7 @@ import { PRIORITY_ORDER } from '@/lib/utils/colors';
 import type { ActionQueueRow } from '@/lib/sheets/types';
 import { ActionQueueRowItem } from './ActionQueueRow';
 import { FiltersBar, DEFAULT_FILTERS, type FilterState } from './FiltersBar';
+import { PriorityLegend } from './PriorityLegend';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle } from 'lucide-react';
 
@@ -64,15 +65,16 @@ export function ActionQueueTable() {
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <AlertCircle className="h-10 w-10 text-red-500 mb-3" />
         <div className="font-semibold mb-1">Couldn’t load sheet data</div>
-        <div className="text-sm text-gray-600 max-w-md">{(error as Error).message}</div>
+        <div className="text-sm text-slate-600 max-w-md">{(error as Error).message}</div>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
+      <PriorityLegend />
       <FiltersBar rows={allRows} value={filters} onChange={setFilters} />
-      <div className="text-xs text-gray-500 flex items-center justify-between px-1">
+      <div className="text-xs text-slate-500 flex items-center justify-between px-1">
         <span>
           {isLoading
             ? 'Loading…'
@@ -88,7 +90,7 @@ export function ActionQueueTable() {
           </div>
         )}
         {!isLoading && filtered.length === 0 && (
-          <div className="px-4 py-10 text-center text-sm text-gray-500">
+          <div className="px-4 py-10 text-center text-sm text-slate-500">
             No actions match these filters.
           </div>
         )}

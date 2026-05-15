@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
@@ -24,7 +24,7 @@ export function RefreshButton() {
   const spinning = isFetching || busy;
 
   return (
-    <div className="flex items-center gap-2 text-xs text-gray-500">
+    <div className="flex items-center gap-2 text-xs text-slate-500">
       {data?.fetchedAt && (
         <span className="hidden sm:inline">Updated {formatDateTime(data.fetchedAt)}</span>
       )}

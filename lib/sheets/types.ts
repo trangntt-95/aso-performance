@@ -118,10 +118,42 @@ export interface FunnelBreakdown {
   total: { L: { users: number; getapp: number }; P: { users: number; getapp: number } };
 }
 
+export interface ExecutiveSummary {
+  overallHealth?: { value: string; visual: string; status: string };
+  trendSparkline?: string;
+  topConcern?: { value: string; status: string };
+  topOpportunity?: { value: string; status: string };
+  installPerDayL7?: number;
+  installTargetText?: string;
+  installVsTarget?: number;
+  installPacingVisual?: string;
+  installPacingStatus?: string;
+  quarterTargetText?: string;
+  cpiTargetText?: string;
+}
+
+export interface WowMetric {
+  metric: string;
+  thisPeriod: number;
+  lastPeriod: number;
+  deltaValue: number;
+  deltaPct: number;
+  status: string;
+}
+
+export interface DynamicBasketItem {
+  rank: number;
+  searchTerm: string;
+  l90Users: number;
+}
+
 export interface MarketIndexData {
   summary: MarketIndexSummaryRow[];
   funnels: FunnelBreakdown[];
   narratives: Partial<Record<Window, string>>;
+  executiveSummary?: ExecutiveSummary;
+  wow: WowMetric[];
+  basket: DynamicBasketItem[];
 }
 
 export interface KeywordRow {
@@ -160,7 +192,7 @@ export interface SnapshotRow {
 }
 
 export interface HistoryRow {
-  snapshotDate: string;
+  snapshotDate: string | number;
   searchTerm: string;
   surface: Surface;
   usersL7D: number;
