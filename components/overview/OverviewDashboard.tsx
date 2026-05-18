@@ -12,6 +12,7 @@ import {
   topCountriesFor,
   categoryShareFor,
   topP0Actions,
+  topVolumeMovers,
   channelSnapshotForWindow,
   windowDays,
   type OverviewWindow,
@@ -24,6 +25,7 @@ import { ChannelSplitChart } from './ChannelSplitChart';
 import { TopCountriesChart } from './TopCountriesChart';
 import { CategoryShareDonut } from './CategoryShareDonut';
 import { TopActionsList } from './TopActionsList';
+import { TopVolumeMovers } from './TopVolumeMovers';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatNumber, composeVerdict, verdictBadgeStyle } from '@/lib/utils/format';
@@ -88,6 +90,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     () => topActionsAll.filter((r) => r.surface === 'organic').slice(0, 5),
     [topActionsAll],
   );
+  const volumeMovers = useMemo(() => topVolumeMovers(data, window, { limit: 8 }), [data, window]);
   const channelSnapshot = useMemo(() => channelSnapshotForWindow(data, window), [data, window]);
   const openCountryDetail = useCountryDetailStore((s) => s.openCountry);
   const openCategoryDetail = useCategoryDetailStore((s) => s.openCategory);
@@ -304,6 +307,13 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             </div>
           </div>
         )}
+      </SectionCard>
+
+      <SectionCard
+        title={`Top biến động volume · ${window}`}
+        hint="Keyword có biến động volume mạnh nhất (theo |Δ users %|). Sàng floor 30 users để loại noise, đã loại Vietnam + India. Số liệu → insight → action."
+      >
+        {isLoading ? <Skeleton className="h-72" /> : <TopVolumeMovers movers={volumeMovers} />}
       </SectionCard>
 
       {!embedded && (

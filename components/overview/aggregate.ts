@@ -1,9 +1,13 @@
 import type {
   ActionQueueRow,
+  AlertType,
+  BidAction,
+  Category,
   FunnelBreakdown,
   KeywordRow,
   MarketIndexSummaryRow,
   SheetPayload,
+  SurfaceLabel,
   Window,
 } from '@/lib/sheets/types';
 
@@ -239,6 +243,78 @@ export function categoryShareFor(
 }
 
 export const EXCLUDED_COUNTRIES = new Set<string>(['Vietnam', 'India']);
+
+export interface VolumeMover {
+  keyword: string;
+  country: string;
+  surface: SurfaceLabel;
+  category: Category;
+  usersL: number;
+  usersP: number;
+  deltaUsersPct: number;
+  posL: number | null;
+  posP: number | null;
+  deltaPosPct: number | null;
+  alert: AlertType;
+  bidAction?: BidAction;
+  bidSuggest?: string;
+  note?: string;
+  direction: 'up' | 'down';
+}
+
+function mapSurface(s: string): SurfaceLabel {
+  return s === 'search_ad' || s === 'paid' ? 'paid' : 'organic';
+}
+
+export function topVolumeMovers(
+  data: SheetPayload | undefined,
+  window: OverviewWindow,
+  options: { limit?: number; minUsersFloor?: number } = {},
+): VolumeMover[] {
+  if (!data) return [];
+  const { limit = 8, minUsersFloor = 30 } = options;
+
+  const rows = countryRowsForWindow(data, window);
+
+  const actionIndex = new Map<string, ActionQueueRow>();
+  data.actionQueue.forEach((a) => {
+    const key = `${a.keyword.toLowerCase()}|${a.country}|${a.surface}|${a.window}`;
+    actionIndex.set(key, a);
+  });
+
+  const filtered = rows.filter((r) => {
+    if (!Number.isFinite(r.deltaUsersPct)) return false;
+    if (Math.max(r.usersL, r.usersP) < minUsersFloor) return false;
+    if (r.country && EXCLUDED_COUNTRIES.has(r.country)) return false;
+    return true;
+  });
+
+  filtered.sort((a, b) => Math.abs(b.deltaUsersPct) - Math.abs(a.deltaUsersPct));
+
+  return filtered.slice(0, limit).map((r) => {
+    const surface = mapSurface(r.surface);
+    const country = r.country ?? '(global)';
+    const key = `${r.searchTerm.toLowerCase()}|${country}|${surface}|${window}`;
+    const action = actionIndex.get(key);
+    return {
+      keyword: r.searchTerm,
+      country,
+      surface,
+      category: r.category,
+      usersL: r.usersL,
+      usersP: r.usersP,
+      deltaUsersPct: r.deltaUsersPct,
+      posL: r.posL,
+      posP: r.posP,
+      deltaPosPct: r.deltaPosPct,
+      alert: r.alert,
+      bidAction: action?.bidAction,
+      bidSuggest: action?.bidSuggest,
+      note: action?.note,
+      direction: r.deltaUsersPct >= 0 ? 'up' : 'down',
+    };
+  });
+}
 
 export function topP0Actions(actions: ActionQueueRow[], limit = 50): ActionQueueRow[] {
   return [...actions]
