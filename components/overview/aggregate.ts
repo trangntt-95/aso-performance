@@ -343,6 +343,37 @@ export function topVolumeMovers(
   });
 }
 
+export interface ContributorRow {
+  keyword: string;
+  category: Category;
+  surface: SurfaceLabel;
+  value: number;
+  sharePct: number;
+}
+
+export function topContributors(
+  data: SheetPayload | undefined,
+  window: OverviewWindow,
+  metric: 'users' | 'getApp',
+  limit = 8,
+): ContributorRow[] {
+  if (!data) return [];
+  const rows = rowsForWindow(data, window);
+  const key: keyof KeywordRow = metric === 'users' ? 'usersL' : 'getAppL';
+  const total = rows.reduce((s, r) => s + (r[key] as number), 0);
+  if (total <= 0) return [];
+  return [...rows]
+    .sort((a, b) => (b[key] as number) - (a[key] as number))
+    .slice(0, limit)
+    .map((r) => ({
+      keyword: r.searchTerm,
+      category: r.category,
+      surface: r.surface === 'search_ad' ? 'paid' : 'organic',
+      value: r[key] as number,
+      sharePct: ((r[key] as number) / total) * 100,
+    }));
+}
+
 export function topP0Actions(actions: ActionQueueRow[], limit = 50): ActionQueueRow[] {
   return [...actions]
     .filter((a) => a.priority === 'P0' || a.priority === 'P1')

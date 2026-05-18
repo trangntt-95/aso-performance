@@ -13,6 +13,7 @@ import {
   categoryShareFor,
   topP0Actions,
   topVolumeMovers,
+  topContributors,
   channelSnapshotForWindow,
   windowDays,
   type OverviewWindow,
@@ -24,8 +25,8 @@ import { MarketTrajectoryChart } from './MarketTrajectoryChart';
 import { ChannelSplitChart } from './ChannelSplitChart';
 import { TopCountriesChart } from './TopCountriesChart';
 import { CategoryShareDonut } from './CategoryShareDonut';
-import { TopActionsList } from './TopActionsList';
 import { TopVolumeMovers } from './TopVolumeMovers';
+import { TopContributors } from './TopContributors';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatNumber, composeVerdict, verdictBadgeStyle } from '@/lib/utils/format';
@@ -81,16 +82,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const split = useMemo(() => channelSplit(data), [data]);
   const topCountries = useMemo(() => topCountriesFor(data, window), [data, window]);
   const categoryShares = useMemo(() => categoryShareFor(data, window), [data, window]);
-  const topActionsAll = useMemo(() => topP0Actions(data?.actionQueue ?? []), [data]);
-  const topActionsPaid = useMemo(
-    () => topActionsAll.filter((r) => r.surface === 'paid').slice(0, 5),
-    [topActionsAll],
-  );
-  const topActionsOrganic = useMemo(
-    () => topActionsAll.filter((r) => r.surface === 'organic').slice(0, 5),
-    [topActionsAll],
-  );
   const volumeMovers = useMemo(() => topVolumeMovers(data, window, { limit: 8 }), [data, window]);
+  const topUsers = useMemo(() => topContributors(data, window, 'users', 8), [data, window]);
+  const topGetApp = useMemo(() => topContributors(data, window, 'getApp', 8), [data, window]);
   const channelSnapshot = useMemo(() => channelSnapshotForWindow(data, window), [data, window]);
   const openCountryDetail = useCountryDetailStore((s) => s.openCountry);
   const openCategoryDetail = useCategoryDetailStore((s) => s.openCategory);
@@ -252,60 +246,16 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       </section>
 
       <SectionCard
-        title="Top priority actions this week"
-        hint="P0 + P1 từ daily ASO tracker, sort theo urgency score. Đã loại Vietnam + India (luôn exclude khỏi paid ads). Score = severity × volume × surface."
-        cta={embedded ? undefined : 'Open full queue'}
-        href={embedded ? undefined : '/actions'}
+        title={`Top contribution · ${window}`}
+        hint="Top keyword đóng góp Users (demand) và GetApp (install) lớn nhất, kèm % share so với tổng. Sort theo absolute volume."
       >
         {isLoading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-12" />
-            ))}
-          </div>
-        ) : topActionsAll.length === 0 ? (
-          <div className="py-8 text-center text-sm text-slate-500">
-            No P0 or P1 actions right now.
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Skeleton className="h-72" />
+            <Skeleton className="h-72" />
           </div>
         ) : (
-          <div className="space-y-4">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                  Paid bidding
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  ({topActionsPaid.length}) — cần quyết định bid / pause / scale
-                </span>
-              </div>
-              {topActionsPaid.length === 0 ? (
-                <div className="border rounded-lg bg-white py-4 text-center text-xs text-slate-500">
-                  Không có paid action P0/P1.
-                </div>
-              ) : (
-                <TopActionsList rows={topActionsPaid} />
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  Organic / listing
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  ({topActionsOrganic.length}) — cần check listing / expand to paid
-                </span>
-              </div>
-              {topActionsOrganic.length === 0 ? (
-                <div className="border rounded-lg bg-white py-4 text-center text-xs text-slate-500">
-                  Không có organic action P0/P1.
-                </div>
-              ) : (
-                <TopActionsList rows={topActionsOrganic} />
-              )}
-            </div>
-          </div>
+          <TopContributors users={topUsers} getApp={topGetApp} />
         )}
       </SectionCard>
 
