@@ -2,8 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { ArrowRight, AlertCircle, AlertTriangle, BarChart3, Globe2, Layers, ListChecks, Target, Users } from 'lucide-react';
-import { PriorityQueueTile } from './PriorityQueueTile';
+import { ArrowRight, AlertCircle, BarChart3, Globe2, Layers, ListChecks, Megaphone, Sprout, Target, Users } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import {
   computeKpis,
@@ -28,7 +27,7 @@ import { TopVolumeMovers } from './TopVolumeMovers';
 import { TopContributors } from './TopContributors';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { formatNumber, composeVerdict, verdictBadgeStyle } from '@/lib/utils/format';
+import { formatNumber, formatPercent, composeVerdict, verdictBadgeStyle } from '@/lib/utils/format';
 import { useCountryDetailStore } from '@/lib/store/countryDetailStore';
 import { useCategoryDetailStore } from '@/lib/store/categoryDetailStore';
 import { cn } from '@/lib/utils';
@@ -157,17 +156,26 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               Icon={Target}
             />
             <KpiTile
-              label="Active alerts"
-              value={String(kpis.totalAlerts)}
-              helper={`across ${data?.[`all${window}` as 'allL7']?.length ?? 0} keywords`}
-              Icon={AlertTriangle}
-              tone={kpis.totalAlerts > 30 ? 'warn' : 'default'}
+              label={`CR Paid · ${window}`}
+              value={formatPercent(channelSnapshot?.paidCr ?? 0)}
+              deltaPct={
+                channelSnapshot && channelSnapshot.paidCrPrior > 0
+                  ? channelSnapshot.paidCr / channelSnapshot.paidCrPrior - 1
+                  : null
+              }
+              helper={`vs prior ${days}d`}
+              Icon={Megaphone}
             />
-            <PriorityQueueTile
-              p0={kpis.p0Count}
-              p1={kpis.p1Count}
-              p2={kpis.p2Count}
-              p3={kpis.p3Count}
+            <KpiTile
+              label={`CR Organic · ${window}`}
+              value={formatPercent(channelSnapshot?.organicCr ?? 0)}
+              deltaPct={
+                channelSnapshot && channelSnapshot.organicCrPrior > 0
+                  ? channelSnapshot.organicCr / channelSnapshot.organicCrPrior - 1
+                  : null
+              }
+              helper={`vs prior ${days}d`}
+              Icon={Sprout}
             />
           </>
         )}
