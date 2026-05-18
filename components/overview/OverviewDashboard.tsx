@@ -211,8 +211,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           )}
         </SectionCard>
         <SectionCard
-          title="Channel volume · all windows"
-          hint="Organic vs paid Users stacked across each window"
+          title="Channel split % · all windows"
+          hint="Tỉ trọng Organic vs Paid (theo Users) qua từng window — line chart, hover thấy số tuyệt đối."
         >
           {isLoading ? <Skeleton className="h-56" /> : <ChannelSplitChart data={split} metric="users" />}
         </SectionCard>

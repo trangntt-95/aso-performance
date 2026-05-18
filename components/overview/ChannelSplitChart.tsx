@@ -1,11 +1,11 @@
 'use client';
 
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
   LabelList,
   Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -23,38 +23,36 @@ interface Props {
 const ORG = '#059669';
 const PAID = '#b45309';
 
-function tickFmt(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
+interface EnrichedPoint extends ChannelSplitPoint {
+  _total: number;
+  _orgAbs: number;
+  _paidAbs: number;
+  orgPct: number;
+  paidPct: number;
 }
 
-function pctOf(value: number, total: number): string {
-  if (!total || total <= 0) return '';
-  const pct = (value / total) * 100;
-  if (pct < 6) return '';
-  return `${pct.toFixed(0)}%`;
-}
-
-export function ChannelSplitChart({ data, metric, height = 240 }: Props) {
+export function ChannelSplitChart({ data, metric, height = 260 }: Props) {
   const orgKey = metric === 'users' ? 'organicUsers' : 'organicGetApp';
   const paidKey = metric === 'users' ? 'paidUsers' : 'paidGetApp';
 
-  const enriched = data.map((d) => {
+  const enriched: EnrichedPoint[] = data.map((d) => {
     const org = d[orgKey];
     const paid = d[paidKey];
     const total = org + paid;
     return {
       ...d,
       _total: total,
-      _orgPct: pctOf(org, total),
-      _paidPct: pctOf(paid, total),
+      _orgAbs: org,
+      _paidAbs: paid,
+      orgPct: total > 0 ? (org / total) * 100 : 0,
+      paidPct: total > 0 ? (paid / total) * 100 : 0,
     };
   });
 
   return (
     <div style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={enriched} margin={{ top: 12, right: 12, bottom: 4, left: -8 }}>
+        <LineChart data={enriched} margin={{ top: 20, right: 16, bottom: 4, left: -4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
           <XAxis
             dataKey="window"
@@ -64,30 +62,63 @@ export function ChannelSplitChart({ data, metric, height = 240 }: Props) {
             axisLine={false}
           />
           <YAxis
+            domain={[0, 100]}
+            ticks={[0, 25, 50, 75, 100]}
             tick={{ fontSize: 10, fill: '#64748b' }}
             stroke="#cbd5e1"
             tickLine={false}
             axisLine={false}
-            tickFormatter={tickFmt}
+            tickFormatter={(v) => `${v}%`}
           />
           <Tooltip
-            cursor={{ fill: '#f1f5f9' }}
+            cursor={{ stroke: '#94a3b8', strokeDasharray: '3 3' }}
             contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
-            formatter={(v, name, item) => {
-              const num = typeof v === 'number' ? v : Number(v);
-              const total = (item?.payload as { _total?: number } | undefined)?._total ?? 0;
-              const pct = total > 0 ? ((num / total) * 100).toFixed(1) : '0';
-              return [`${formatNumber(num)} (${pct}%)`, name];
+            formatter={(value, name, item) => {
+              const p = item?.payload as EnrichedPoint | undefined;
+              if (!p) return [`${(value as number).toFixed(1)}%`, name];
+              const pct = value as number;
+              const abs = name === 'Organic %' ? p._orgAbs : p._paidAbs;
+              return [`${pct.toFixed(1)}% · ${formatNumber(abs)}`, name];
             }}
           />
           <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} iconType="circle" />
-          <Bar dataKey={orgKey} stackId="a" fill={ORG} name="Organic" radius={[0, 0, 0, 0]}>
-            <LabelList dataKey="_orgPct" position="center" fill="#fff" fontSize={11} fontWeight={600} />
-          </Bar>
-          <Bar dataKey={paidKey} stackId="a" fill={PAID} name="Paid" radius={[6, 6, 0, 0]}>
-            <LabelList dataKey="_paidPct" position="center" fill="#fff" fontSize={11} fontWeight={600} />
-          </Bar>
-        </BarChart>
+          <Line
+            type="monotone"
+            dataKey="orgPct"
+            name="Organic %"
+            stroke={ORG}
+            strokeWidth={2.5}
+            dot={{ r: 4, fill: ORG, strokeWidth: 0 }}
+            activeDot={{ r: 5 }}
+          >
+            <LabelList
+              dataKey="orgPct"
+              position="top"
+              fill={ORG}
+              fontSize={11}
+              fontWeight={600}
+              formatter={(v) => (typeof v === 'number' ? `${v.toFixed(0)}%` : '')}
+            />
+          </Line>
+          <Line
+            type="monotone"
+            dataKey="paidPct"
+            name="Paid %"
+            stroke={PAID}
+            strokeWidth={2.5}
+            dot={{ r: 4, fill: PAID, strokeWidth: 0 }}
+            activeDot={{ r: 5 }}
+          >
+            <LabelList
+              dataKey="paidPct"
+              position="bottom"
+              fill={PAID}
+              fontSize={11}
+              fontWeight={600}
+              formatter={(v) => (typeof v === 'number' ? `${v.toFixed(0)}%` : '')}
+            />
+          </Line>
+        </LineChart>
       </ResponsiveContainer>
     </div>
   );
