@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { ArrowRight, AlertCircle, BarChart3, Globe2, Layers, ListChecks, Megaphone, Sprout, Target, Trophy, Users } from 'lucide-react';
+import { ArrowRight, AlertCircle, BarChart3, Globe2, Layers, ListChecks, Megaphone, Target, Users } from 'lucide-react';
 import { expectedAdsInstalls } from '@/lib/config/ads-targets';
+import { AdsTargetTile } from './AdsTargetTile';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import {
   computeKpis,
@@ -99,6 +100,16 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     if (!channelSnapshot || !adsTargetExpected || adsTargetExpected <= 0) return null;
     return channelSnapshot.paidGetApp / adsTargetExpected;
   }, [channelSnapshot, adsTargetExpected]);
+  const totalCr = useMemo(() => {
+    if (!kpis.usersL) return null;
+    return kpis.getAppL / kpis.usersL;
+  }, [kpis]);
+  const totalCrPrior = useMemo(() => {
+    if (!channelSnapshot) return null;
+    const u = channelSnapshot.paidUsersPrior + channelSnapshot.organicUsersPrior;
+    const g = channelSnapshot.paidGetAppPrior + channelSnapshot.organicGetAppPrior;
+    return u > 0 ? g / u : null;
+  }, [channelSnapshot]);
 
   if (error) {
     return (
@@ -142,9 +153,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         )}
       </header>
 
-      <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {isLoading ? (
-          Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)
+          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)
         ) : (
           <>
             <KpiTile
@@ -162,43 +173,21 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               Icon={Target}
             />
             <KpiTile
-              label={`CR Paid · ${window}`}
-              value={formatPercent(channelSnapshot?.paidCr ?? 0)}
+              label={`CR Total · ${window}`}
+              value={totalCr !== null ? formatPercent(totalCr) : '—'}
               deltaPct={
-                channelSnapshot && channelSnapshot.paidCrPrior > 0
-                  ? channelSnapshot.paidCr / channelSnapshot.paidCrPrior - 1
+                totalCr !== null && totalCrPrior !== null && totalCrPrior > 0
+                  ? totalCr / totalCrPrior - 1
                   : null
               }
-              helper={`vs prior ${days}d`}
+              helper={`paid + organic · vs prior ${days}d`}
               Icon={Megaphone}
             />
-            <KpiTile
-              label={`CR Organic · ${window}`}
-              value={formatPercent(channelSnapshot?.organicCr ?? 0)}
-              deltaPct={
-                channelSnapshot && channelSnapshot.organicCrPrior > 0
-                  ? channelSnapshot.organicCr / channelSnapshot.organicCrPrior - 1
-                  : null
-              }
-              helper={`vs prior ${days}d`}
-              Icon={Sprout}
-            />
-            <KpiTile
+            <AdsTargetTile
               label={`Ads target · ${window}`}
-              value={adsTargetPct !== null ? formatPercent(adsTargetPct) : '—'}
-              helper={
-                adsTargetExpected !== null && channelSnapshot
-                  ? `${formatNumber(channelSnapshot.paidGetApp)} / ${formatNumber(Math.round(adsTargetExpected))}`
-                  : 'target out of range'
-              }
-              Icon={Trophy}
-              tone={
-                adsTargetPct === null
-                  ? 'default'
-                  : adsTargetPct < 0.9
-                    ? 'warn'
-                    : 'default'
-              }
+              pct={adsTargetPct}
+              actual={channelSnapshot?.paidGetApp ?? 0}
+              expected={adsTargetExpected}
             />
           </>
         )}
