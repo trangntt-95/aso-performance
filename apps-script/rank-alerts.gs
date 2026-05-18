@@ -269,3 +269,38 @@ function colIndex_(headers, patterns) {
 function testRankAlerts() {
   runRankAlerts();
 }
+
+/**
+ * Chạy 1 lần để set daily trigger 7am. Tự xóa trigger cũ trước khi tạo mới
+ * nên có thể chạy lại bất kỳ lúc nào để reset.
+ */
+function installDailyTrigger() {
+  const handler = 'runRankAlerts';
+  const existing = ScriptApp.getProjectTriggers();
+  let removed = 0;
+  for (let i = 0; i < existing.length; i++) {
+    if (existing[i].getHandlerFunction() === handler) {
+      ScriptApp.deleteTrigger(existing[i]);
+      removed++;
+    }
+  }
+  ScriptApp.newTrigger(handler).timeBased().everyDays(1).atHour(7).create();
+  Logger.log('Installed daily 7am trigger for ' + handler + ' (removed ' + removed + ' old)');
+}
+
+/**
+ * Liệt kê triggers hiện tại để verify.
+ */
+function listTriggers() {
+  const triggers = ScriptApp.getProjectTriggers();
+  if (triggers.length === 0) {
+    Logger.log('No triggers installed');
+    return;
+  }
+  for (let i = 0; i < triggers.length; i++) {
+    const t = triggers[i];
+    Logger.log((i + 1) + '. ' + t.getHandlerFunction() +
+      ' — type=' + t.getEventType() +
+      ', source=' + t.getTriggerSource());
+  }
+}
