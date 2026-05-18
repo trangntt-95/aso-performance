@@ -20,13 +20,6 @@ function ymKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function dailyRate(d: Date): number | null {
-  const key = ymKey(d);
-  const monthly = ADS_MONTHLY_TARGETS[key];
-  if (!monthly) return null;
-  return monthly / daysInMonth(d.getFullYear(), d.getMonth());
-}
-
 /**
  * Target install cho cửa sổ window theo logic monthly:
  *   - L3/L7/L14: pro-rate từ current month = monthly / days × N
