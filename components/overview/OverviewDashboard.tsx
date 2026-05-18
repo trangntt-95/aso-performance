@@ -77,8 +77,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const [window, setWindow] = useState<OverviewWindow>('L7');
 
   const kpis = useMemo(() => computeKpis(data, window), [data, window]);
-  const trajectory = useMemo(() => marketTrajectory(data?.marketIndex.summary ?? []), [data]);
-  const split = useMemo(() => channelSplit(data?.marketIndex.funnels ?? []), [data]);
+  const trajectory = useMemo(() => marketTrajectory(data), [data]);
+  const split = useMemo(() => channelSplit(data), [data]);
   const topCountries = useMemo(() => topCountriesFor(data, window), [data, window]);
   const categoryShares = useMemo(() => categoryShareFor(data, window), [data, window]);
   const topActionsAll = useMemo(() => topP0Actions(data?.actionQueue ?? []), [data]);
@@ -97,7 +97,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
   const headlineWindow = data?.marketIndex.summary.find((s) => s.window === window);
   const composedVerdict = headlineWindow
-    ? composeVerdict(headlineWindow.deltaWeightedPct, headlineWindow.deltaUsersPct)
+    ? composeVerdict(headlineWindow.deltaWeightedPct, kpis.usersDeltaPct)
     : null;
   const verdictS = composedVerdict ? verdictBadgeStyle(composedVerdict) : null;
   const days = windowDays(window);

@@ -3,12 +3,10 @@ import type {
   AlertType,
   BidAction,
   Category,
-  FunnelBreakdown,
   KeywordRow,
   MarketIndexSummaryRow,
   SheetPayload,
   SurfaceLabel,
-  Window,
 } from '@/lib/sheets/types';
 
 export type OverviewWindow = 'L3' | 'L7' | 'L14' | 'L30' | 'L90';
@@ -58,6 +56,25 @@ export interface OverviewKpi {
   p3Count: number;
 }
 
+function sumAllLx(rows: KeywordRow[]) {
+  let usersL = 0;
+  let usersP = 0;
+  let getAppL = 0;
+  let getAppP = 0;
+  for (const r of rows) {
+    usersL += r.usersL;
+    usersP += r.usersP;
+    getAppL += r.getAppL;
+    getAppP += r.getAppP;
+  }
+  return { usersL, usersP, getAppL, getAppP };
+}
+
+function pctDelta(curr: number, prev: number): number {
+  if (prev <= 0) return 0;
+  return (curr - prev) / prev;
+}
+
 export function computeKpis(data: SheetPayload | undefined, window: OverviewWindow): OverviewKpi {
   const fallback = {
     window,
@@ -73,10 +90,8 @@ export function computeKpis(data: SheetPayload | undefined, window: OverviewWind
   };
   if (!data) return fallback;
 
-  const market = data.marketIndex.summary.find((s) => s.window === (window as Window));
   const rows = rowsForWindow(data, window);
-  const totalUsers = market ? market.basketUsersL : rows.reduce((s, r) => s + r.usersL, 0);
-  const totalGetApp = market ? market.basketGetAppL : rows.reduce((s, r) => s + r.getAppL, 0);
+  const totals = sumAllLx(rows);
   const alertCount = rows.filter((r) => r.alert && r.alert !== 'OK').length;
 
   const counts = { P0: 0, P1: 0, P2: 0, P3: 0 };
@@ -86,10 +101,10 @@ export function computeKpis(data: SheetPayload | undefined, window: OverviewWind
 
   return {
     window,
-    usersL: totalUsers,
-    usersDeltaPct: market?.deltaUsersPct ?? 0,
-    getAppL: totalGetApp,
-    getAppDeltaPct: market?.deltaGetAppPct ?? 0,
+    usersL: totals.usersL,
+    usersDeltaPct: pctDelta(totals.usersL, totals.usersP),
+    getAppL: totals.getAppL,
+    getAppDeltaPct: pctDelta(totals.getAppL, totals.getAppP),
     totalAlerts: alertCount,
     p0Count: counts.P0,
     p1Count: counts.P1,
@@ -113,33 +128,40 @@ export interface ChannelSnapshot {
   paidCrPrior: number;
 }
 
+function splitBySurface(rows: KeywordRow[]) {
+  const org = { usersL: 0, usersP: 0, getAppL: 0, getAppP: 0 };
+  const paid = { usersL: 0, usersP: 0, getAppL: 0, getAppP: 0 };
+  for (const r of rows) {
+    const bucket = r.surface === 'search_ad' ? paid : org;
+    bucket.usersL += r.usersL;
+    bucket.usersP += r.usersP;
+    bucket.getAppL += r.getAppL;
+    bucket.getAppP += r.getAppP;
+  }
+  return { org, paid };
+}
+
 export function channelSnapshotForWindow(
   data: SheetPayload | undefined,
   window: OverviewWindow,
 ): ChannelSnapshot | null {
-  const funnel = data?.marketIndex.funnels.find((f) => f.window === (window as Window));
-  if (!funnel) return null;
-  const orgUsersL = funnel.organic.L.users;
-  const orgUsersP = funnel.organic.P.users;
-  const orgGetAppL = funnel.organic.L.getapp;
-  const orgGetAppP = funnel.organic.P.getapp;
-  const paidUsersL = funnel.paid.L.users;
-  const paidUsersP = funnel.paid.P.users;
-  const paidGetAppL = funnel.paid.L.getapp;
-  const paidGetAppP = funnel.paid.P.getapp;
+  if (!data) return null;
+  const rows = rowsForWindow(data, window);
+  if (rows.length === 0) return null;
+  const { org, paid } = splitBySurface(rows);
   return {
-    organicUsers: orgUsersL,
-    organicUsersPrior: orgUsersP,
-    organicGetApp: orgGetAppL,
-    organicGetAppPrior: orgGetAppP,
-    organicCr: orgUsersL > 0 ? orgGetAppL / orgUsersL : 0,
-    organicCrPrior: orgUsersP > 0 ? orgGetAppP / orgUsersP : 0,
-    paidUsers: paidUsersL,
-    paidUsersPrior: paidUsersP,
-    paidGetApp: paidGetAppL,
-    paidGetAppPrior: paidGetAppP,
-    paidCr: paidUsersL > 0 ? paidGetAppL / paidUsersL : 0,
-    paidCrPrior: paidUsersP > 0 ? paidGetAppP / paidUsersP : 0,
+    organicUsers: org.usersL,
+    organicUsersPrior: org.usersP,
+    organicGetApp: org.getAppL,
+    organicGetAppPrior: org.getAppP,
+    organicCr: org.usersL > 0 ? org.getAppL / org.usersL : 0,
+    organicCrPrior: org.usersP > 0 ? org.getAppP / org.usersP : 0,
+    paidUsers: paid.usersL,
+    paidUsersPrior: paid.usersP,
+    paidGetApp: paid.getAppL,
+    paidGetAppPrior: paid.getAppP,
+    paidCr: paid.usersL > 0 ? paid.getAppL / paid.usersL : 0,
+    paidCrPrior: paid.usersP > 0 ? paid.getAppP / paid.usersP : 0,
   };
 }
 
@@ -151,18 +173,23 @@ export interface MarketTrajectoryPoint {
   verdict: string;
 }
 
-export function marketTrajectory(summary: MarketIndexSummaryRow[]): MarketTrajectoryPoint[] {
-  const order = ['L3', 'L7', 'L14', 'L30', 'L90'];
-  return [...summary]
-    .filter((s) => order.includes(s.window))
-    .sort((a, b) => order.indexOf(a.window) - order.indexOf(b.window))
-    .map((s) => ({
-      window: s.window,
-      usersDelta: s.deltaUsersPct * 100,
-      getAppDelta: s.deltaGetAppPct * 100,
-      weightedDelta: s.deltaWeightedPct * 100,
-      verdict: s.verdict,
-    }));
+export function marketTrajectory(data: SheetPayload | undefined): MarketTrajectoryPoint[] {
+  if (!data) return [];
+  const summaryByWindow = new Map<string, MarketIndexSummaryRow>();
+  data.marketIndex.summary.forEach((s) => summaryByWindow.set(s.window, s));
+  return OVERVIEW_WINDOWS.map((w) => {
+    const totals = sumAllLx(rowsForWindow(data, w));
+    const usersDelta = pctDelta(totals.usersL, totals.usersP) * 100;
+    const getAppDelta = pctDelta(totals.getAppL, totals.getAppP) * 100;
+    const m = summaryByWindow.get(w);
+    return {
+      window: w,
+      usersDelta,
+      getAppDelta,
+      weightedDelta: m ? m.deltaWeightedPct * 100 : usersDelta,
+      verdict: m?.verdict ?? '→ STABLE',
+    };
+  });
 }
 
 export interface ChannelSplitPoint {
@@ -173,18 +200,18 @@ export interface ChannelSplitPoint {
   paidGetApp: number;
 }
 
-export function channelSplit(funnels: FunnelBreakdown[]): ChannelSplitPoint[] {
-  const order = ['L3', 'L7', 'L14', 'L30', 'L90'];
-  return [...funnels]
-    .filter((f) => order.includes(f.window))
-    .sort((a, b) => order.indexOf(a.window) - order.indexOf(b.window))
-    .map((f) => ({
-      window: f.window,
-      organicUsers: f.organic.L.users,
-      paidUsers: f.paid.L.users,
-      organicGetApp: f.organic.L.getapp,
-      paidGetApp: f.paid.L.getapp,
-    }));
+export function channelSplit(data: SheetPayload | undefined): ChannelSplitPoint[] {
+  if (!data) return [];
+  return OVERVIEW_WINDOWS.map((w) => {
+    const { org, paid } = splitBySurface(rowsForWindow(data, w));
+    return {
+      window: w,
+      organicUsers: org.usersL,
+      paidUsers: paid.usersL,
+      organicGetApp: org.getAppL,
+      paidGetApp: paid.getAppL,
+    };
+  });
 }
 
 export interface CountryRollup {
