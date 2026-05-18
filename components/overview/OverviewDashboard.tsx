@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { ArrowRight, AlertCircle, BarChart3, Globe2, Layers, ListChecks, Megaphone, Sprout, Target, Users } from 'lucide-react';
+import { ArrowRight, AlertCircle, BarChart3, Globe2, Layers, ListChecks, Megaphone, Sprout, Target, Trophy, Users } from 'lucide-react';
+import { expectedAdsInstalls } from '@/lib/config/ads-targets';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import {
   computeKpis,
@@ -93,6 +94,11 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     : null;
   const verdictS = composedVerdict ? verdictBadgeStyle(composedVerdict) : null;
   const days = windowDays(window);
+  const adsTargetExpected = useMemo(() => expectedAdsInstalls(days), [days]);
+  const adsTargetPct = useMemo(() => {
+    if (!channelSnapshot || !adsTargetExpected || adsTargetExpected <= 0) return null;
+    return channelSnapshot.paidGetApp / adsTargetExpected;
+  }, [channelSnapshot, adsTargetExpected]);
 
   if (error) {
     return (
@@ -136,9 +142,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         )}
       </header>
 
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)
+          Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)
         ) : (
           <>
             <KpiTile
@@ -176,6 +182,23 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               }
               helper={`vs prior ${days}d`}
               Icon={Sprout}
+            />
+            <KpiTile
+              label={`Ads target · ${window}`}
+              value={adsTargetPct !== null ? formatPercent(adsTargetPct) : '—'}
+              helper={
+                adsTargetExpected !== null && channelSnapshot
+                  ? `${formatNumber(channelSnapshot.paidGetApp)} / ${formatNumber(Math.round(adsTargetExpected))}`
+                  : 'target out of range'
+              }
+              Icon={Trophy}
+              tone={
+                adsTargetPct === null
+                  ? 'default'
+                  : adsTargetPct < 0.9
+                    ? 'warn'
+                    : 'default'
+              }
             />
           </>
         )}
