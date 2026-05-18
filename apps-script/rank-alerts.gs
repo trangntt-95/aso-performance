@@ -17,7 +17,7 @@ const ALERT_CONFIG = {
   contributionWindows: ['L3', 'L7', 'L14', 'L30', 'L90'],
   topN: 20,
   rankCheckWindow: 'L7',          // Check rank drop trong COUNTRY_L7 (week-over-week)
-  emailTo: 'nguyentrangntt95@gmail.com',
+  emailTo: 'trangnt@firegroup.io',
   emailSubjectPrefix: '⚠️ ASO Rank Alert',
   dashboardUrl: 'https://aso-performance.vercel.app',
   alertLogTab: 'AlertLog',
