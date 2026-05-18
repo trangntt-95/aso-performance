@@ -2,14 +2,15 @@
  * Monthly install targets cho paid search ads.
  * Update mỗi đầu quý — chỉnh ở đây, không hardcode rải rác trong UI.
  */
+// Shopify Ads monthly install targets (search_ad surface only).
 export const ADS_MONTHLY_TARGETS: Record<string, number> = {
-  '2026-03': 222,
-  '2026-04': 218,
-  '2026-05': 229,
-  '2026-06': 240,
-  '2026-07': 250,
-  '2026-08': 275,
-  '2026-09': 264,
+  '2026-03': 178,
+  '2026-04': 195,
+  '2026-05': 203,
+  '2026-06': 213,
+  '2026-07': 222,
+  '2026-08': 244,
+  '2026-09': 234,
 };
 
 function daysInMonth(year: number, monthIndex0: number): number {
