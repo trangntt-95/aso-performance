@@ -202,7 +202,7 @@ export interface ChannelSplitPoint {
 
 export function channelSplit(data: SheetPayload | undefined): ChannelSplitPoint[] {
   if (!data) return [];
-  return OVERVIEW_WINDOWS.map((w) => {
+  return [...OVERVIEW_WINDOWS].reverse().map((w) => {
     const { org, paid } = splitBySurface(rowsForWindow(data, w));
     return {
       window: w,
