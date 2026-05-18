@@ -29,13 +29,15 @@ function Column({ title, unitLabel, Icon, rows, accent }: ColumnProps) {
   }
 
   return (
-    <div className="border rounded-lg overflow-hidden bg-white">
-      <div className={cn('flex items-center gap-2 px-3 py-2 border-b bg-slate-50/60', headerColor)}>
+    <div className="border rounded-lg overflow-hidden bg-white flex flex-col">
+      <div className={cn('flex items-center gap-2 px-3 py-2 border-b bg-slate-50/60 shrink-0', headerColor)}>
         <Icon className="h-4 w-4" />
         <span className="text-xs font-semibold">{title}</span>
-        <span className="text-[10px] text-slate-500 ml-auto">{unitLabel}</span>
+        <span className="text-[10px] text-slate-500 ml-auto">
+          {rows.length} kw · {unitLabel}
+        </span>
       </div>
-      <ol className="divide-y">
+      <ol className="divide-y max-h-[420px] overflow-y-auto">
         {rows.map((r, i) => (
           <li key={`${r.keyword}-${i}`} className="px-3 py-2.5 hover:bg-slate-50/60 transition">
             <div className="flex items-start gap-3">

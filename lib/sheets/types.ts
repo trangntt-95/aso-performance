@@ -200,6 +200,20 @@ export interface HistoryRow {
   alert: AlertType;
 }
 
+export interface AlertLogRow {
+  snapshotDate: string | number;
+  keyword: string;
+  country: string;
+  window: string;
+  surface: string;
+  posP: number | null;
+  posL: number | null;
+  deltaPos: number | null;
+  usersL: number;
+  topContribWindows: string;
+  emailSent: boolean;
+}
+
 export interface Tier1WatchRow {
   category: Category;
   searchTerm: string;
@@ -235,6 +249,7 @@ export interface SheetPayload {
   allL365: SnapshotRow[];
   countryL365: SnapshotRow[];
   history: HistoryRow[];
+  alertLog: AlertLogRow[];
   fetchedAt: string;
 }
 

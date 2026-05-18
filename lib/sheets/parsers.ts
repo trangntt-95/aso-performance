@@ -1,5 +1,6 @@
 import type {
   ActionQueueRow,
+  AlertLogRow,
   AlertType,
   BidAction,
   Category,
@@ -365,6 +366,39 @@ export function parseTier1Watch(rows: string[][]): Tier1WatchRow[] {
 // ---------------------------------------------------------------------------
 // History — append-only weekly snapshots.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// AlertLog — append-only daily rank-drop alerts (written by Apps Script).
+// Header: snapshot_date | keyword | country | window | surface |
+//         pos_prior | pos_latest | delta_pos | users_l |
+//         top_contrib_windows | email_sent
+// ---------------------------------------------------------------------------
+
+export function parseAlertLog(rows: string[][]): AlertLogRow[] {
+  if (!rows || rows.length < 2) return [];
+  return rows
+    .slice(1)
+    .map((row): AlertLogRow | null => {
+      if (!row || row.length === 0) return null;
+      const rawDate = row[0];
+      const keyword = str(row[1]);
+      if (rawDate === undefined || rawDate === null || rawDate === '' || !keyword) return null;
+      return {
+        snapshotDate: typeof rawDate === 'number' ? rawDate : str(rawDate),
+        keyword,
+        country: str(row[2]),
+        window: str(row[3]),
+        surface: str(row[4]),
+        posP: numOrNull(row[5]),
+        posL: numOrNull(row[6]),
+        deltaPos: numOrNull(row[7]),
+        usersL: num(row[8]),
+        topContribWindows: str(row[9]),
+        emailSent: String(row[10] ?? '').toLowerCase() === 'true',
+      };
+    })
+    .filter((r): r is AlertLogRow => r !== null);
+}
 
 export function parseHistory(rows: string[][]): HistoryRow[] {
   if (!rows || rows.length === 0) return [];

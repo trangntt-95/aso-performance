@@ -41,15 +41,29 @@ export async function fetchTab(tabName: string): Promise<string[][]> {
 
 export async function fetchAllTabs(): Promise<Record<string, string[][]>> {
   const sheets = getSheetsClient();
-  const ranges = TABS.map((t) => `${t}!A:Z`);
-  const res = await sheets.spreadsheets.values.batchGet({
-    spreadsheetId: getSpreadsheetId(),
-    ranges,
-    valueRenderOption: 'UNFORMATTED_VALUE',
-  });
   const result: Record<string, string[][]> = {};
-  (res.data.valueRanges || []).forEach((vr, i) => {
-    result[TABS[i]] = (vr.values || []) as string[][];
-  });
-  return result;
+  try {
+    const ranges = TABS.map((t) => `${t}!A:Z`);
+    const res = await sheets.spreadsheets.values.batchGet({
+      spreadsheetId: getSpreadsheetId(),
+      ranges,
+      valueRenderOption: 'UNFORMATTED_VALUE',
+    });
+    (res.data.valueRanges || []).forEach((vr, i) => {
+      result[TABS[i]] = (vr.values || []) as string[][];
+    });
+    return result;
+  } catch {
+    // Fallback: a tab is missing — fetch each tab individually, skip 404s.
+    await Promise.all(
+      TABS.map(async (t) => {
+        try {
+          result[t] = await fetchTab(t);
+        } catch {
+          result[t] = [];
+        }
+      }),
+    );
+    return result;
+  }
 }

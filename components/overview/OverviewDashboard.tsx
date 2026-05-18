@@ -82,8 +82,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const topCountries = useMemo(() => topCountriesFor(data, window), [data, window]);
   const categoryShares = useMemo(() => categoryShareFor(data, window), [data, window]);
   const volumeMovers = useMemo(() => topVolumeMovers(data, window, { limit: 8 }), [data, window]);
-  const topUsers = useMemo(() => topContributors(data, window, 'users', 8), [data, window]);
-  const topGetApp = useMemo(() => topContributors(data, window, 'getApp', 8), [data, window]);
+  const topUsers = useMemo(() => topContributors(data, window, 'users', 20), [data, window]);
+  const topGetApp = useMemo(() => topContributors(data, window, 'getApp', 20), [data, window]);
   const channelSnapshot = useMemo(() => channelSnapshotForWindow(data, window), [data, window]);
   const openCountryDetail = useCountryDetailStore((s) => s.openCountry);
   const openCategoryDetail = useCategoryDetailStore((s) => s.openCategory);

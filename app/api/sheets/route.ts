@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { fetchAllTabs } from '@/lib/sheets/client';
 import {
   parseActionQueue,
+  parseAlertLog,
   parseHistory,
   parseKeywordTab,
   parseMarketIndex,
@@ -33,6 +34,7 @@ export async function GET() {
       allL365: parseSnapshot(raw['All_L365'] ?? [], false),
       countryL365: parseSnapshot(raw['Country_L365'] ?? [], true),
       history: parseHistory(raw['History'] ?? []),
+      alertLog: parseAlertLog(raw['AlertLog'] ?? []),
       fetchedAt: new Date().toISOString(),
     };
     return NextResponse.json(payload, {

@@ -16,6 +16,7 @@ export const TABS = [
   'Country_L90',
   'Country_L365',
   'History',
+  'AlertLog',
 ] as const;
 
 export type TabName = (typeof TABS)[number];
