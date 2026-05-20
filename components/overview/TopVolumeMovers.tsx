@@ -50,7 +50,6 @@ function diagnose(m: VolumeMover): Diagnosis {
 
   const up = m.direction === 'up';
   const dUsers = m.deltaUsersPct;
-  const dGetApp = m.deltaGetAppPct ?? 0;
   const dCr = m.deltaCrPct ?? 0;
   const posDrop = posDiff !== null && posDiff >= 2;
   const posLift = posDiff !== null && posDiff <= -2;
