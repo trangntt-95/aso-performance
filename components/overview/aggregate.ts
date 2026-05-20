@@ -33,14 +33,30 @@ export function windowDays(w: OverviewWindow): number {
   return Number(w.slice(1));
 }
 
-function rowsForWindow(data: SheetPayload | undefined, window: OverviewWindow): KeywordRow[] {
-  if (!data) return [];
-  return data[KEYWORD_TAB_BY_WINDOW[window]] as KeywordRow[];
+export type SurfaceFocus = 'all' | 'organic' | 'paid';
+
+function filterSurface(rows: KeywordRow[], surface: SurfaceFocus): KeywordRow[] {
+  if (surface === 'all') return rows;
+  const target = surface === 'paid' ? 'search_ad' : 'search';
+  return rows.filter((r) => r.surface === target);
 }
 
-function countryRowsForWindow(data: SheetPayload | undefined, window: OverviewWindow): KeywordRow[] {
+function rowsForWindow(
+  data: SheetPayload | undefined,
+  window: OverviewWindow,
+  surface: SurfaceFocus = 'all',
+): KeywordRow[] {
   if (!data) return [];
-  return data[COUNTRY_TAB_BY_WINDOW[window]] as KeywordRow[];
+  return filterSurface(data[KEYWORD_TAB_BY_WINDOW[window]] as KeywordRow[], surface);
+}
+
+function countryRowsForWindow(
+  data: SheetPayload | undefined,
+  window: OverviewWindow,
+  surface: SurfaceFocus = 'all',
+): KeywordRow[] {
+  if (!data) return [];
+  return filterSurface(data[COUNTRY_TAB_BY_WINDOW[window]] as KeywordRow[], surface);
 }
 
 export interface OverviewKpi {
@@ -75,7 +91,11 @@ function pctDelta(curr: number, prev: number): number {
   return (curr - prev) / prev;
 }
 
-export function computeKpis(data: SheetPayload | undefined, window: OverviewWindow): OverviewKpi {
+export function computeKpis(
+  data: SheetPayload | undefined,
+  window: OverviewWindow,
+  surface: SurfaceFocus = 'all',
+): OverviewKpi {
   const fallback = {
     window,
     usersL: 0,
@@ -90,7 +110,7 @@ export function computeKpis(data: SheetPayload | undefined, window: OverviewWind
   };
   if (!data) return fallback;
 
-  const rows = rowsForWindow(data, window);
+  const rows = rowsForWindow(data, window, surface);
   const totals = sumAllLx(rows);
   const alertCount = rows.filter((r) => r.alert && r.alert !== 'OK').length;
 
@@ -173,20 +193,24 @@ export interface MarketTrajectoryPoint {
   verdict: string;
 }
 
-export function marketTrajectory(data: SheetPayload | undefined): MarketTrajectoryPoint[] {
+export function marketTrajectory(
+  data: SheetPayload | undefined,
+  surface: SurfaceFocus = 'all',
+): MarketTrajectoryPoint[] {
   if (!data) return [];
   const summaryByWindow = new Map<string, MarketIndexSummaryRow>();
   data.marketIndex.summary.forEach((s) => summaryByWindow.set(s.window, s));
   return OVERVIEW_WINDOWS.map((w) => {
-    const totals = sumAllLx(rowsForWindow(data, w));
+    const totals = sumAllLx(rowsForWindow(data, w, surface));
     const usersDelta = pctDelta(totals.usersL, totals.usersP) * 100;
     const getAppDelta = pctDelta(totals.getAppL, totals.getAppP) * 100;
     const m = summaryByWindow.get(w);
+    // weightedDelta from marketIndex is whole-market; fall back to surface-scoped usersDelta when filtered.
     return {
       window: w,
       usersDelta,
       getAppDelta,
-      weightedDelta: m ? m.deltaWeightedPct * 100 : usersDelta,
+      weightedDelta: surface === 'all' && m ? m.deltaWeightedPct * 100 : usersDelta,
       verdict: m?.verdict ?? '→ STABLE',
     };
   });
@@ -226,8 +250,9 @@ export function topCountriesFor(
   data: SheetPayload | undefined,
   window: OverviewWindow,
   limit = 8,
+  surface: SurfaceFocus = 'all',
 ): CountryRollup[] {
-  const rows = countryRowsForWindow(data, window);
+  const rows = countryRowsForWindow(data, window, surface);
   const map = new Map<string, CountryRollup>();
   rows.forEach((r) => {
     if (!r.country) return;
@@ -253,8 +278,9 @@ export interface CategoryShare {
 export function categoryShareFor(
   data: SheetPayload | undefined,
   window: OverviewWindow,
+  surface: SurfaceFocus = 'all',
 ): CategoryShare[] {
-  const rows = rowsForWindow(data, window);
+  const rows = rowsForWindow(data, window, surface);
   const map = new Map<string, CategoryShare>();
   let totalUsers = 0;
   rows.forEach((r) => {
@@ -296,12 +322,12 @@ function mapSurface(s: string): SurfaceLabel {
 export function topVolumeMovers(
   data: SheetPayload | undefined,
   window: OverviewWindow,
-  options: { limit?: number; minUsersFloor?: number } = {},
+  options: { limit?: number; minUsersFloor?: number; surface?: SurfaceFocus } = {},
 ): VolumeMover[] {
   if (!data) return [];
-  const { limit = 8, minUsersFloor = 30 } = options;
+  const { limit = 8, minUsersFloor = 30, surface = 'all' } = options;
 
-  const rows = countryRowsForWindow(data, window);
+  const rows = countryRowsForWindow(data, window, surface);
 
   const actionIndex = new Map<string, ActionQueueRow>();
   data.actionQueue.forEach((a) => {
@@ -356,9 +382,10 @@ export function topContributors(
   window: OverviewWindow,
   metric: 'users' | 'getApp',
   limit = 8,
+  surface: SurfaceFocus = 'all',
 ): ContributorRow[] {
   if (!data) return [];
-  const rows = rowsForWindow(data, window);
+  const rows = rowsForWindow(data, window, surface);
   const key: keyof KeywordRow = metric === 'users' ? 'usersL' : 'getAppL';
   const total = rows.reduce((s, r) => s + (r[key] as number), 0);
   if (total <= 0) return [];

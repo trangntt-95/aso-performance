@@ -1,11 +1,13 @@
 import { Leaf, DollarSign, ArrowUp, ArrowDown, ArrowRight } from 'lucide-react';
-import type { ChannelSnapshot } from './aggregate';
+import type { ChannelSnapshot, SurfaceFocus } from './aggregate';
 import { formatNumber, formatPercent, deltaTone } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 
 interface Props {
   snapshot: ChannelSnapshot | null;
   windowLabel: string;
+  activeFocus?: SurfaceFocus;
+  onSelect?: (focus: SurfaceFocus) => void;
 }
 
 function deltaPct(latest: number, prior: number): number {
@@ -38,6 +40,10 @@ function Channel({
   getAppDelta,
   cr,
   crDelta,
+  active,
+  dimmed,
+  onClick,
+  accentRing,
 }: {
   label: string;
   Icon: typeof Leaf;
@@ -48,14 +54,34 @@ function Channel({
   getAppDelta: number;
   cr: number;
   crDelta: number;
+  active?: boolean;
+  dimmed?: boolean;
+  onClick?: () => void;
+  accentRing?: string;
 }) {
+  const Wrapper = onClick ? 'button' : 'div';
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+    <Wrapper
+      onClick={onClick}
+      type={onClick ? 'button' : undefined}
+      aria-pressed={onClick ? !!active : undefined}
+      className={cn(
+        'rounded-xl border bg-white p-4 sm:p-5 text-left transition w-full',
+        onClick && 'hover:border-slate-300 hover:shadow-sm cursor-pointer',
+        active ? cn('border-transparent ring-2', accentRing) : 'border-slate-200',
+        dimmed && 'opacity-60',
+      )}
+    >
       <div className="flex items-center gap-2 mb-3">
         <div className={cn('h-7 w-7 rounded-lg grid place-items-center', iconCls)}>
           <Icon className="h-3.5 w-3.5" />
         </div>
         <span className="text-sm font-semibold text-slate-900">{label}</span>
+        {active && (
+          <span className="ml-auto text-[10px] font-medium uppercase tracking-wider text-slate-500">
+            Filtering · click to clear
+          </span>
+        )}
       </div>
       <dl className="grid grid-cols-3 gap-3">
         <div>
@@ -80,11 +106,11 @@ function Channel({
           <DeltaPill value={crDelta} />
         </div>
       </dl>
-    </div>
+    </Wrapper>
   );
 }
 
-export function ChannelMixCards({ snapshot, windowLabel }: Props) {
+export function ChannelMixCards({ snapshot, windowLabel, activeFocus = 'all', onSelect }: Props) {
   if (!snapshot) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
@@ -92,6 +118,10 @@ export function ChannelMixCards({ snapshot, windowLabel }: Props) {
       </div>
     );
   }
+  const handle = (focus: 'organic' | 'paid') => () => {
+    if (!onSelect) return;
+    onSelect(activeFocus === focus ? 'all' : focus);
+  };
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <Channel
@@ -104,6 +134,10 @@ export function ChannelMixCards({ snapshot, windowLabel }: Props) {
         getAppDelta={deltaPct(snapshot.organicGetApp, snapshot.organicGetAppPrior)}
         cr={snapshot.organicCr}
         crDelta={deltaPct(snapshot.organicCr, snapshot.organicCrPrior)}
+        active={activeFocus === 'organic'}
+        dimmed={activeFocus === 'paid'}
+        onClick={onSelect ? handle('organic') : undefined}
+        accentRing="ring-emerald-400"
       />
       <Channel
         label="Paid"
@@ -115,6 +149,10 @@ export function ChannelMixCards({ snapshot, windowLabel }: Props) {
         getAppDelta={deltaPct(snapshot.paidGetApp, snapshot.paidGetAppPrior)}
         cr={snapshot.paidCr}
         crDelta={deltaPct(snapshot.paidCr, snapshot.paidCrPrior)}
+        active={activeFocus === 'paid'}
+        dimmed={activeFocus === 'organic'}
+        onClick={onSelect ? handle('paid') : undefined}
+        accentRing="ring-amber-400"
       />
     </div>
   );

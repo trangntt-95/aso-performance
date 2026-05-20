@@ -17,6 +17,7 @@ import {
   channelSnapshotForWindow,
   windowDays,
   type OverviewWindow,
+  type SurfaceFocus,
 } from './aggregate';
 import { KpiTile } from './KpiTile';
 import { WindowSelector } from './WindowSelector';
@@ -76,15 +77,31 @@ interface OverviewProps {
 export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const { data, isLoading, error } = useSheetData();
   const [window, setWindow] = useState<OverviewWindow>('L7');
+  const [surfaceFocus, setSurfaceFocus] = useState<SurfaceFocus>('all');
 
-  const kpis = useMemo(() => computeKpis(data, window), [data, window]);
-  const trajectory = useMemo(() => marketTrajectory(data), [data]);
+  const kpis = useMemo(() => computeKpis(data, window, surfaceFocus), [data, window, surfaceFocus]);
+  const trajectory = useMemo(() => marketTrajectory(data, surfaceFocus), [data, surfaceFocus]);
   const split = useMemo(() => channelSplit(data), [data]);
-  const topCountries = useMemo(() => topCountriesFor(data, window), [data, window]);
-  const categoryShares = useMemo(() => categoryShareFor(data, window), [data, window]);
-  const volumeMovers = useMemo(() => topVolumeMovers(data, window, { limit: 8 }), [data, window]);
-  const topUsers = useMemo(() => topContributors(data, window, 'users', 20), [data, window]);
-  const topGetApp = useMemo(() => topContributors(data, window, 'getApp', 20), [data, window]);
+  const topCountries = useMemo(
+    () => topCountriesFor(data, window, 8, surfaceFocus),
+    [data, window, surfaceFocus],
+  );
+  const categoryShares = useMemo(
+    () => categoryShareFor(data, window, surfaceFocus),
+    [data, window, surfaceFocus],
+  );
+  const volumeMovers = useMemo(
+    () => topVolumeMovers(data, window, { limit: 8, surface: surfaceFocus }),
+    [data, window, surfaceFocus],
+  );
+  const topUsers = useMemo(
+    () => topContributors(data, window, 'users', 20, surfaceFocus),
+    [data, window, surfaceFocus],
+  );
+  const topGetApp = useMemo(
+    () => topContributors(data, window, 'getApp', 20, surfaceFocus),
+    [data, window, surfaceFocus],
+  );
   const channelSnapshot = useMemo(() => channelSnapshotForWindow(data, window), [data, window]);
   const openCountryDetail = useCountryDetailStore((s) => s.openCountry);
   const openCategoryDetail = useCategoryDetailStore((s) => s.openCategory);
@@ -106,10 +123,20 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   }, [kpis]);
   const totalCrPrior = useMemo(() => {
     if (!channelSnapshot) return null;
-    const u = channelSnapshot.paidUsersPrior + channelSnapshot.organicUsersPrior;
-    const g = channelSnapshot.paidGetAppPrior + channelSnapshot.organicGetAppPrior;
+    let u: number;
+    let g: number;
+    if (surfaceFocus === 'organic') {
+      u = channelSnapshot.organicUsersPrior;
+      g = channelSnapshot.organicGetAppPrior;
+    } else if (surfaceFocus === 'paid') {
+      u = channelSnapshot.paidUsersPrior;
+      g = channelSnapshot.paidGetAppPrior;
+    } else {
+      u = channelSnapshot.paidUsersPrior + channelSnapshot.organicUsersPrior;
+      g = channelSnapshot.paidGetAppPrior + channelSnapshot.organicGetAppPrior;
+    }
     return u > 0 ? g / u : null;
-  }, [channelSnapshot]);
+  }, [channelSnapshot, surfaceFocus]);
 
   if (error) {
     return (
@@ -141,6 +168,22 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               >
                 {composedVerdict.label}
               </span>
+            )}
+            {surfaceFocus !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setSurfaceFocus('all')}
+                className={cn(
+                  'inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition',
+                  surfaceFocus === 'organic'
+                    ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                    : 'bg-amber-100 text-amber-800 hover:bg-amber-200',
+                )}
+                title="Click to clear filter"
+              >
+                Filter: {surfaceFocus === 'organic' ? 'Organic' : 'Paid'} only
+                <span className="text-slate-500">✕</span>
+              </button>
             )}
           </div>
           <WindowSelector value={window} onChange={setWindow} />
@@ -185,9 +228,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             />
             <AdsTargetTile
               label={`Ads target · ${window}`}
-              pct={adsTargetPct}
-              actual={channelSnapshot?.paidGetApp ?? 0}
-              expected={adsTargetExpected}
+              pct={surfaceFocus === 'organic' ? null : adsTargetPct}
+              actual={surfaceFocus === 'organic' ? 0 : channelSnapshot?.paidGetApp ?? 0}
+              expected={surfaceFocus === 'organic' ? null : adsTargetExpected}
             />
           </>
         )}
@@ -197,7 +240,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         <div className="flex items-end justify-between">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Channel mix · {window}</h2>
-            <p className="text-[11px] text-slate-500">Organic vs paid · last {days}d vs prior {days}d</p>
+            <p className="text-[11px] text-slate-500">
+              Organic vs paid · last {days}d vs prior {days}d · <span className="text-indigo-600">click một thẻ để lọc toàn trang</span>
+            </p>
           </div>
         </div>
         {isLoading ? (
@@ -206,7 +251,12 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             <Skeleton className="h-32" />
           </div>
         ) : (
-          <ChannelMixCards snapshot={channelSnapshot} windowLabel={window} />
+          <ChannelMixCards
+            snapshot={channelSnapshot}
+            windowLabel={window}
+            activeFocus={surfaceFocus}
+            onSelect={setSurfaceFocus}
+          />
         )}
       </section>
 
