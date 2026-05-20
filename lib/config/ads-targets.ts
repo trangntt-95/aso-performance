@@ -54,22 +54,33 @@ export function expectedAdsInstalls(windowDays: number, asOf: Date = new Date())
 }
 
 /**
- * Runrate dự kiến cuối tháng dựa trên pace của window được chọn.
- *   pace = actualInstalls / windowDays
- *   projection = pace × số ngày trong tháng hiện tại
- *   pct = projection / current month target
- * Trả null nếu thiếu target tháng hiện tại hoặc windowDays/actualInstalls invalid.
+ * Runrate dự kiến cuối tháng theo pace window đang chọn.
+ *   effectiveDays = min(windowDays, days_elapsed_in_current_month)
+ *     — khi window > số ngày đã trôi qua trong tháng, ta treat data như MTD (97/20×31)
+ *     thay vì chia cứng cho windowDays (97/30×31). Khớp mental model của user:
+ *     "đạt X install trong N ngày của tháng, project tới cuối tháng".
+ *   projection = actualInstalls / effectiveDays × days_in_month
+ *   pct = projection / monthly_target
+ * Trả null nếu thiếu target tháng hoặc input invalid.
  */
 export function runrateAdsToMonthEnd(
   windowDays: number,
   actualInstalls: number,
   asOf: Date = new Date(),
-): { pct: number; projectedInstalls: number; monthlyTarget: number } | null {
+): { pct: number; projectedInstalls: number; monthlyTarget: number; effectiveDays: number } | null {
   if (!Number.isFinite(windowDays) || windowDays <= 0) return null;
   if (!Number.isFinite(actualInstalls) || actualInstalls < 0) return null;
   const monthlyTarget = ADS_MONTHLY_TARGETS[ymKey(asOf)];
   if (monthlyTarget === undefined || monthlyTarget <= 0) return null;
   const days = daysInMonth(asOf.getFullYear(), asOf.getMonth());
-  const projectedInstalls = (actualInstalls / windowDays) * days;
-  return { pct: projectedInstalls / monthlyTarget, projectedInstalls, monthlyTarget };
+  const daysElapsedInMonth = asOf.getDate();
+  const effectiveDays = Math.min(windowDays, daysElapsedInMonth);
+  if (effectiveDays <= 0) return null;
+  const projectedInstalls = (actualInstalls / effectiveDays) * days;
+  return {
+    pct: projectedInstalls / monthlyTarget,
+    projectedInstalls,
+    monthlyTarget,
+    effectiveDays,
+  };
 }

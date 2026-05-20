@@ -238,7 +238,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               runratePct={surfaceFocus === 'organic' ? null : adsRunrate?.pct ?? null}
               runrateTooltip={
                 adsRunrate
-                  ? `Project ${Math.round(adsRunrate.projectedInstalls)} installs / ${adsRunrate.monthlyTarget} target nếu giữ pace ${window}`
+                  ? `Pace = ${channelSnapshot?.paidGetApp ?? 0} / ${adsRunrate.effectiveDays}d → project ${Math.round(adsRunrate.projectedInstalls)} / ${adsRunrate.monthlyTarget} EOM`
                   : undefined
               }
             />
@@ -272,15 +272,24 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <SectionCard
-          title="Market trajectory · all windows"
-          hint="Δ Users % across recency windows. Hover to see GetApp and Weighted deltas + verdict."
+          title="Market Performance · all windows"
+          hint="Δ Users % across recency windows. Click a window to focus the whole page on it."
           cta={embedded ? undefined : 'Drill into Market Index'}
           href={embedded ? undefined : '/market-index'}
         >
           {isLoading ? (
             <Skeleton className="h-56" />
           ) : (
-            <MarketTrajectoryChart data={trajectory} metric="usersDelta" />
+            <MarketTrajectoryChart
+              data={trajectory}
+              metric="usersDelta"
+              activeWindow={window}
+              onWindowClick={(w) => {
+                if (['L3', 'L7', 'L14', 'L30', 'L90'].includes(w)) {
+                  setWindow(w as OverviewWindow);
+                }
+              }}
+            />
           )}
         </SectionCard>
         <SectionCard
