@@ -9,6 +9,8 @@ interface Props {
   pct: number | null;
   actual: number;
   expected: number | null;
+  runratePct?: number | null;
+  runrateTooltip?: string;
 }
 
 function toneFor(pct: number | null) {
@@ -19,7 +21,15 @@ function toneFor(pct: number | null) {
   return { ring: '#e11d48', label: 'text-rose-700', bg: 'border-rose-200 bg-rose-50/30' };
 }
 
-export function AdsTargetTile({ label, pct, actual, expected }: Props) {
+function runrateTextTone(pct: number | null | undefined) {
+  if (pct === null || pct === undefined) return 'text-slate-400';
+  if (pct >= 1) return 'text-emerald-700';
+  if (pct >= 0.9) return 'text-amber-700';
+  if (pct >= 0.7) return 'text-orange-700';
+  return 'text-rose-700';
+}
+
+export function AdsTargetTile({ label, pct, actual, expected, runratePct, runrateTooltip }: Props) {
   const t = toneFor(pct);
   const size = 72;
   const stroke = 8;
@@ -88,6 +98,17 @@ export function AdsTargetTile({ label, pct, actual, expected }: Props) {
           </span>
         </div>
         <div className="text-[10px] text-slate-500 mt-0.5">installs vs target</div>
+        {runratePct !== undefined && (
+          <div
+            className={cn('text-[10px] mt-1 font-medium tabular-nums', runrateTextTone(runratePct))}
+            title={runrateTooltip}
+          >
+            Runrate EOM:{' '}
+            <span className="font-semibold">
+              {runratePct === null ? '—' : `${Math.round(runratePct * 100)}%`}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { ArrowRight, AlertCircle, BarChart3, Globe2, Layers, ListChecks, Megaphone, Target, Users } from 'lucide-react';
-import { expectedAdsInstalls } from '@/lib/config/ads-targets';
+import { expectedAdsInstalls, runrateAdsToMonthEnd } from '@/lib/config/ads-targets';
 import { AdsTargetTile } from './AdsTargetTile';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import {
@@ -95,11 +95,11 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     [data, window, surfaceFocus],
   );
   const topUsers = useMemo(
-    () => topContributors(data, window, 'users', 20, surfaceFocus),
+    () => topContributors(data, window, 'users', 50, surfaceFocus),
     [data, window, surfaceFocus],
   );
   const topGetApp = useMemo(
-    () => topContributors(data, window, 'getApp', 20, surfaceFocus),
+    () => topContributors(data, window, 'getApp', 50, surfaceFocus),
     [data, window, surfaceFocus],
   );
   const channelSnapshot = useMemo(() => channelSnapshotForWindow(data, window), [data, window]);
@@ -117,6 +117,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     if (!channelSnapshot || !adsTargetExpected || adsTargetExpected <= 0) return null;
     return channelSnapshot.paidGetApp / adsTargetExpected;
   }, [channelSnapshot, adsTargetExpected]);
+  const adsRunrate = useMemo(() => {
+    if (!channelSnapshot) return null;
+    return runrateAdsToMonthEnd(days, channelSnapshot.paidGetApp);
+  }, [channelSnapshot, days]);
   const totalCr = useMemo(() => {
     if (!kpis.usersL) return null;
     return kpis.getAppL / kpis.usersL;
@@ -231,6 +235,12 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               pct={surfaceFocus === 'organic' ? null : adsTargetPct}
               actual={surfaceFocus === 'organic' ? 0 : channelSnapshot?.paidGetApp ?? 0}
               expected={surfaceFocus === 'organic' ? null : adsTargetExpected}
+              runratePct={surfaceFocus === 'organic' ? null : adsRunrate?.pct ?? null}
+              runrateTooltip={
+                adsRunrate
+                  ? `Project ${Math.round(adsRunrate.projectedInstalls)} installs / ${adsRunrate.monthlyTarget} target nếu giữ pace ${window}`
+                  : undefined
+              }
             />
           </>
         )}
