@@ -34,7 +34,13 @@ function posDeltaText(posL: number | null, posP: number | null): string | null {
   return `Rank ${sign} ${Math.abs(diff).toFixed(1)} bậc (${formatPos(posP)} → ${formatPos(posL)})`;
 }
 
-export function TopVolumeMovers({ movers }: { movers: VolumeMover[] }) {
+interface VolumeMoversProps {
+  movers: VolumeMover[];
+  activeKeyword?: string | null;
+  onRowClick?: (keyword: string) => void;
+}
+
+export function TopVolumeMovers({ movers, activeKeyword, onRowClick }: VolumeMoversProps) {
   if (movers.length === 0) {
     return (
       <div className="border rounded-lg bg-white py-4 text-center text-xs text-slate-500">
@@ -51,11 +57,18 @@ export function TopVolumeMovers({ movers }: { movers: VolumeMover[] }) {
         const deltaCls = up ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50';
         const Icon = up ? TrendingUp : TrendingDown;
         const posDelta = posDeltaText(m.posL, m.posP);
+        const isActive = activeKeyword?.toLowerCase() === m.keyword.toLowerCase();
 
         return (
           <article
             key={`${m.keyword}-${m.country}-${m.surface}-${i}`}
-            className="relative px-4 py-3 hover:bg-slate-50/60 transition"
+            onClick={() => onRowClick && onRowClick(m.keyword)}
+            className={cn(
+              'relative px-4 py-3 transition',
+              onRowClick && 'cursor-pointer',
+              isActive ? 'bg-violet-50 ring-1 ring-violet-300' : 'hover:bg-slate-50/60',
+            )}
+            title={onRowClick ? 'Click to filter page by this keyword' : undefined}
           >
             <span className={cn('absolute left-0 top-0 bottom-0 w-1', accent)} aria-hidden />
             <div className="flex items-start gap-3">

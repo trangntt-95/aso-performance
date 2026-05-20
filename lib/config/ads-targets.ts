@@ -54,25 +54,47 @@ export function expectedAdsInstalls(windowDays: number, asOf: Date = new Date())
 }
 
 /**
- * Runrate dự kiến cuối tháng theo pace window đang chọn.
- *   effectiveDays = min(windowDays, days_elapsed_in_current_month)
- *     — khi window > số ngày đã trôi qua trong tháng, ta treat data như MTD (97/20×31)
- *     thay vì chia cứng cho windowDays (97/30×31). Khớp mental model của user:
- *     "đạt X install trong N ngày của tháng, project tới cuối tháng".
- *   projection = actualInstalls / effectiveDays × days_in_month
- *   pct = projection / monthly_target
- * Trả null nếu thiếu target tháng hoặc input invalid.
+ * Runrate cuối kỳ theo window.
+ *   - L3/L7/L14/L30 (windowDays ≤ days_in_month):
+ *     pace = actual / min(windowDays, days_elapsed_in_month)  ← treat L30 mid-month như MTD
+ *     projection = pace × days_in_month
+ *     pct = projection / monthly_target
+ *   - L90 (windowDays > days_in_month):
+ *     pct = actual / L90 target (= tổng target 3 tháng gần nhất, lấy từ expectedAdsInstalls)
+ *     projection = actual (không extrapolate vì window đã ≥ 1 tháng)
+ * Trả null nếu thiếu target hoặc input invalid.
  */
 export function runrateAdsToMonthEnd(
   windowDays: number,
   actualInstalls: number,
   asOf: Date = new Date(),
-): { pct: number; projectedInstalls: number; monthlyTarget: number; effectiveDays: number } | null {
+): {
+  pct: number;
+  projectedInstalls: number;
+  targetInstalls: number;
+  effectiveDays: number;
+  mode: 'paced' | 'direct';
+} | null {
   if (!Number.isFinite(windowDays) || windowDays <= 0) return null;
   if (!Number.isFinite(actualInstalls) || actualInstalls < 0) return null;
+  const days = daysInMonth(asOf.getFullYear(), asOf.getMonth());
+
+  if (windowDays > days) {
+    // L90 (hoặc bất kỳ window > 1 tháng) → so trực tiếp với target của window.
+    const windowTarget = expectedAdsInstalls(windowDays, asOf);
+    if (windowTarget === null || windowTarget <= 0) return null;
+    return {
+      pct: actualInstalls / windowTarget,
+      projectedInstalls: actualInstalls,
+      targetInstalls: windowTarget,
+      effectiveDays: windowDays,
+      mode: 'direct',
+    };
+  }
+
+  // L3/L7/L14/L30 → pace × days_in_month / monthly_target.
   const monthlyTarget = ADS_MONTHLY_TARGETS[ymKey(asOf)];
   if (monthlyTarget === undefined || monthlyTarget <= 0) return null;
-  const days = daysInMonth(asOf.getFullYear(), asOf.getMonth());
   const daysElapsedInMonth = asOf.getDate();
   const effectiveDays = Math.min(windowDays, daysElapsedInMonth);
   if (effectiveDays <= 0) return null;
@@ -80,7 +102,8 @@ export function runrateAdsToMonthEnd(
   return {
     pct: projectedInstalls / monthlyTarget,
     projectedInstalls,
-    monthlyTarget,
+    targetInstalls: monthlyTarget,
     effectiveDays,
+    mode: 'paced',
   };
 }

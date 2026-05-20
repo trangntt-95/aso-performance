@@ -31,7 +31,6 @@ import { TopContributors } from './TopContributors';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatNumber, formatPercent, composeVerdict, verdictBadgeStyle } from '@/lib/utils/format';
-import { useCountryDetailStore } from '@/lib/store/countryDetailStore';
 import { useCategoryDetailStore } from '@/lib/store/categoryDetailStore';
 import { cn } from '@/lib/utils';
 
@@ -78,32 +77,41 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const { data, isLoading, error } = useSheetData();
   const [window, setWindow] = useState<OverviewWindow>('L7');
   const [surfaceFocus, setSurfaceFocus] = useState<SurfaceFocus>('all');
+  const [countryFocus, setCountryFocus] = useState<string | null>(null);
+  const [keywordFocus, setKeywordFocus] = useState<string | null>(null);
 
-  const kpis = useMemo(() => computeKpis(data, window, surfaceFocus), [data, window, surfaceFocus]);
-  const trajectory = useMemo(() => marketTrajectory(data, surfaceFocus), [data, surfaceFocus]);
+  const filters = useMemo(
+    () => ({ surface: surfaceFocus, country: countryFocus, keyword: keywordFocus }),
+    [surfaceFocus, countryFocus, keywordFocus],
+  );
+
+  const kpis = useMemo(() => computeKpis(data, window, filters), [data, window, filters]);
+  const trajectory = useMemo(() => marketTrajectory(data, filters), [data, filters]);
   const split = useMemo(() => channelSplit(data), [data]);
   const topCountries = useMemo(
-    () => topCountriesFor(data, window, 8, surfaceFocus),
-    [data, window, surfaceFocus],
+    () => topCountriesFor(data, window, 8, filters),
+    [data, window, filters],
   );
   const categoryShares = useMemo(
-    () => categoryShareFor(data, window, surfaceFocus),
-    [data, window, surfaceFocus],
+    () => categoryShareFor(data, window, filters),
+    [data, window, filters],
   );
   const volumeMovers = useMemo(
-    () => topVolumeMovers(data, window, { limit: 8, surface: surfaceFocus }),
-    [data, window, surfaceFocus],
+    () => topVolumeMovers(data, window, { limit: 8, ...filters }),
+    [data, window, filters],
   );
   const topUsers = useMemo(
-    () => topContributors(data, window, 'users', 50, surfaceFocus),
-    [data, window, surfaceFocus],
+    () => topContributors(data, window, 'users', 50, filters),
+    [data, window, filters],
   );
   const topGetApp = useMemo(
-    () => topContributors(data, window, 'getApp', 50, surfaceFocus),
-    [data, window, surfaceFocus],
+    () => topContributors(data, window, 'getApp', 50, filters),
+    [data, window, filters],
   );
-  const channelSnapshot = useMemo(() => channelSnapshotForWindow(data, window), [data, window]);
-  const openCountryDetail = useCountryDetailStore((s) => s.openCountry);
+  const channelSnapshot = useMemo(
+    () => channelSnapshotForWindow(data, window, filters),
+    [data, window, filters],
+  );
   const openCategoryDetail = useCategoryDetailStore((s) => s.openCategory);
 
   const headlineWindow = data?.marketIndex.summary.find((s) => s.window === window);
@@ -183,10 +191,42 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                     ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
                     : 'bg-amber-100 text-amber-800 hover:bg-amber-200',
                 )}
-                title="Click to clear filter"
+                title="Click to clear surface filter"
               >
-                Filter: {surfaceFocus === 'organic' ? 'Organic' : 'Paid'} only
-                <span className="text-slate-500">✕</span>
+                {surfaceFocus === 'organic' ? 'Organic' : 'Paid'} <span className="text-slate-500">✕</span>
+              </button>
+            )}
+            {countryFocus && (
+              <button
+                type="button"
+                onClick={() => setCountryFocus(null)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-sky-100 text-sky-800 hover:bg-sky-200 transition"
+                title="Click to clear country filter"
+              >
+                {countryFocus} <span className="text-slate-500">✕</span>
+              </button>
+            )}
+            {keywordFocus && (
+              <button
+                type="button"
+                onClick={() => setKeywordFocus(null)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-violet-100 text-violet-800 hover:bg-violet-200 transition max-w-[240px]"
+                title="Click to clear keyword filter"
+              >
+                <span className="truncate">{keywordFocus}</span> <span className="text-slate-500 shrink-0">✕</span>
+              </button>
+            )}
+            {(surfaceFocus !== 'all' || countryFocus || keywordFocus) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSurfaceFocus('all');
+                  setCountryFocus(null);
+                  setKeywordFocus(null);
+                }}
+                className="text-[11px] text-slate-500 hover:text-slate-700 underline underline-offset-2"
+              >
+                Clear all
               </button>
             )}
           </div>
@@ -238,7 +278,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               runratePct={surfaceFocus === 'organic' ? null : adsRunrate?.pct ?? null}
               runrateTooltip={
                 adsRunrate
-                  ? `Pace = ${channelSnapshot?.paidGetApp ?? 0} / ${adsRunrate.effectiveDays}d → project ${Math.round(adsRunrate.projectedInstalls)} / ${adsRunrate.monthlyTarget} EOM`
+                  ? adsRunrate.mode === 'direct'
+                    ? `Actual ${Math.round(adsRunrate.projectedInstalls)} / target L90 ${Math.round(adsRunrate.targetInstalls)} (tổng 3 tháng)`
+                    : `Pace = ${channelSnapshot?.paidGetApp ?? 0} / ${adsRunrate.effectiveDays}d → project ${Math.round(adsRunrate.projectedInstalls)} / ${Math.round(adsRunrate.targetInstalls)} EOM`
                   : undefined
               }
             />
@@ -312,7 +354,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           ) : (
             <TopCountriesChart
               data={topCountries}
-              onCountryClick={(c) => openCountryDetail(c, window)}
+              activeCountry={countryFocus}
+              onCountryClick={(c) => setCountryFocus(countryFocus === c ? null : c)}
             />
           )}
         </SectionCard>
@@ -343,7 +386,12 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             <Skeleton className="h-72" />
           </div>
         ) : (
-          <TopContributors users={topUsers} getApp={topGetApp} />
+          <TopContributors
+            users={topUsers}
+            getApp={topGetApp}
+            activeKeyword={keywordFocus}
+            onRowClick={(k) => setKeywordFocus(keywordFocus === k ? null : k)}
+          />
         )}
       </SectionCard>
 
@@ -351,7 +399,15 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         title={`Top biến động volume · ${window}`}
         hint="Keyword có biến động volume mạnh nhất (theo |Δ users %|). Sàng floor 30 users để loại noise, đã loại Vietnam + India. Số liệu → insight → action."
       >
-        {isLoading ? <Skeleton className="h-72" /> : <TopVolumeMovers movers={volumeMovers} />}
+        {isLoading ? (
+          <Skeleton className="h-72" />
+        ) : (
+          <TopVolumeMovers
+            movers={volumeMovers}
+            activeKeyword={keywordFocus}
+            onRowClick={(k) => setKeywordFocus(keywordFocus === k ? null : k)}
+          />
+        )}
       </SectionCard>
 
       {!embedded && (

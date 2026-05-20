@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -83,14 +84,20 @@ function CustomTooltip({ active, payload, label }: TooltipProps) {
           <dd className="font-semibold text-slate-900 text-[11px] break-words">{v.label}</dd>
         </div>
       </dl>
+      <div className="text-[9px] text-indigo-600 mt-1.5 font-medium">Click to focus →</div>
     </div>
   );
 }
 
 export function MarketTrajectoryChart({ data, metric, height = 220, onWindowClick, activeWindow }: Props) {
+  const [hoverWindow, setHoverWindow] = useState<string | null>(null);
   const handleBarClick = (entry: unknown) => {
     const win = (entry as { window?: string } | null | undefined)?.window;
     if (win && onWindowClick) onWindowClick(win);
+  };
+  const handleBarEnter = (entry: unknown) => {
+    const win = (entry as { window?: string } | null | undefined)?.window;
+    if (win) setHoverWindow(win);
   };
   return (
     <div style={{ height }}>
@@ -105,18 +112,23 @@ export function MarketTrajectoryChart({ data, metric, height = 220, onWindowClic
               const y = typeof p.y === 'number' ? p.y : 0;
               const val = p.payload?.value ?? '';
               const isActive = val === activeWindow;
+              const isHover = val === hoverWindow;
+              const fill = isActive ? '#4f46e5' : isHover ? '#6366f1' : '#64748b';
+              const fontWeight = isActive || isHover ? 700 : 400;
               return (
                 <text
                   x={x}
                   y={y + 10}
                   textAnchor="middle"
                   fontSize={11}
-                  fontWeight={isActive ? 700 : 400}
-                  fill={isActive ? '#4f46e5' : '#64748b'}
+                  fontWeight={fontWeight}
+                  fill={fill}
                   style={{ cursor: onWindowClick ? 'pointer' : 'default' }}
                   onClick={() => onWindowClick && onWindowClick(val)}
+                  onMouseEnter={() => setHoverWindow(val)}
+                  onMouseLeave={() => setHoverWindow(null)}
                 >
-                  {val}
+                  {val} {isHover && onWindowClick ? '↗' : ''}
                 </text>
               );
             }}
@@ -134,7 +146,7 @@ export function MarketTrajectoryChart({ data, metric, height = 220, onWindowClic
           />
           <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1} />
           <Tooltip
-            cursor={{ fill: '#f1f5f9' }}
+            cursor={{ fill: '#eef2ff' }}
             content={<CustomTooltip />}
             allowEscapeViewBox={{ x: false, y: false }}
             wrapperStyle={{ pointerEvents: 'none', zIndex: 50 }}
@@ -144,16 +156,24 @@ export function MarketTrajectoryChart({ data, metric, height = 220, onWindowClic
             radius={[6, 6, 0, 0]}
             maxBarSize={42}
             onClick={handleBarClick}
+            onMouseEnter={handleBarEnter}
+            onMouseLeave={() => setHoverWindow(null)}
             style={{ cursor: onWindowClick ? 'pointer' : 'default' }}
           >
-            {data.map((d, i) => (
-              <Cell
-                key={i}
-                fill={colorFor(d[metric])}
-                stroke={d.window === activeWindow ? '#4f46e5' : 'none'}
-                strokeWidth={d.window === activeWindow ? 2 : 0}
-              />
-            ))}
+            {data.map((d, i) => {
+              const isActive = d.window === activeWindow;
+              const isHover = d.window === hoverWindow;
+              return (
+                <Cell
+                  key={i}
+                  fill={colorFor(d[metric])}
+                  fillOpacity={isHover && !isActive ? 0.85 : 1}
+                  stroke={isActive ? '#4f46e5' : isHover ? '#6366f1' : 'none'}
+                  strokeWidth={isActive ? 2 : isHover ? 2 : 0}
+                  style={{ transition: 'stroke 120ms ease, fill-opacity 120ms ease' }}
+                />
+              );
+            })}
           </Bar>
         </BarChart>
       </ResponsiveContainer>

@@ -19,6 +19,7 @@ interface Props {
   data: CountryRollup[];
   height?: number;
   onCountryClick?: (country: string) => void;
+  activeCountry?: string | null;
 }
 
 function tickFmt(n: number): string {
@@ -26,7 +27,7 @@ function tickFmt(n: number): string {
   return String(n);
 }
 
-export function TopCountriesChart({ data, height = 280, onCountryClick }: Props) {
+export function TopCountriesChart({ data, height = 280, onCountryClick, activeCountry }: Props) {
   const clickable = Boolean(onCountryClick);
   return (
     <div style={{ height }}>
@@ -66,9 +67,20 @@ export function TopCountriesChart({ data, height = 280, onCountryClick }: Props)
               if (c && onCountryClick) onCountryClick(c);
             }}
           >
-            {data.map((_, i) => (
-              <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
-            ))}
+            {data.map((d, i) => {
+              const isActive = activeCountry === d.country;
+              const dimmed = activeCountry && !isActive;
+              return (
+                <Cell
+                  key={i}
+                  fill={PALETTE[i % PALETTE.length]}
+                  fillOpacity={dimmed ? 0.35 : 1}
+                  stroke={isActive ? '#0c4a6e' : 'none'}
+                  strokeWidth={isActive ? 2 : 0}
+                  style={{ transition: 'fill-opacity 120ms ease, stroke 120ms ease' }}
+                />
+              );
+            })}
           </Bar>
         </BarChart>
       </ResponsiveContainer>

@@ -13,9 +13,11 @@ interface ColumnProps {
   Icon: typeof Users;
   rows: ContributorRow[];
   accent: 'indigo' | 'emerald';
+  activeKeyword?: string | null;
+  onRowClick?: (keyword: string) => void;
 }
 
-function Column({ title, unitLabel, Icon, rows, accent }: ColumnProps) {
+function Column({ title, unitLabel, Icon, rows, accent, activeKeyword, onRowClick }: ColumnProps) {
   const headerColor = accent === 'indigo' ? 'text-indigo-700' : 'text-emerald-700';
   const barColor = accent === 'indigo' ? 'bg-indigo-500' : 'bg-emerald-500';
   const barBg = accent === 'indigo' ? 'bg-indigo-100' : 'bg-emerald-100';
@@ -38,8 +40,19 @@ function Column({ title, unitLabel, Icon, rows, accent }: ColumnProps) {
         </span>
       </div>
       <ol className="divide-y max-h-[420px] overflow-y-auto">
-        {rows.map((r, i) => (
-          <li key={`${r.keyword}-${i}`} className="px-3 py-2.5 hover:bg-slate-50/60 transition">
+        {rows.map((r, i) => {
+          const isActive = activeKeyword?.toLowerCase() === r.keyword.toLowerCase();
+          return (
+          <li
+            key={`${r.keyword}-${i}`}
+            onClick={() => onRowClick && onRowClick(r.keyword)}
+            className={cn(
+              'px-3 py-2.5 transition',
+              onRowClick && 'cursor-pointer',
+              isActive ? 'bg-violet-50 ring-1 ring-violet-300' : 'hover:bg-slate-50/60',
+            )}
+            title={onRowClick ? 'Click to filter page by this keyword' : undefined}
+          >
             <div className="flex items-start gap-3">
               <span className="text-[11px] font-mono font-semibold text-slate-400 w-5 shrink-0 mt-0.5">
                 {(i + 1).toString().padStart(2, '0')}
@@ -76,7 +89,8 @@ function Column({ title, unitLabel, Icon, rows, accent }: ColumnProps) {
               </div>
             </div>
           </li>
-        ))}
+          );
+        })}
       </ol>
     </div>
   );
@@ -85,18 +99,30 @@ function Column({ title, unitLabel, Icon, rows, accent }: ColumnProps) {
 interface Props {
   users: ContributorRow[];
   getApp: ContributorRow[];
+  activeKeyword?: string | null;
+  onRowClick?: (keyword: string) => void;
 }
 
-export function TopContributors({ users, getApp }: Props) {
+export function TopContributors({ users, getApp, activeKeyword, onRowClick }: Props) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <Column title="Top Users" unitLabel="users · share %" Icon={Users} rows={users} accent="indigo" />
+      <Column
+        title="Top Users"
+        unitLabel="users · share %"
+        Icon={Users}
+        rows={users}
+        accent="indigo"
+        activeKeyword={activeKeyword}
+        onRowClick={onRowClick}
+      />
       <Column
         title="Top GetApp"
         unitLabel="installs · share %"
         Icon={Target}
         rows={getApp}
         accent="emerald"
+        activeKeyword={activeKeyword}
+        onRowClick={onRowClick}
       />
     </div>
   );

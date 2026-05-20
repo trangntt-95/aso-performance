@@ -35,28 +35,47 @@ export function windowDays(w: OverviewWindow): number {
 
 export type SurfaceFocus = 'all' | 'organic' | 'paid';
 
-function filterSurface(rows: KeywordRow[], surface: SurfaceFocus): KeywordRow[] {
-  if (surface === 'all') return rows;
-  const target = surface === 'paid' ? 'search_ad' : 'search';
-  return rows.filter((r) => r.surface === target);
+export interface OverviewFilters {
+  surface?: SurfaceFocus;
+  country?: string | null;
+  keyword?: string | null;
+}
+
+function applyFilters(rows: KeywordRow[], opts: OverviewFilters): KeywordRow[] {
+  let out = rows;
+  const surface = opts.surface ?? 'all';
+  if (surface !== 'all') {
+    const target = surface === 'paid' ? 'search_ad' : 'search';
+    out = out.filter((r) => r.surface === target);
+  }
+  if (opts.country) {
+    out = out.filter((r) => r.country === opts.country);
+  }
+  if (opts.keyword) {
+    const kw = opts.keyword.toLowerCase();
+    out = out.filter((r) => r.searchTerm.toLowerCase() === kw);
+  }
+  return out;
 }
 
 function rowsForWindow(
   data: SheetPayload | undefined,
   window: OverviewWindow,
-  surface: SurfaceFocus = 'all',
+  opts: OverviewFilters = {},
 ): KeywordRow[] {
   if (!data) return [];
-  return filterSurface(data[KEYWORD_TAB_BY_WINDOW[window]] as KeywordRow[], surface);
+  // Country filter requires the Country_L tabs (which carry the country column).
+  const tab = opts.country ? COUNTRY_TAB_BY_WINDOW[window] : KEYWORD_TAB_BY_WINDOW[window];
+  return applyFilters(data[tab] as KeywordRow[], opts);
 }
 
 function countryRowsForWindow(
   data: SheetPayload | undefined,
   window: OverviewWindow,
-  surface: SurfaceFocus = 'all',
+  opts: OverviewFilters = {},
 ): KeywordRow[] {
   if (!data) return [];
-  return filterSurface(data[COUNTRY_TAB_BY_WINDOW[window]] as KeywordRow[], surface);
+  return applyFilters(data[COUNTRY_TAB_BY_WINDOW[window]] as KeywordRow[], opts);
 }
 
 export interface OverviewKpi {
@@ -94,7 +113,7 @@ function pctDelta(curr: number, prev: number): number {
 export function computeKpis(
   data: SheetPayload | undefined,
   window: OverviewWindow,
-  surface: SurfaceFocus = 'all',
+  opts: OverviewFilters = {},
 ): OverviewKpi {
   const fallback = {
     window,
@@ -110,7 +129,7 @@ export function computeKpis(
   };
   if (!data) return fallback;
 
-  const rows = rowsForWindow(data, window, surface);
+  const rows = rowsForWindow(data, window, opts);
   const totals = sumAllLx(rows);
   const alertCount = rows.filter((r) => r.alert && r.alert !== 'OK').length;
 
@@ -164,9 +183,11 @@ function splitBySurface(rows: KeywordRow[]) {
 export function channelSnapshotForWindow(
   data: SheetPayload | undefined,
   window: OverviewWindow,
+  opts: OverviewFilters = {},
 ): ChannelSnapshot | null {
   if (!data) return null;
-  const rows = rowsForWindow(data, window);
+  // ChannelSnapshot needs both surfaces — strip the surface filter, keep country/keyword.
+  const rows = rowsForWindow(data, window, { country: opts.country, keyword: opts.keyword });
   if (rows.length === 0) return null;
   const { org, paid } = splitBySurface(rows);
   return {
@@ -195,22 +216,23 @@ export interface MarketTrajectoryPoint {
 
 export function marketTrajectory(
   data: SheetPayload | undefined,
-  surface: SurfaceFocus = 'all',
+  opts: OverviewFilters = {},
 ): MarketTrajectoryPoint[] {
   if (!data) return [];
   const summaryByWindow = new Map<string, MarketIndexSummaryRow>();
   data.marketIndex.summary.forEach((s) => summaryByWindow.set(s.window, s));
+  const unfiltered = !opts.surface || opts.surface === 'all';
+  const noFocus = unfiltered && !opts.country && !opts.keyword;
   return OVERVIEW_WINDOWS.map((w) => {
-    const totals = sumAllLx(rowsForWindow(data, w, surface));
+    const totals = sumAllLx(rowsForWindow(data, w, opts));
     const usersDelta = pctDelta(totals.usersL, totals.usersP) * 100;
     const getAppDelta = pctDelta(totals.getAppL, totals.getAppP) * 100;
     const m = summaryByWindow.get(w);
-    // weightedDelta from marketIndex is whole-market; fall back to surface-scoped usersDelta when filtered.
     return {
       window: w,
       usersDelta,
       getAppDelta,
-      weightedDelta: surface === 'all' && m ? m.deltaWeightedPct * 100 : usersDelta,
+      weightedDelta: noFocus && m ? m.deltaWeightedPct * 100 : usersDelta,
       verdict: m?.verdict ?? '→ STABLE',
     };
   });
@@ -250,9 +272,11 @@ export function topCountriesFor(
   data: SheetPayload | undefined,
   window: OverviewWindow,
   limit = 8,
-  surface: SurfaceFocus = 'all',
+  opts: OverviewFilters = {},
 ): CountryRollup[] {
-  const rows = countryRowsForWindow(data, window, surface);
+  // Country filter is intentionally dropped here: the chart needs all countries
+  // to remain visible so the user can swap their focus.
+  const rows = countryRowsForWindow(data, window, { surface: opts.surface, keyword: opts.keyword });
   const map = new Map<string, CountryRollup>();
   rows.forEach((r) => {
     if (!r.country) return;
@@ -278,9 +302,9 @@ export interface CategoryShare {
 export function categoryShareFor(
   data: SheetPayload | undefined,
   window: OverviewWindow,
-  surface: SurfaceFocus = 'all',
+  opts: OverviewFilters = {},
 ): CategoryShare[] {
-  const rows = rowsForWindow(data, window, surface);
+  const rows = rowsForWindow(data, window, opts);
   const map = new Map<string, CategoryShare>();
   let totalUsers = 0;
   rows.forEach((r) => {
@@ -322,12 +346,12 @@ function mapSurface(s: string): SurfaceLabel {
 export function topVolumeMovers(
   data: SheetPayload | undefined,
   window: OverviewWindow,
-  options: { limit?: number; minUsersFloor?: number; surface?: SurfaceFocus } = {},
+  options: { limit?: number; minUsersFloor?: number } & OverviewFilters = {},
 ): VolumeMover[] {
   if (!data) return [];
-  const { limit = 8, minUsersFloor = 30, surface = 'all' } = options;
+  const { limit = 8, minUsersFloor = 30, surface = 'all', country = null, keyword = null } = options;
 
-  const rows = countryRowsForWindow(data, window, surface);
+  const rows = countryRowsForWindow(data, window, { surface, country, keyword });
 
   const actionIndex = new Map<string, ActionQueueRow>();
   data.actionQueue.forEach((a) => {
@@ -382,10 +406,10 @@ export function topContributors(
   window: OverviewWindow,
   metric: 'users' | 'getApp',
   limit = 8,
-  surface: SurfaceFocus = 'all',
+  opts: OverviewFilters = {},
 ): ContributorRow[] {
   if (!data) return [];
-  const rows = rowsForWindow(data, window, surface);
+  const rows = rowsForWindow(data, window, opts);
   const key: keyof KeywordRow = metric === 'users' ? 'usersL' : 'getAppL';
   const total = rows.reduce((s, r) => s + (r[key] as number), 0);
   if (total <= 0) return [];
