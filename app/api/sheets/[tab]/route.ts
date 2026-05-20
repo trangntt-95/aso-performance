@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { fetchTab } from '@/lib/sheets/client';
 import { TABS, type TabName } from '@/lib/sheets/tabs';
 
-export const revalidate = 3600;
+export const revalidate = 600;
 export const dynamic = 'force-dynamic';
 
 export async function GET(_req: Request, { params }: { params: { tab: string } }) {

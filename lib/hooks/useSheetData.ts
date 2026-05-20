@@ -18,7 +18,7 @@ export function useSheetData() {
   return useQuery({
     queryKey: QUERY_KEY,
     queryFn: fetchSheetData,
-    staleTime: 60 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 }

@@ -11,7 +11,7 @@ import {
 } from '@/lib/sheets/parsers';
 import type { SheetPayload } from '@/lib/sheets/types';
 
-export const revalidate = 3600;
+export const revalidate = 600;
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
@@ -39,7 +39,7 @@ export async function GET() {
     };
     return NextResponse.json(payload, {
       headers: {
-        'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
+        'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=86400',
       },
     });
   } catch (err) {
