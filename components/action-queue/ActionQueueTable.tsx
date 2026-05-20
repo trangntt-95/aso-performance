@@ -7,21 +7,16 @@ import { PRIORITY_ORDER } from '@/lib/utils/colors';
 import type { ActionQueueRow } from '@/lib/sheets/types';
 import { ActionQueueRowItem } from './ActionQueueRow';
 import { FiltersBar, DEFAULT_FILTERS, type FilterState } from './FiltersBar';
-import { PriorityLegend } from './PriorityLegend';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle } from 'lucide-react';
-import { topP0Actions } from '@/components/overview/aggregate';
-import { TopPriorityActionsBlock } from '@/components/overview/TopPriorityActionsBlock';
 
 function matchesAlert(alert: string, pattern: FilterState['alertPattern']): boolean {
   if (pattern === 'all') return true;
   if (pattern === 'geo') return alert.startsWith('🎯');
   const negative = ['🚨', '⚠️', '💔', '💸', '📉'];
   const positive = ['🌱', '📈', '❤️', '💚', '🚀'];
-  const firstChar = alert.charAt(0);
   if (pattern === 'negative') return negative.some((c) => alert.startsWith(c));
   if (pattern === 'positive') return positive.some((c) => alert.startsWith(c));
-  void firstChar;
   return true;
 }
 
@@ -31,16 +26,6 @@ export function ActionQueueTable() {
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
 
   const allRows = useMemo(() => data?.actionQueue ?? [], [data]);
-
-  const topActionsAll = useMemo(() => topP0Actions(allRows), [allRows]);
-  const topActionsPaid = useMemo(
-    () => topActionsAll.filter((r) => r.surface === 'paid').slice(0, 5),
-    [topActionsAll],
-  );
-  const topActionsOrganic = useMemo(
-    () => topActionsAll.filter((r) => r.surface === 'organic').slice(0, 5),
-    [topActionsAll],
-  );
 
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
@@ -83,40 +68,18 @@ export function ActionQueueTable() {
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-        <header className="flex items-end justify-between gap-3 px-4 pt-3 pb-2">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">Top priority actions this week</h2>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              P0 + P1 từ daily ASO tracker, sort theo urgency score. Đã loại Vietnam + India (luôn exclude khỏi paid ads). Score = severity × volume × surface.
-            </p>
-          </div>
-        </header>
-        <div className="px-4 pb-4">
-          <TopPriorityActionsBlock
-            paid={topActionsPaid}
-            organic={topActionsOrganic}
-            isLoading={isLoading}
-            emptyAll={!isLoading && topActionsAll.length === 0}
-          />
-        </div>
-      </section>
-
-      <PriorityLegend />
+    <div className="space-y-3">
       <FiltersBar rows={allRows} value={filters} onChange={setFilters} />
-      <div className="text-xs text-slate-500 flex items-center justify-between px-1">
-        <span>
-          {isLoading
-            ? 'Loading…'
-            : `${filtered.length} of ${allRows.length} action${allRows.length === 1 ? '' : 's'}`}
-        </span>
+      <div className="text-[11px] text-slate-500 px-1">
+        {isLoading
+          ? 'Loading…'
+          : `${filtered.length} of ${allRows.length} action${allRows.length === 1 ? '' : 's'}`}
       </div>
-      <div className="border rounded-lg overflow-hidden bg-white divide-y">
+      <div className="border rounded-lg overflow-hidden bg-white">
         {isLoading && (
           <div className="p-3 space-y-2">
             {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
+              <Skeleton key={i} className="h-8 w-full" />
             ))}
           </div>
         )}

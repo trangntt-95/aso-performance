@@ -137,7 +137,7 @@ function MoverRow({
           {/* Số liệu: abs → abs (delta %) cho từng metric */}
           <div className="mt-1 text-[12px] text-slate-700 flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums">
             <span>
-              <span className="text-slate-500">U:</span>{' '}
+              <span className="text-slate-500">Users:</span>{' '}
               <span className="font-mono">{formatNumber(m.usersP)}→{formatNumber(m.usersL)}</span>{' '}
               <span className={cn('text-[11px]', diag.changes[0]?.tone === 'pos' ? 'text-emerald-700' : diag.changes[0]?.tone === 'neg' ? 'text-rose-700' : 'text-slate-500')}>
                 ({pct(m.deltaUsersPct)})
@@ -145,7 +145,7 @@ function MoverRow({
             </span>
             {(m.getAppP > 0 || m.getAppL > 0) && (
               <span>
-                <span className="text-slate-500">I:</span>{' '}
+                <span className="text-slate-500">GetApp:</span>{' '}
                 <span className="font-mono">{formatNumber(m.getAppP)}→{formatNumber(m.getAppL)}</span>{' '}
                 {m.deltaGetAppPct !== null && (
                   <span className={cn('text-[11px]', tone(m.deltaGetAppPct) === 'pos' ? 'text-emerald-700' : tone(m.deltaGetAppPct) === 'neg' ? 'text-rose-700' : 'text-slate-500')}>

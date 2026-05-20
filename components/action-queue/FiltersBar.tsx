@@ -48,7 +48,7 @@ const SURFACES: Array<{ value: FilterState['surface']; label: string }> = [
 ];
 
 const ALERT_PATTERNS: Array<{ value: FilterState['alertPattern']; label: string }> = [
-  { value: 'all', label: 'All alerts' },
+  { value: 'all', label: 'All' },
   { value: 'negative', label: 'Negative' },
   { value: 'positive', label: 'Positive' },
   { value: 'geo', label: '🎯 Geo' },
@@ -78,14 +78,41 @@ function Pill({
       type="button"
       onClick={onClick}
       className={cn(
-        'px-2.5 py-1 rounded-full border text-xs transition shrink-0',
+        'px-2 py-0.5 rounded-full border text-[11px] transition shrink-0',
         active
-          ? 'bg-slate-900 text-white border-gray-900'
-          : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400',
+          ? 'bg-slate-900 text-white border-slate-900'
+          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400',
       )}
     >
       {children}
     </button>
+  );
+}
+
+function Select<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
+  label: string;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as T)}
+      className="h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+      title={label}
+    >
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -103,7 +130,8 @@ export function FiltersBar({ rows, value, onChange }: Props) {
     };
   }, [rows]);
 
-  const set = <K extends keyof FilterState>(key: K, v: FilterState[K]) => onChange({ ...value, [key]: v });
+  const set = <K extends keyof FilterState>(key: K, v: FilterState[K]) =>
+    onChange({ ...value, [key]: v });
   const dirty =
     value.search !== '' ||
     value.priority !== 'all' ||
@@ -114,78 +142,66 @@ export function FiltersBar({ rows, value, onChange }: Props) {
     value.status !== 'unresolved';
 
   return (
-    <div className="space-y-2 sticky top-[57px] z-20 bg-slate-50 py-2 -mx-4 px-4 md:-mx-6 md:px-6 border-b">
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-        <Input
-          value={value.search}
-          onChange={(e) => set('search', e.target.value)}
-          placeholder="Search keyword, country, camp…"
-          className="pl-8 h-9"
+    <div className="sticky top-[57px] z-20 bg-slate-50 py-2 -mx-4 px-4 md:-mx-6 md:px-6 border-b space-y-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-md">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+          <Input
+            value={value.search}
+            onChange={(e) => set('search', e.target.value)}
+            placeholder="Search keyword, country, camp…"
+            className="pl-7 h-8 text-sm"
+          />
+        </div>
+        <Select
+          value={value.status}
+          onChange={(v) => set('status', v)}
+          options={STATUSES}
+          label="Status"
         />
-      </div>
-      <div className="flex flex-wrap gap-1.5 items-center">
-        <span className="text-[10px] uppercase tracking-wide text-slate-500 mr-1">Priority</span>
-        {PRIORITIES.map((p) => (
-          <Pill key={p.value} active={value.priority === p.value} onClick={() => set('priority', p.value)}>
-            {p.label}
-          </Pill>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-1.5 items-center">
-        <span className="text-[10px] uppercase tracking-wide text-slate-500 mr-1">Surface</span>
-        {SURFACES.map((s) => (
-          <Pill key={s.value} active={value.surface === s.value} onClick={() => set('surface', s.value)}>
-            {s.label}
-          </Pill>
-        ))}
-        <span className="text-[10px] uppercase tracking-wide text-slate-500 ml-2 mr-1">Alert</span>
-        {ALERT_PATTERNS.map((a) => (
-          <Pill key={a.value} active={value.alertPattern === a.value} onClick={() => set('alertPattern', a.value)}>
-            {a.label}
-          </Pill>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-1.5 items-center">
-        <span className="text-[10px] uppercase tracking-wide text-slate-500 mr-1">Status</span>
-        {STATUSES.map((s) => (
-          <Pill key={s.value} active={value.status === s.value} onClick={() => set('status', s.value)}>
-            {s.label}
-          </Pill>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-1.5 items-center">
-        <span className="text-[10px] uppercase tracking-wide text-slate-500 mr-1">Category</span>
-        <Pill active={value.category === 'all'} onClick={() => set('category', 'all')}>
-          All
-        </Pill>
-        {categories.map((c) => (
-          <Pill key={c} active={value.category === c} onClick={() => set('category', c as Category)}>
-            {c}
-          </Pill>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-1.5 items-center">
-        <span className="text-[10px] uppercase tracking-wide text-slate-500 mr-1">Country</span>
-        <Pill active={value.country === 'all'} onClick={() => set('country', 'all')}>
-          All
-        </Pill>
-        {countries.map((c) => (
-          <Pill key={c} active={value.country === c} onClick={() => set('country', c)}>
-            {c}
-          </Pill>
-        ))}
+        <Select
+          value={value.category as string}
+          onChange={(v) => set('category', v as Category | 'all')}
+          options={[{ value: 'all', label: 'Category: All' }, ...categories.map((c) => ({ value: c, label: c }))]}
+          label="Category"
+        />
+        <Select
+          value={value.country}
+          onChange={(v) => set('country', v)}
+          options={[{ value: 'all', label: 'Country: All' }, ...countries.map((c) => ({ value: c, label: c }))]}
+          label="Country"
+        />
         {dirty && (
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 ml-auto text-xs gap-1"
+            className="h-7 text-xs gap-1"
             onClick={() => onChange(DEFAULT_FILTERS)}
           >
             <X className="h-3 w-3" />
             Reset
           </Button>
         )}
+      </div>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] uppercase tracking-wide text-slate-400">P</span>
+        {PRIORITIES.map((p) => (
+          <Pill key={p.value} active={value.priority === p.value} onClick={() => set('priority', p.value)}>
+            {p.label}
+          </Pill>
+        ))}
+        <span className="text-[10px] uppercase tracking-wide text-slate-400 ml-2">Surface</span>
+        {SURFACES.map((s) => (
+          <Pill key={s.value} active={value.surface === s.value} onClick={() => set('surface', s.value)}>
+            {s.label}
+          </Pill>
+        ))}
+        <span className="text-[10px] uppercase tracking-wide text-slate-400 ml-2">Alert</span>
+        {ALERT_PATTERNS.map((a) => (
+          <Pill key={a.value} active={value.alertPattern === a.value} onClick={() => set('alertPattern', a.value)}>
+            {a.label}
+          </Pill>
+        ))}
       </div>
     </div>
   );

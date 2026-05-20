@@ -16,9 +16,9 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { href: '/', label: 'Overview', Icon: LayoutDashboard, shortLabel: 'Home' },
   { href: '/market-index', label: 'Market Health', Icon: BarChart3, shortLabel: 'Market' },
-  { href: '/actions', label: 'Action Queue', Icon: ListChecks, shortLabel: 'Actions' },
   { href: '/tier1-watch', label: 'Tier 1 Watch', Icon: Globe2, shortLabel: 'Tier 1' },
   { href: '/categories', label: 'Categories', Icon: Layers, shortLabel: 'Cats' },
+  { href: '/actions', label: 'Action Queue', Icon: ListChecks, shortLabel: 'Actions' },
 ];
 
 export function Sidebar() {
