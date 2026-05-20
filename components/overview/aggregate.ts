@@ -443,6 +443,57 @@ export function topContributors(
   return { rows: ranked, total, fullCount: rows.length };
 }
 
+// ---------------------------------------------------------------------------
+// Daily trend (from History tab)
+// History is per-day per-keyword usersL7D snapshots. Aggregate by date.
+// ---------------------------------------------------------------------------
+
+export interface DailyTrendPoint {
+  date: string; // ISO yyyy-mm-dd
+  dateLabel: string; // dd/mm for X-axis
+  users: number;
+  getApp: number | null; // not in History yet
+}
+
+function excelSerialToDate(serial: number): Date {
+  // Excel epoch = 1899-12-30 (UTC). 25569 = days between that and 1970-01-01.
+  return new Date((serial - 25569) * 86400 * 1000);
+}
+
+export function dailyTrend(
+  data: SheetPayload | undefined,
+  opts: OverviewFilters = {},
+): DailyTrendPoint[] {
+  if (!data) return [];
+  const surface = opts.surface ?? 'all';
+  const kw = opts.keyword?.toLowerCase();
+  const byDate = new Map<number, number>();
+  for (const r of data.history) {
+    if (surface !== 'all') {
+      const target = surface === 'paid' ? 'search_ad' : 'search';
+      if (r.surface !== target) continue;
+    }
+    if (kw && r.searchTerm.toLowerCase() !== kw) continue;
+    const serial = typeof r.snapshotDate === 'number' ? r.snapshotDate : Number(r.snapshotDate);
+    if (!Number.isFinite(serial)) continue;
+    byDate.set(serial, (byDate.get(serial) ?? 0) + r.usersL7D);
+  }
+  return Array.from(byDate.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([serial, users]) => {
+      const d = excelSerialToDate(serial);
+      const yyyy = d.getUTCFullYear();
+      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(d.getUTCDate()).padStart(2, '0');
+      return {
+        date: `${yyyy}-${mm}-${dd}`,
+        dateLabel: `${dd}/${mm}`,
+        users,
+        getApp: null,
+      };
+    });
+}
+
 export function topP0Actions(actions: ActionQueueRow[], limit = 50): ActionQueueRow[] {
   return [...actions]
     .filter((a) => a.priority === 'P0' || a.priority === 'P1')

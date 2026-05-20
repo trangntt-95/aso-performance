@@ -15,6 +15,7 @@ import {
   topVolumeMovers,
   topContributors,
   channelSnapshotForWindow,
+  dailyTrend,
   windowDays,
   type OverviewWindow,
   type SurfaceFocus,
@@ -24,6 +25,7 @@ import { WindowSelector } from './WindowSelector';
 import { ChannelMixCards } from './ChannelMixCards';
 import { MarketTrajectoryChart } from './MarketTrajectoryChart';
 import { ChannelSplitChart } from './ChannelSplitChart';
+import { DailyTrendChart } from './DailyTrendChart';
 import { TopCountriesChart } from './TopCountriesChart';
 import { CategoryShareDonut } from './CategoryShareDonut';
 import { TopVolumeMovers } from './TopVolumeMovers';
@@ -79,6 +81,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const [surfaceFocus, setSurfaceFocus] = useState<SurfaceFocus>('all');
   const [countryFocus, setCountryFocus] = useState<string | null>(null);
   const [keywordFocus, setKeywordFocus] = useState<string | null>(null);
+  const [splitMetric, setSplitMetric] = useState<'users' | 'getapp'>('users');
 
   const filters = useMemo(
     () => ({ surface: surfaceFocus, country: countryFocus, keyword: keywordFocus }),
@@ -89,9 +92,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const trajectory = useMemo(() => marketTrajectory(data, filters), [data, filters]);
   const split = useMemo(() => channelSplit(data), [data]);
   const topCountries = useMemo(
-    () => topCountriesFor(data, window, 8, filters),
+    () => topCountriesFor(data, window, 55, filters),
     [data, window, filters],
   );
+  const dailyTrendData = useMemo(() => dailyTrend(data, filters), [data, filters]);
   const categoryShares = useMemo(
     () => categoryShareFor(data, window, filters),
     [data, window, filters],
@@ -275,7 +279,13 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               pct={surfaceFocus === 'organic' ? null : adsTargetPct}
               actual={surfaceFocus === 'organic' ? 0 : channelSnapshot?.paidGetApp ?? 0}
               expected={surfaceFocus === 'organic' ? null : adsTargetExpected}
-              runratePct={surfaceFocus === 'organic' ? null : adsRunrate?.pct ?? null}
+              runratePct={
+                window !== 'L30' && window !== 'L90'
+                  ? undefined
+                  : surfaceFocus === 'organic'
+                  ? null
+                  : adsRunrate?.pct ?? null
+              }
               runrateTooltip={
                 adsRunrate
                   ? adsRunrate.mode === 'direct'
@@ -336,27 +346,69 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         </SectionCard>
         <SectionCard
           title="Channel split % · all windows"
-          hint="Tỉ trọng Organic vs Paid (theo Users) qua từng window — line chart, hover thấy số tuyệt đối."
+          hint={`Tỉ trọng Organic vs Paid (theo ${splitMetric === 'users' ? 'Users' : 'GetApp'}) qua từng window — hover thấy số tuyệt đối.`}
         >
-          {isLoading ? <Skeleton className="h-56" /> : <ChannelSplitChart data={split} metric="users" />}
+          <div className="mb-2 flex justify-end">
+            <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
+              <button
+                type="button"
+                onClick={() => setSplitMetric('users')}
+                className={cn(
+                  'px-2.5 py-1 font-medium transition',
+                  splitMetric === 'users'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-50',
+                )}
+              >
+                Users
+              </button>
+              <button
+                type="button"
+                onClick={() => setSplitMetric('getapp')}
+                className={cn(
+                  'px-2.5 py-1 font-medium transition border-l border-slate-200',
+                  splitMetric === 'getapp'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-50',
+                )}
+              >
+                GetApp
+              </button>
+            </div>
+          </div>
+          {isLoading ? <Skeleton className="h-56" /> : <ChannelSplitChart data={split} metric={splitMetric} />}
         </SectionCard>
       </section>
+
+      <SectionCard
+        title="Daily trend · last weeks"
+        hint="Daily snapshots từ History tab. Users là usersL7D (rolling 7-day). GetApp chưa có trong History — cần update Apps Script."
+      >
+        {isLoading ? (
+          <Skeleton className="h-56" />
+        ) : (
+          <DailyTrendChart data={dailyTrendData} />
+        )}
+      </SectionCard>
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <SectionCard
           title={`Top countries · ${window}`}
-          hint="Click a bar to see paid/organic split + top contributing keywords"
+          hint={`Click 1 country để filter toàn page (active: ${countryFocus ?? 'none'}). ${topCountries.length} countries · cuộn để xem hết.`}
         >
           {isLoading ? (
             <Skeleton className="h-64" />
           ) : topCountries.length === 0 ? (
             <div className="py-10 text-center text-sm text-slate-500">No country data.</div>
           ) : (
-            <TopCountriesChart
-              data={topCountries}
-              activeCountry={countryFocus}
-              onCountryClick={(c) => setCountryFocus(countryFocus === c ? null : c)}
-            />
+            <div className="max-h-[420px] overflow-y-auto pr-1">
+              <TopCountriesChart
+                data={topCountries}
+                activeCountry={countryFocus}
+                onCountryClick={(c) => setCountryFocus(countryFocus === c ? null : c)}
+                height={Math.max(280, topCountries.length * 22)}
+              />
+            </div>
           )}
         </SectionCard>
         <SectionCard
