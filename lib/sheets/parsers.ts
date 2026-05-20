@@ -7,6 +7,7 @@ import type {
   DynamicBasketItem,
   ExecutiveSummary,
   FunnelBreakdown,
+  HistoryDailyRow,
   HistoryRow,
   KeywordRow,
   MarketIndexData,
@@ -398,6 +399,39 @@ export function parseAlertLog(rows: string[][]): AlertLogRow[] {
       };
     })
     .filter((r): r is AlertLogRow => r !== null);
+}
+
+// ---------------------------------------------------------------------------
+// History_Daily — daily snapshot of users + getApp + cr + pos (per keyword × surface).
+// Schema: date | searchTerm | surface | usersL7D | getAppL7D | crL7D | posL7D
+// Row 1 = headers, row 2+ = data.
+// ---------------------------------------------------------------------------
+
+export function parseHistoryDaily(rows: string[][]): HistoryDailyRow[] {
+  if (!rows || rows.length < 2) return [];
+  return rows
+    .slice(1)
+    .map((row): HistoryDailyRow | null => {
+      if (!row || row.length === 0) return null;
+      const rawDate = row[0];
+      const searchTerm = str(row[1]);
+      if (rawDate === undefined || rawDate === null || rawDate === '' || !searchTerm) return null;
+      const dateNumeric = typeof rawDate === 'number' ? rawDate : Number(rawDate);
+      const looksLikeDate =
+        (Number.isFinite(dateNumeric) && dateNumeric > 20000 && dateNumeric < 90000) ||
+        /^\d{4}-\d{2}-\d{2}/.test(str(rawDate));
+      if (!looksLikeDate) return null;
+      return {
+        snapshotDate: typeof rawDate === 'number' ? rawDate : str(rawDate),
+        searchTerm,
+        surface: toSurface(row[2]),
+        usersL7D: num(row[3]),
+        getAppL7D: numOrNull(row[4]),
+        crL7D: numOrNull(row[5]),
+        posL7D: numOrNull(row[6]),
+      };
+    })
+    .filter((r): r is HistoryDailyRow => r !== null);
 }
 
 export function parseHistory(rows: string[][]): HistoryRow[] {

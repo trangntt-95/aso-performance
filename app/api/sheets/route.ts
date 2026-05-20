@@ -4,6 +4,7 @@ import {
   parseActionQueue,
   parseAlertLog,
   parseHistory,
+  parseHistoryDaily,
   parseKeywordTab,
   parseMarketIndex,
   parseSnapshot,
@@ -34,6 +35,7 @@ export async function GET() {
       allL365: parseSnapshot(raw['All_L365'] ?? [], false),
       countryL365: parseSnapshot(raw['Country_L365'] ?? [], true),
       history: parseHistory(raw['History'] ?? []),
+      historyDaily: parseHistoryDaily(raw['History_Daily'] ?? []),
       alertLog: parseAlertLog(raw['AlertLog'] ?? []),
       fetchedAt: new Date().toISOString(),
     };

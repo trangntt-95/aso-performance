@@ -329,6 +329,12 @@ export interface VolumeMover {
   usersL: number;
   usersP: number;
   deltaUsersPct: number;
+  getAppL: number;
+  getAppP: number;
+  deltaGetAppPct: number | null;
+  crL: number | null;
+  crP: number | null;
+  deltaCrPct: number | null;
   posL: number | null;
   posP: number | null;
   deltaPosPct: number | null;
@@ -384,6 +390,7 @@ export function topVolumeMovers(
     const country = r.country ?? '(global)';
     const key = `${r.searchTerm.toLowerCase()}|${country}|${surface}|${window}`;
     const action = actionIndex.get(key);
+    const deltaGetAppPct = r.getAppP > 0 ? (r.getAppL - r.getAppP) / r.getAppP : null;
     return {
       keyword: r.searchTerm,
       country,
@@ -392,6 +399,12 @@ export function topVolumeMovers(
       usersL: r.usersL,
       usersP: r.usersP,
       deltaUsersPct: r.deltaUsersPct,
+      getAppL: r.getAppL,
+      getAppP: r.getAppP,
+      deltaGetAppPct,
+      crL: r.crL,
+      crP: r.crP,
+      deltaCrPct: r.deltaCrPct,
       posL: r.posL,
       posP: r.posP,
       deltaPosPct: r.deltaPosPct,
@@ -452,12 +465,22 @@ export interface DailyTrendPoint {
   date: string; // ISO yyyy-mm-dd
   dateLabel: string; // dd/mm for X-axis
   users: number;
-  getApp: number | null; // not in History yet
+  getApp: number | null; // null when History_Daily doesn't cover this date yet
+  cr: number | null; // weighted CR = sum(getApp) / sum(users); null if either missing
 }
 
 function excelSerialToDate(serial: number): Date {
   // Excel epoch = 1899-12-30 (UTC). 25569 = days between that and 1970-01-01.
   return new Date((serial - 25569) * 86400 * 1000);
+}
+
+function dateKey(raw: string | number): number | null {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  // Convert ISO yyyy-mm-dd → serial-equivalent for sorting
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(raw));
+  if (!m) return null;
+  const d = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d / 86400000 + 25569;
 }
 
 export function dailyTrend(
@@ -467,29 +490,56 @@ export function dailyTrend(
   if (!data) return [];
   const surface = opts.surface ?? 'all';
   const kw = opts.keyword?.toLowerCase();
-  const byDate = new Map<number, number>();
-  for (const r of data.history) {
-    if (surface !== 'all') {
-      const target = surface === 'paid' ? 'search_ad' : 'search';
-      if (r.surface !== target) continue;
-    }
+  const target = surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
+
+  // Aggregate per date. Prefer History_Daily (has both users + getApp).
+  // Fall back to legacy History for dates History_Daily doesn't cover yet.
+  type Agg = { users: number; getApp: number | null; usersForCr: number; getAppForCr: number };
+  const byDate = new Map<number, Agg>();
+
+  const dailyDates = new Set<number>();
+  for (const r of data.historyDaily ?? []) {
+    if (target && r.surface !== target) continue;
     if (kw && r.searchTerm.toLowerCase() !== kw) continue;
-    const serial = typeof r.snapshotDate === 'number' ? r.snapshotDate : Number(r.snapshotDate);
-    if (!Number.isFinite(serial)) continue;
-    byDate.set(serial, (byDate.get(serial) ?? 0) + r.usersL7D);
+    const k = dateKey(r.snapshotDate);
+    if (k === null) continue;
+    dailyDates.add(k);
+    const a = byDate.get(k) ?? { users: 0, getApp: 0, usersForCr: 0, getAppForCr: 0 };
+    a.users += r.usersL7D;
+    if (r.getAppL7D !== null) {
+      a.getApp = (a.getApp ?? 0) + r.getAppL7D;
+      // CR weighted by raw users / getApp totals (more honest than averaging crL7D).
+      a.usersForCr += r.usersL7D;
+      a.getAppForCr += r.getAppL7D;
+    }
+    byDate.set(k, a);
   }
+
+  // Backfill from legacy History for dates not present in History_Daily.
+  for (const r of data.history) {
+    if (target && r.surface !== target) continue;
+    if (kw && r.searchTerm.toLowerCase() !== kw) continue;
+    const k = dateKey(r.snapshotDate);
+    if (k === null || dailyDates.has(k)) continue;
+    const a = byDate.get(k) ?? { users: 0, getApp: null, usersForCr: 0, getAppForCr: 0 };
+    a.users += r.usersL7D;
+    byDate.set(k, a);
+  }
+
   return Array.from(byDate.entries())
     .sort((a, b) => a[0] - b[0])
-    .map(([serial, users]) => {
+    .map(([serial, agg]) => {
       const d = excelSerialToDate(serial);
       const yyyy = d.getUTCFullYear();
       const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
       const dd = String(d.getUTCDate()).padStart(2, '0');
+      const cr = agg.usersForCr > 0 ? agg.getAppForCr / agg.usersForCr : null;
       return {
         date: `${yyyy}-${mm}-${dd}`,
         dateLabel: `${dd}/${mm}`,
-        users,
-        getApp: null,
+        users: agg.users,
+        getApp: agg.getApp,
+        cr,
       };
     });
 }

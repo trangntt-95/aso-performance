@@ -200,6 +200,16 @@ export interface HistoryRow {
   alert: AlertType;
 }
 
+export interface HistoryDailyRow {
+  snapshotDate: string | number;
+  searchTerm: string;
+  surface: Surface;
+  usersL7D: number;
+  getAppL7D: number | null;
+  crL7D: number | null;
+  posL7D: number | null;
+}
+
 export interface AlertLogRow {
   snapshotDate: string | number;
   keyword: string;
@@ -249,6 +259,7 @@ export interface SheetPayload {
   allL365: SnapshotRow[];
   countryL365: SnapshotRow[];
   history: HistoryRow[];
+  historyDaily: HistoryDailyRow[];
   alertLog: AlertLogRow[];
   fetchedAt: string;
 }

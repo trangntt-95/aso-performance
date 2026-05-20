@@ -16,6 +16,7 @@ export const TABS = [
   'Country_L90',
   'Country_L365',
   'History',
+  'History_Daily',
   'AlertLog',
 ] as const;
 

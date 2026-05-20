@@ -49,7 +49,8 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
             stroke="#cbd5e1"
             tickLine={false}
             axisLine={false}
-            width={88}
+            width={160}
+            interval={0}
           />
           <Tooltip
             cursor={{ fill: '#f1f5f9' }}

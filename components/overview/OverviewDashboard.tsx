@@ -100,9 +100,25 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     () => categoryShareFor(data, window, filters),
     [data, window, filters],
   );
-  const volumeMovers = useMemo(
-    () => topVolumeMovers(data, window, { limit: 8, ...filters }),
-    [data, window, filters],
+  const organicMovers = useMemo(
+    () =>
+      topVolumeMovers(data, window, {
+        limit: 8,
+        country: filters.country,
+        keyword: filters.keyword,
+        surface: 'organic',
+      }),
+    [data, window, filters.country, filters.keyword],
+  );
+  const paidMovers = useMemo(
+    () =>
+      topVolumeMovers(data, window, {
+        limit: 8,
+        country: filters.country,
+        keyword: filters.keyword,
+        surface: 'paid',
+      }),
+    [data, window, filters.country, filters.keyword],
   );
   const topUsers = useMemo(
     () => topContributors(data, window, 'users', 50, filters),
@@ -457,7 +473,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           <Skeleton className="h-72" />
         ) : (
           <TopVolumeMovers
-            movers={volumeMovers}
+            organic={organicMovers}
+            paid={paidMovers}
             activeKeyword={keywordFocus}
             onRowClick={(k) => setKeywordFocus(keywordFocus === k ? null : k)}
           />
