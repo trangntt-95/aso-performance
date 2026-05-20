@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { AlertCircle, ChevronDown, ChevronRight, Globe2, Leaf, DollarSign } from 'lucide-react';
+import { AlertCircle, Globe2, Leaf, DollarSign, AlertTriangle, Zap } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import type { KeywordRow, Window } from '@/lib/sheets/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -42,15 +42,18 @@ function hasInterestingAlert(alert: string): boolean {
 
 interface GroupedRow {
   key: string;
+  window: Window;
   country: string;
   keyword: string;
   category: string;
   organic: KeywordRow | null;
   paid: KeywordRow | null;
   topAlert: KeywordRow;
+  maxSeverity: number;
+  maxUsers: number;
 }
 
-function groupByKeyword(rows: KeywordRow[]): GroupedRow[] {
+function groupByKeyword(rows: KeywordRow[], window: Window): GroupedRow[] {
   const map = new Map<string, GroupedRow>();
   rows.forEach((r) => {
     if (!r.country) return;
@@ -58,273 +61,206 @@ function groupByKeyword(rows: KeywordRow[]): GroupedRow[] {
     if (!map.has(key)) {
       map.set(key, {
         key,
+        window,
         country: r.country,
         keyword: r.searchTerm,
         category: r.category,
         organic: null,
         paid: null,
         topAlert: r,
+        maxSeverity: 0,
+        maxUsers: 0,
       });
     }
     const g = map.get(key)!;
     if (r.surface === 'search_ad') g.paid = r;
     else g.organic = r;
     if (alertSeverity(r.alert) > alertSeverity(g.topAlert.alert)) g.topAlert = r;
+    g.maxSeverity = Math.max(g.maxSeverity, alertSeverity(r.alert));
+    g.maxUsers = Math.max(g.maxUsers, r.usersL);
   });
-  return Array.from(map.values());
+  return Array.from(map.values()).filter((g) => hasInterestingAlert(g.topAlert.alert));
 }
 
-const GRID_COLS =
-  'grid grid-cols-[7rem_minmax(0,1fr)_8rem_8rem_minmax(11rem,16rem)] gap-2 items-center';
-
-function HeaderRow() {
+function ChannelMini({ row, tone }: { row: KeywordRow | null; tone: 'organic' | 'paid' }) {
+  if (!row) {
+    return <span className="text-[11px] text-slate-300">—</span>;
+  }
+  const dTone = deltaTone(row.deltaUsersPct);
+  const accent = tone === 'organic' ? 'text-emerald-700' : 'text-amber-700';
   return (
-    <div
-      className={cn(
-        GRID_COLS,
-        'hidden md:grid px-3 py-2 text-[10px] uppercase tracking-wider text-slate-500 bg-slate-50 border-b',
-      )}
-    >
-      <div>Country</div>
-      <div>Keyword</div>
-      <div className="flex items-center gap-1 text-emerald-700">
-        <Leaf className="h-3 w-3" /> Organic
-      </div>
-      <div className="flex items-center gap-1 text-amber-700">
-        <DollarSign className="h-3 w-3" /> Paid (Ads)
-      </div>
-      <div>Vấn đề</div>
+    <div className="flex items-center gap-2 text-[11px] tabular-nums">
+      <span className={cn('font-mono text-[10px]', accent)}>P{formatPos(row.posL)}</span>
+      <span className="font-mono">{formatNumber(row.usersL, { compact: true })}u</span>
+      <span
+        className={cn(
+          'font-medium',
+          dTone === 'pos' ? 'text-emerald-700' : dTone === 'neg' ? 'text-rose-700' : 'text-slate-500',
+        )}
+      >
+        {formatDeltaPct(row.deltaUsersPct)}
+      </span>
     </div>
   );
 }
 
-function ChannelCell({ row, tone }: { row: KeywordRow | null; tone: 'organic' | 'paid' }) {
-  if (!row) {
+const GRID = 'grid grid-cols-[3.5rem_6rem_minmax(0,1fr)_minmax(11rem,14rem)_minmax(11rem,14rem)_minmax(8rem,11rem)] gap-2 items-center';
+
+function Tier1WatchInner({
+  rows,
+  filter,
+  selectedWindow,
+}: {
+  rows: GroupedRow[];
+  filter: string;
+  selectedWindow: Window | 'ALL';
+}) {
+  const q = filter.trim().toLowerCase();
+  const filtered = rows
+    .filter((g) => (selectedWindow === 'ALL' ? true : g.window === selectedWindow))
+    .filter((g) =>
+      q ? `${g.keyword} ${g.country} ${g.category}`.toLowerCase().includes(q) : true,
+    )
+    .sort((a, b) => {
+      if (a.maxSeverity !== b.maxSeverity) return b.maxSeverity - a.maxSeverity;
+      return b.maxUsers - a.maxUsers;
+    });
+
+  if (filtered.length === 0) {
     return (
-      <div className="text-[11px] text-slate-400">
-        — <span className="text-slate-300">không có</span>
+      <div className="border rounded-lg bg-white py-8 text-center text-sm text-slate-500">
+        Không có alert phù hợp.
       </div>
     );
   }
-  const dTone = deltaTone(row.deltaUsersPct);
-  return (
-    <div className="space-y-0.5 text-[12px] leading-tight">
-      <div className="flex items-baseline gap-1.5">
-        <span className="text-[10px] text-slate-500">Pos</span>
-        <span className="font-mono font-semibold tabular-nums">{formatPos(row.posL)}</span>
-      </div>
-      <div className="flex items-baseline gap-1.5">
-        <span className="text-[10px] text-slate-500">Users</span>
-        <span className="font-mono tabular-nums">{formatNumber(row.usersL, { compact: true })}</span>
-        <span
-          className={cn(
-            'font-medium text-[11px]',
-            dTone === 'pos' ? 'text-emerald-700' : dTone === 'neg' ? 'text-rose-700' : 'text-slate-500',
-          )}
-        >
-          {formatDeltaPct(row.deltaUsersPct)}
-        </span>
-      </div>
-      {row.alert && row.alert !== 'OK' && alertSeverity(row.alert) > 0 && (
-        <div
-          className={cn(
-            'text-[10px] truncate',
-            tone === 'organic' ? 'text-emerald-700' : 'text-amber-700',
-          )}
-          title={row.alert}
-        >
-          {alertCopy(row.alert)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DesktopRow({ g }: { g: GroupedRow }) {
-  return (
-    <div className={cn(GRID_COLS, 'hidden md:grid px-3 py-2.5 text-sm hover:bg-slate-50/60 items-start')}>
-      <div className="pt-0.5">
-        <span className="font-mono text-[11px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded inline-flex items-center w-fit">
-          {g.country}
-        </span>
-      </div>
-      <div className="min-w-0 pt-0.5">
-        <div className="flex items-center gap-1.5 mb-0.5">
-          <CategoryChip category={g.category} compact />
-          <KeywordLink
-            keyword={g.keyword}
-            country={g.country}
-            className="font-medium text-sm truncate"
-          />
-        </div>
-      </div>
-      <ChannelCell row={g.organic} tone="organic" />
-      <ChannelCell row={g.paid} tone="paid" />
-      <div className="space-y-0.5">
-        <AlertBadge alert={g.topAlert.alert} compact />
-        <div className="text-[10px] text-slate-500 line-clamp-2">{alertCopy(g.topAlert.alert)}</div>
-        <div className="text-[10px] text-slate-400">
-          {g.organic && g.paid
-            ? 'cả 2 channel'
-            : g.organic
-              ? 'chỉ organic'
-              : g.paid
-                ? 'chỉ paid'
-                : ''}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MobileRow({ g }: { g: GroupedRow }) {
-  return (
-    <div className="md:hidden px-3 py-3 space-y-2">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="font-mono text-[10px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
-          {g.country}
-        </span>
-        <CategoryChip category={g.category} compact />
-        <KeywordLink
-          keyword={g.keyword}
-          country={g.country}
-          className="font-medium text-sm flex-1 min-w-0 truncate"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-2 text-[12px]">
-        <div className="border rounded p-2">
-          <div className="text-[10px] text-emerald-700 uppercase tracking-wider mb-0.5 flex items-center gap-1">
-            <Leaf className="h-3 w-3" /> Organic
-          </div>
-          <ChannelCell row={g.organic} tone="organic" />
-        </div>
-        <div className="border rounded p-2">
-          <div className="text-[10px] text-amber-700 uppercase tracking-wider mb-0.5 flex items-center gap-1">
-            <DollarSign className="h-3 w-3" /> Paid
-          </div>
-          <ChannelCell row={g.paid} tone="paid" />
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <AlertBadge alert={g.topAlert.alert} compact />
-        <span className="text-[10px] text-slate-500 truncate">{alertCopy(g.topAlert.alert)}</span>
-      </div>
-    </div>
-  );
-}
-
-interface SectionProps {
-  window: Window;
-  rows: KeywordRow[];
-  open: boolean;
-  onToggle: () => void;
-  filter: string;
-}
-
-function WindowSection({ window: w, rows, open, onToggle, filter }: SectionProps) {
-  const grouped = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    const all = groupByKeyword(rows);
-    return all
-      .filter((g) => hasInterestingAlert(g.topAlert.alert))
-      .filter((g) => {
-        if (!q) return true;
-        return `${g.keyword} ${g.country} ${g.category}`.toLowerCase().includes(q);
-      })
-      .sort((a, b) => {
-        const sa = alertSeverity(a.topAlert.alert);
-        const sb = alertSeverity(b.topAlert.alert);
-        if (sa !== sb) return sb - sa;
-        const ua = Math.max(a.organic?.usersL ?? 0, a.paid?.usersL ?? 0);
-        const ub = Math.max(b.organic?.usersL ?? 0, b.paid?.usersL ?? 0);
-        return ub - ua;
-      });
-  }, [rows, filter]);
-
-  const negativeCount = grouped.filter((g) => alertSeverity(g.topAlert.alert) >= 1).length;
-  const oppCount = grouped.filter((g) => g.topAlert.alert.startsWith('🎯')).length;
-  const dualCount = grouped.filter((g) => g.organic && g.paid).length;
 
   return (
     <div className="border rounded-lg bg-white overflow-hidden">
-      <button
-        type="button"
-        className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50"
-        onClick={onToggle}
-      >
-        {open ? (
-          <ChevronDown className="h-4 w-4 text-slate-400" />
-        ) : (
-          <ChevronRight className="h-4 w-4 text-slate-400" />
-        )}
-        <span className="font-mono text-xs text-slate-600 w-8">{w}</span>
-        <span className="text-sm font-medium">Last {w.slice(1)} days</span>
-        <span className="text-xs text-slate-500 ml-2">
-          {grouped.length} keyword{grouped.length === 1 ? '' : 's'} (in {dualCount} cả 2 channel)
-        </span>
-        <div className="ml-auto flex items-center gap-1.5">
-          {negativeCount > 0 && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-rose-100 text-rose-900 font-semibold">
-              {negativeCount} negative
-            </span>
-          )}
-          {oppCount > 0 && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-blue-100 text-blue-900 font-semibold">
-              🎯 {oppCount}
-            </span>
-          )}
-        </div>
-      </button>
-      {open && (
-        <div className="border-t">
-          {grouped.length === 0 ? (
-            <div className="px-4 py-6 text-center text-sm text-slate-500">
-              No notable alerts in this window.
-            </div>
-          ) : (
-            <>
-              <HeaderRow />
-              <div className="divide-y">
-                {grouped.map((g) => (
-                  <div key={g.key}>
-                    <DesktopRow g={g} />
-                    <MobileRow g={g} />
-                  </div>
-                ))}
+      <div className={cn(GRID, 'px-3 py-2 text-[10px] uppercase tracking-wider text-slate-500 bg-slate-50 border-b hidden md:grid')}>
+        <div>Window</div>
+        <div>Country</div>
+        <div>Keyword</div>
+        <div className="flex items-center gap-1 text-emerald-700"><Leaf className="h-3 w-3" /> Organic</div>
+        <div className="flex items-center gap-1 text-amber-700"><DollarSign className="h-3 w-3" /> Paid</div>
+        <div>Alert</div>
+      </div>
+      <div className="divide-y">
+        {filtered.map((g) => (
+          <div key={`${g.window}-${g.key}`}>
+            <div className={cn(GRID, 'hidden md:grid px-3 py-2 text-sm hover:bg-slate-50/60')}>
+              <span className="font-mono text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded inline-block w-fit">
+                {g.window}
+              </span>
+              <span className="font-mono text-[11px] text-slate-700 truncate">{g.country}</span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <CategoryChip category={g.category} compact />
+                <KeywordLink keyword={g.keyword} country={g.country} className="font-medium text-[13px] truncate" />
               </div>
-            </>
-          )}
-        </div>
-      )}
+              <ChannelMini row={g.organic} tone="organic" />
+              <ChannelMini row={g.paid} tone="paid" />
+              <div className="min-w-0">
+                <AlertBadge alert={g.topAlert.alert} compact />
+                <div className="text-[10px] text-slate-500 truncate" title={alertCopy(g.topAlert.alert)}>
+                  {alertCopy(g.topAlert.alert)}
+                </div>
+              </div>
+            </div>
+            {/* Mobile */}
+            <div className="md:hidden px-3 py-2.5 space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">{g.window}</span>
+                <span className="font-mono text-[10px] text-slate-700">{g.country}</span>
+                <CategoryChip category={g.category} compact />
+                <KeywordLink keyword={g.keyword} country={g.country} className="font-medium text-[13px] flex-1 truncate" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="border rounded p-1.5">
+                  <div className="text-[9px] text-emerald-700 uppercase mb-0.5">Organic</div>
+                  <ChannelMini row={g.organic} tone="organic" />
+                </div>
+                <div className="border rounded p-1.5">
+                  <div className="text-[9px] text-amber-700 uppercase mb-0.5">Paid</div>
+                  <ChannelMini row={g.paid} tone="paid" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <AlertBadge alert={g.topAlert.alert} compact />
+                <span className="text-[11px] text-slate-500 truncate">{alertCopy(g.topAlert.alert)}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface SummaryStat {
+  label: string;
+  value: number;
+  tone: 'critical' | 'warn' | 'opp' | 'neutral';
+  Icon: typeof AlertTriangle;
+}
+
+function SummaryTile({ label, value, tone, Icon }: SummaryStat) {
+  const toneCls = {
+    critical: 'border-rose-200 bg-rose-50 text-rose-800',
+    warn: 'border-amber-200 bg-amber-50 text-amber-800',
+    opp: 'border-blue-200 bg-blue-50 text-blue-800',
+    neutral: 'border-slate-200 bg-white text-slate-700',
+  }[tone];
+  return (
+    <div className={cn('border rounded-lg px-3 py-2 flex items-center gap-2', toneCls)}>
+      <Icon className="h-4 w-4 shrink-0" />
+      <div className="min-w-0">
+        <div className="text-lg font-semibold tabular-nums leading-tight">{value}</div>
+        <div className="text-[10px] uppercase tracking-wider opacity-80">{label}</div>
+      </div>
     </div>
   );
 }
 
 export function Tier1WatchView() {
   const { data, isLoading, error } = useSheetData();
-  const [openWindows, setOpenWindows] = useState<Record<Window, boolean>>({
-    L3: true,
-    L7: true,
-    L14: false,
-    L30: false,
-    L90: false,
-    L365: false,
-    'L90+L30': false,
-  });
   const [filter, setFilter] = useState('');
+  const [selectedWindow, setSelectedWindow] = useState<Window | 'ALL'>('L7');
 
-  const tabsByWindow = useMemo<Record<Window, KeywordRow[]>>(
-    () => ({
-      L3: (data?.countryL3 ?? []).filter((r) => r.country && TIER1_COUNTRIES.has(r.country)),
-      L7: (data?.countryL7 ?? []).filter((r) => r.country && TIER1_COUNTRIES.has(r.country)),
-      L14: (data?.countryL14 ?? []).filter((r) => r.country && TIER1_COUNTRIES.has(r.country)),
-      L30: (data?.countryL30 ?? []).filter((r) => r.country && TIER1_COUNTRIES.has(r.country)),
-      L90: [],
-      L365: [],
-      'L90+L30': [],
-    }),
-    [data],
-  );
+  const groupedAll = useMemo<GroupedRow[]>(() => {
+    if (!data) return [];
+    const out: GroupedRow[] = [];
+    const sources: Array<{ w: Window; rows: KeywordRow[] }> = [
+      { w: 'L3', rows: data.countryL3 ?? [] },
+      { w: 'L7', rows: data.countryL7 ?? [] },
+      { w: 'L14', rows: data.countryL14 ?? [] },
+      { w: 'L30', rows: data.countryL30 ?? [] },
+    ];
+    for (const { w, rows } of sources) {
+      const tier1Rows = rows.filter((r) => r.country && TIER1_COUNTRIES.has(r.country));
+      out.push(...groupByKeyword(tier1Rows, w));
+    }
+    return out;
+  }, [data]);
+
+  // Summary across ALL windows (independent of selected window)
+  const summary = useMemo(() => {
+    let critical = 0;
+    let warn = 0;
+    let opp = 0;
+    const markets = new Set<string>();
+    for (const g of groupedAll) {
+      if (g.maxSeverity >= 4) critical += 1;
+      else if (g.maxSeverity >= 1) warn += 1;
+      if (g.topAlert.alert.startsWith('🎯')) opp += 1;
+      markets.add(g.country);
+    }
+    return { critical, warn, opp, markets: markets.size, total: groupedAll.length };
+  }, [groupedAll]);
+
+  const countsByWindow = useMemo(() => {
+    const counts: Record<Window | 'ALL', number> = { L3: 0, L7: 0, L14: 0, L30: 0, L90: 0, L365: 0, 'L90+L30': 0, ALL: groupedAll.length };
+    for (const g of groupedAll) counts[g.window] += 1;
+    return counts;
+  }, [groupedAll]);
 
   if (error) {
     return (
@@ -338,41 +274,64 @@ export function Tier1WatchView() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-100 rounded p-3 text-xs text-emerald-900">
+      <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-100 rounded p-2.5 text-xs text-emerald-900">
         <Globe2 className="h-4 w-4 mt-0.5 shrink-0" />
         <div>
-          Keyword alerts ở các thị trường doanh thu cao <b>United States · United Kingdom · Canada · Australia</b>.
-          Mỗi row gộp organic + paid của cùng keyword × country để dễ so sánh pos giữa 2 channel. Window ngắn
-          surface vấn đề mới, window dài confirm trend.
+          Alerts ở <b>US · UK · CA · AU</b> — keyword × country gộp 2 channel. Pick window để focus, hoặc xem all.
         </div>
       </div>
-      <div className="flex items-center gap-2">
+
+      {/* Summary tiles */}
+      {isLoading ? (
+        <Skeleton className="h-16" />
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <SummaryTile label="Critical (🚨 ⚠️)" value={summary.critical} tone="critical" Icon={AlertTriangle} />
+          <SummaryTile label="Warning (📉 💸 💔)" value={summary.warn} tone="warn" Icon={AlertCircle} />
+          <SummaryTile label="Opportunity (🎯)" value={summary.opp} tone="opp" Icon={Zap} />
+          <SummaryTile label="Markets affected" value={summary.markets} tone="neutral" Icon={Globe2} />
+        </div>
+      )}
+
+      {/* Window tabs + filter */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
+          {(['ALL', 'L3', 'L7', 'L14', 'L30'] as const).map((w, idx) => (
+            <button
+              key={w}
+              type="button"
+              onClick={() => setSelectedWindow(w)}
+              className={cn(
+                'px-2.5 py-1 font-medium transition',
+                idx > 0 && 'border-l border-slate-200',
+                selectedWindow === w
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-white text-slate-600 hover:bg-slate-50',
+              )}
+            >
+              {w}
+              <span className={cn('ml-1 text-[10px]', selectedWindow === w ? 'text-slate-300' : 'text-slate-400')}>
+                {countsByWindow[w] ?? 0}
+              </span>
+            </button>
+          ))}
+        </div>
         <Input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter keyword, country, category…"
-          className="h-8 max-w-sm"
+          placeholder="Filter keyword / country / category…"
+          className="h-7 max-w-xs text-sm"
         />
       </div>
+
       {isLoading ? (
         <div className="space-y-2">
           {WINDOWS.map((w) => (
-            <Skeleton key={w} className="h-24" />
+            <Skeleton key={w} className="h-16" />
           ))}
         </div>
       ) : (
-        <div className="space-y-2">
-          {WINDOWS.map((w) => (
-            <WindowSection
-              key={w}
-              window={w}
-              rows={tabsByWindow[w]}
-              open={openWindows[w]}
-              onToggle={() => setOpenWindows((s) => ({ ...s, [w]: !s[w] }))}
-              filter={filter}
-            />
-          ))}
-        </div>
+        <Tier1WatchInner rows={groupedAll} filter={filter} selectedWindow={selectedWindow} />
       )}
     </div>
   );

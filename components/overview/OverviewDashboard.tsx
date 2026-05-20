@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { ArrowRight, AlertCircle, BarChart3, Globe2, Layers, ListChecks, Megaphone, Target, Users } from 'lucide-react';
+import { ArrowRight, AlertCircle, Megaphone, Target, Users } from 'lucide-react';
 import { expectedAdsInstalls, runrateAdsToMonthEnd } from '@/lib/config/ads-targets';
 import { AdsTargetTile } from './AdsTargetTile';
 import { useSheetData } from '@/lib/hooks/useSheetData';
@@ -252,12 +252,6 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           </div>
           <WindowSelector value={window} onChange={setWindow} />
         </div>
-        {headlineWindow?.primaryCause && (
-          <p className="text-sm text-slate-600 max-w-3xl">
-            <span className="font-medium text-slate-900">Primary driver:</span>{' '}
-            {headlineWindow.primaryCause}
-          </p>
-        )}
       </header>
 
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -319,7 +313,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Channel mix · {window}</h2>
             <p className="text-[11px] text-slate-500">
-              Organic vs paid · last {days}d vs prior {days}d · <span className="text-indigo-600">click một thẻ để lọc toàn trang</span>
+              Click a card to filter the whole page by that surface.
             </p>
           </div>
         </div>
@@ -341,7 +335,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <SectionCard
           title="Market Performance · all windows"
-          hint="Δ Users % across recency windows. Click a window to focus the whole page on it."
+          hint="Click a window to focus the whole page."
           cta={embedded ? undefined : 'Drill into Market Index'}
           href={embedded ? undefined : '/market-index'}
         >
@@ -362,7 +356,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         </SectionCard>
         <SectionCard
           title="Channel split % · all windows"
-          hint={`Tỉ trọng Organic vs Paid (theo ${splitMetric === 'users' ? 'Users' : 'GetApp'}) qua từng window — hover thấy số tuyệt đối.`}
+          hint={`Organic vs Paid share by ${splitMetric === 'users' ? 'Users' : 'GetApp'} across windows.`}
         >
           <div className="mb-2 flex justify-end">
             <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
@@ -398,7 +392,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
       <SectionCard
         title="Daily trend · last weeks"
-        hint="Daily snapshots từ History tab. Users là usersL7D (rolling 7-day). GetApp chưa có trong History — cần update Apps Script."
+        hint="L7D rolling totals per day. Toggle metric: Users / GetApp / CR."
       >
         {isLoading ? (
           <Skeleton className="h-56" />
@@ -410,7 +404,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <SectionCard
           title={`Top countries · ${window}`}
-          hint={`Click 1 country để filter toàn page (active: ${countryFocus ?? 'none'}). ${topCountries.length} countries · cuộn để xem hết.`}
+          hint="Click a country to filter the whole page."
         >
           {isLoading ? (
             <Skeleton className="h-64" />
@@ -429,7 +423,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         </SectionCard>
         <SectionCard
           title={`Category share · ${window}`}
-          hint="Toggle Users / GetApp ở góc trên. Click slice/legend để drill vào category."
+          hint="Toggle Users / GetApp at the top right. Click a slice for details."
         >
           {isLoading ? (
             <Skeleton className="h-64" />
@@ -446,7 +440,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
       <SectionCard
         title={`Top contribution · ${window}`}
-        hint="Top keyword đóng góp Users (demand) và GetApp (install) lớn nhất, kèm % share so với tổng. Sort theo absolute volume."
+        hint="Top keywords by absolute Users and Installs, with share %."
       >
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -466,8 +460,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       </SectionCard>
 
       <SectionCard
-        title={`Top biến động volume · ${window}`}
-        hint="Keyword có biến động volume mạnh nhất (theo |Δ users %|). Sàng floor 30 users để loại noise, đã loại Vietnam + India. Số liệu → insight → action."
+        title={`Top volume movers · ${window}`}
+        hint="Keywords with the biggest |Δ users %|. VN + IN excluded."
       >
         {isLoading ? (
           <Skeleton className="h-72" />
@@ -480,39 +474,6 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           />
         )}
       </SectionCard>
-
-      {!embedded && (
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { href: '/actions', label: 'Action queue', Icon: ListChecks },
-            { href: '/market-index', label: 'Market index', Icon: BarChart3 },
-            { href: '/geo-opportunity', label: 'Geo opportunity', Icon: Target },
-            { href: '/tier1-watch', label: 'Tier 1 watch', Icon: Globe2 },
-          ].map(({ href, label, Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-3 hover:border-indigo-300 hover:bg-indigo-50/30 transition group"
-            >
-              <div className="flex items-center justify-between">
-                <Icon className="h-4 w-4 text-indigo-600" />
-                <ArrowRight className="h-3.5 w-3.5 text-slate-300 group-hover:text-indigo-500 transition" />
-              </div>
-              <div className="text-sm font-medium text-slate-900 mt-2">{label}</div>
-            </Link>
-          ))}
-          <Link
-            href="/categories"
-            className="hidden md:block rounded-xl border border-slate-200 bg-white px-4 py-3 hover:border-indigo-300 hover:bg-indigo-50/30 transition group"
-          >
-            <div className="flex items-center justify-between">
-              <Layers className="h-4 w-4 text-indigo-600" />
-              <ArrowRight className="h-3.5 w-3.5 text-slate-300 group-hover:text-indigo-500 transition" />
-            </div>
-            <div className="text-sm font-medium text-slate-900 mt-2">Categories</div>
-          </Link>
-        </section>
-      )}
     </div>
   );
 }

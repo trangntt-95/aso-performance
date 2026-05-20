@@ -7,7 +7,6 @@ const TITLES: Record<string, string> = {
   '/': 'Overview',
   '/actions': 'Action Queue',
   '/market-index': 'Market Health',
-  '/geo-opportunity': 'Geo Opportunity',
   '/tier1-watch': 'Tier 1 Market Watch',
   '/categories': 'Categories',
   '/trends': 'Trends',

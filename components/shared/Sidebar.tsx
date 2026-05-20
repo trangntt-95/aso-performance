@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ListChecks, BarChart3, Target, Globe2, Layers, LayoutDashboard, Bell } from 'lucide-react';
+import { ListChecks, BarChart3, Globe2, Layers, LayoutDashboard } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 
@@ -17,10 +17,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/', label: 'Overview', Icon: LayoutDashboard, shortLabel: 'Home' },
   { href: '/market-index', label: 'Market Health', Icon: BarChart3, shortLabel: 'Market' },
   { href: '/actions', label: 'Action Queue', Icon: ListChecks, shortLabel: 'Actions' },
-  { href: '/geo-opportunity', label: 'Geo Opportunity', Icon: Target, shortLabel: 'Geo' },
   { href: '/tier1-watch', label: 'Tier 1 Watch', Icon: Globe2, shortLabel: 'Tier 1' },
   { href: '/categories', label: 'Categories', Icon: Layers, shortLabel: 'Cats' },
-  { href: '/alerts', label: 'Rank Alerts', Icon: Bell, shortLabel: 'Alerts' },
 ];
 
 export function Sidebar() {
@@ -70,7 +68,7 @@ export function MobileTabBar() {
   const pathname = usePathname();
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white">
-      <div className="grid grid-cols-7">
+      <div className="grid grid-cols-5">
         {NAV_ITEMS.map(({ href, label, shortLabel, Icon }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
           return (
