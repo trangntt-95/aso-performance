@@ -31,7 +31,7 @@ interface Props {
 
 export function ExecutiveSummaryCard({ data }: Props) {
   const pacingPct = data.installVsTarget !== undefined ? formatPercent(data.installVsTarget) : null;
-  const pacingTone = (data.installVsTarget ?? 0) < 0.7 ? 'text-rose-700' : (data.installVsTarget ?? 0) < 0.95 ? 'text-amber-700' : 'text-emerald-700';
+  const pacingTone = (data.installVsTarget ?? 0) < 0.7 ? 'text-rose-700' : 'text-emerald-700';
   return (
     <Card className="border-slate-200 shadow-sm">
       <CardContent className="p-4 sm:p-5 space-y-4">

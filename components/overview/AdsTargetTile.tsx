@@ -15,17 +15,13 @@ interface Props {
 
 function toneFor(pct: number | null) {
   if (pct === null) return { ring: '#cbd5e1', label: 'text-slate-500', bg: 'border-slate-200' };
-  if (pct >= 1) return { ring: '#059669', label: 'text-emerald-700', bg: 'border-emerald-200 bg-emerald-50/30' };
-  if (pct >= 0.9) return { ring: '#f59e0b', label: 'text-amber-700', bg: 'border-amber-200 bg-amber-50/30' };
-  if (pct >= 0.7) return { ring: '#f97316', label: 'text-orange-700', bg: 'border-orange-200 bg-orange-50/30' };
+  if (pct >= 0.7) return { ring: '#059669', label: 'text-emerald-700', bg: 'border-emerald-200 bg-emerald-50/30' };
   return { ring: '#e11d48', label: 'text-rose-700', bg: 'border-rose-200 bg-rose-50/30' };
 }
 
 function runrateTextTone(pct: number | null | undefined) {
   if (pct === null || pct === undefined) return 'text-slate-400';
-  if (pct >= 1) return 'text-emerald-700';
-  if (pct >= 0.9) return 'text-amber-700';
-  if (pct >= 0.7) return 'text-orange-700';
+  if (pct >= 0.7) return 'text-emerald-700';
   return 'text-rose-700';
 }
 
