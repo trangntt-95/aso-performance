@@ -12,12 +12,13 @@ interface ColumnProps {
   unitLabel: string;
   Icon: typeof Users;
   rows: ContributorRow[];
+  total: number;
   accent: 'indigo' | 'emerald';
   activeKeyword?: string | null;
   onRowClick?: (keyword: string) => void;
 }
 
-function Column({ title, unitLabel, Icon, rows, accent, activeKeyword, onRowClick }: ColumnProps) {
+function Column({ title, unitLabel, Icon, rows, total, accent, activeKeyword, onRowClick }: ColumnProps) {
   const headerColor = accent === 'indigo' ? 'text-indigo-700' : 'text-emerald-700';
   const barColor = accent === 'indigo' ? 'bg-indigo-500' : 'bg-emerald-500';
   const barBg = accent === 'indigo' ? 'bg-indigo-100' : 'bg-emerald-100';
@@ -30,6 +31,8 @@ function Column({ title, unitLabel, Icon, rows, accent, activeKeyword, onRowClic
     );
   }
 
+  const shownSum = rows.reduce((s, r) => s + r.value, 0);
+  const shownSharePct = total > 0 ? (shownSum / total) * 100 : 0;
   return (
     <div className="border rounded-lg overflow-hidden bg-white flex flex-col">
       <div className={cn('flex items-center gap-2 px-3 py-2 border-b bg-slate-50/60 shrink-0', headerColor)}>
@@ -38,6 +41,15 @@ function Column({ title, unitLabel, Icon, rows, accent, activeKeyword, onRowClic
         <span className="text-[10px] text-slate-500 ml-auto">
           {rows.length} kw · {unitLabel}
         </span>
+      </div>
+      <div className={cn('flex items-center justify-between gap-2 px-3 py-2 border-b text-xs bg-white shrink-0', headerColor)}>
+        <span className="font-semibold uppercase tracking-wider text-[10px]">Total</span>
+        <div className="flex items-baseline gap-2 tabular-nums">
+          <span className="font-mono font-bold text-sm text-slate-900">{formatNumber(total)}</span>
+          <span className="text-[10px] text-slate-500 font-normal">
+            top {rows.length}: {formatNumber(shownSum)} · {shownSharePct.toFixed(1)}%
+          </span>
+        </div>
       </div>
       <ol className="divide-y max-h-[420px] overflow-y-auto">
         {rows.map((r, i) => {
@@ -99,11 +111,13 @@ function Column({ title, unitLabel, Icon, rows, accent, activeKeyword, onRowClic
 interface Props {
   users: ContributorRow[];
   getApp: ContributorRow[];
+  totalUsers: number;
+  totalGetApp: number;
   activeKeyword?: string | null;
   onRowClick?: (keyword: string) => void;
 }
 
-export function TopContributors({ users, getApp, activeKeyword, onRowClick }: Props) {
+export function TopContributors({ users, getApp, totalUsers, totalGetApp, activeKeyword, onRowClick }: Props) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <Column
@@ -111,6 +125,7 @@ export function TopContributors({ users, getApp, activeKeyword, onRowClick }: Pr
         unitLabel="users · share %"
         Icon={Users}
         rows={users}
+        total={totalUsers}
         accent="indigo"
         activeKeyword={activeKeyword}
         onRowClick={onRowClick}
@@ -120,6 +135,7 @@ export function TopContributors({ users, getApp, activeKeyword, onRowClick }: Pr
         unitLabel="installs · share %"
         Icon={Target}
         rows={getApp}
+        total={totalGetApp}
         accent="emerald"
         activeKeyword={activeKeyword}
         onRowClick={onRowClick}

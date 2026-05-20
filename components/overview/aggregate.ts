@@ -343,13 +343,24 @@ function mapSurface(s: string): SurfaceLabel {
   return s === 'search_ad' || s === 'paid' ? 'paid' : 'organic';
 }
 
+// Floor scales với window (~0.5 users/ngày, min 5) để không cắt sạch L7/L14 nơi tổng users nhỏ.
+function defaultUsersFloor(window: OverviewWindow): number {
+  return Math.max(5, Math.ceil(windowDays(window) * 0.5));
+}
+
 export function topVolumeMovers(
   data: SheetPayload | undefined,
   window: OverviewWindow,
   options: { limit?: number; minUsersFloor?: number } & OverviewFilters = {},
 ): VolumeMover[] {
   if (!data) return [];
-  const { limit = 8, minUsersFloor = 30, surface = 'all', country = null, keyword = null } = options;
+  const {
+    limit = 8,
+    minUsersFloor = defaultUsersFloor(window),
+    surface = 'all',
+    country = null,
+    keyword = null,
+  } = options;
 
   const rows = countryRowsForWindow(data, window, { surface, country, keyword });
 
@@ -401,28 +412,35 @@ export interface ContributorRow {
   sharePct: number;
 }
 
+export interface ContributorsResult {
+  rows: ContributorRow[];
+  total: number;
+  fullCount: number;
+}
+
 export function topContributors(
   data: SheetPayload | undefined,
   window: OverviewWindow,
   metric: 'users' | 'getApp',
   limit = 8,
   opts: OverviewFilters = {},
-): ContributorRow[] {
-  if (!data) return [];
+): ContributorsResult {
+  if (!data) return { rows: [], total: 0, fullCount: 0 };
   const rows = rowsForWindow(data, window, opts);
   const key: keyof KeywordRow = metric === 'users' ? 'usersL' : 'getAppL';
   const total = rows.reduce((s, r) => s + (r[key] as number), 0);
-  if (total <= 0) return [];
-  return [...rows]
+  if (total <= 0) return { rows: [], total: 0, fullCount: rows.length };
+  const ranked = [...rows]
     .sort((a, b) => (b[key] as number) - (a[key] as number))
     .slice(0, limit)
     .map((r) => ({
       keyword: r.searchTerm,
       category: r.category,
-      surface: r.surface === 'search_ad' ? 'paid' : 'organic',
+      surface: (r.surface === 'search_ad' ? 'paid' : 'organic') as SurfaceLabel,
       value: r[key] as number,
       sharePct: ((r[key] as number) / total) * 100,
     }));
+  return { rows: ranked, total, fullCount: rows.length };
 }
 
 export function topP0Actions(actions: ActionQueueRow[], limit = 50): ActionQueueRow[] {

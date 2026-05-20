@@ -361,7 +361,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         </SectionCard>
         <SectionCard
           title={`Category share · ${window}`}
-          hint="Click a slice to see channel split + top contributing keywords"
+          hint="Toggle Users / GetApp ở góc trên. Click slice/legend để drill vào category."
         >
           {isLoading ? (
             <Skeleton className="h-64" />
@@ -387,8 +387,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           </div>
         ) : (
           <TopContributors
-            users={topUsers}
-            getApp={topGetApp}
+            users={topUsers.rows}
+            getApp={topGetApp.rows}
+            totalUsers={topUsers.total}
+            totalGetApp={topGetApp.total}
             activeKeyword={keywordFocus}
             onRowClick={(k) => setKeywordFocus(keywordFocus === k ? null : k)}
           />
