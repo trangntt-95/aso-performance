@@ -3,6 +3,7 @@ import { TopBar } from '@/components/shared/TopBar';
 import { KeywordTrendSheet } from '@/components/keyword-trend/KeywordTrendSheet';
 import { CountryDetailSheet } from '@/components/overview/CountryDetailSheet';
 import { CategoryDetailSheet } from '@/components/overview/CategoryDetailSheet';
+import { ChatWidget } from '@/components/chat/ChatWidget';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -16,6 +17,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <KeywordTrendSheet />
       <CountryDetailSheet />
       <CategoryDetailSheet />
+      <ChatWidget />
     </div>
   );
 }
