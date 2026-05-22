@@ -13,7 +13,6 @@ import { TrendChart } from './TrendChart';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
 import { useStatusStore } from '@/lib/store/statusStore';
-import { AlertBadge } from '@/components/action-queue/AlertBadge';
 import type { ActionQueueRow, HistoryRow, KeywordRow, SheetPayload } from '@/lib/sheets/types';
 import { formatDeltaPct, formatNumber, formatPercent, formatPos, deltaTone } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
@@ -106,33 +105,66 @@ function aggregateByCountry(
   return result;
 }
 
-function ChannelCell({
+function ChannelRow({
+  type,
   users,
   getApp,
   cr,
   pos,
   deltaUsersPct,
 }: {
+  type: 'organic' | 'paid';
   users: number;
   getApp: number;
   cr: number;
   pos: number | null;
   deltaUsersPct: number | null;
 }) {
-  if (users === 0 && getApp === 0) {
-    return <span className="text-slate-300">—</span>;
-  }
+  const isEmpty = users === 0 && getApp === 0;
+  const isOrganic = type === 'organic';
+  const Icon = isOrganic ? Leaf : DollarSign;
+  const labelCls = isOrganic ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50';
   const t = deltaUsersPct !== null ? deltaTone(deltaUsersPct) : 'flat';
-  const cls = t === 'pos' ? 'text-emerald-700' : t === 'neg' ? 'text-rose-700' : 'text-slate-600';
+  const deltaCls =
+    t === 'pos' ? 'text-emerald-700' : t === 'neg' ? 'text-rose-700' : 'text-slate-500';
+
   return (
-    <div className="flex flex-wrap items-baseline gap-x-1.5 text-[11px] tabular-nums">
-      <span className="font-mono font-medium">{formatNumber(users, { compact: true })}u</span>
-      <span className="text-slate-500">/</span>
-      <span className="font-mono">{formatNumber(getApp, { compact: true })}i</span>
-      <span className="text-[10px] text-slate-500">CR {formatPercent(cr)}</span>
-      <span className="text-[10px] text-slate-500">P{formatPos(pos)}</span>
-      {deltaUsersPct !== null && (
-        <span className={cn('text-[10px] font-medium', cls)}>{formatDeltaPct(deltaUsersPct)}</span>
+    <div className="flex items-center gap-2 text-[12px]">
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0',
+          labelCls,
+        )}
+      >
+        <Icon className="h-3 w-3" />
+        {isOrganic ? 'Organic' : 'Paid'}
+      </span>
+      {isEmpty ? (
+        <span className="text-slate-300">— không có</span>
+      ) : (
+        <div className="flex items-center gap-x-2.5 gap-y-0.5 flex-wrap text-slate-700 tabular-nums">
+          <span>
+            <span className="text-slate-500">Users</span>{' '}
+            <b className="font-mono">{formatNumber(users, { compact: true })}</b>
+            {deltaUsersPct !== null && (
+              <span className={cn('ml-1 font-medium text-[11px]', deltaCls)}>
+                {formatDeltaPct(deltaUsersPct)}
+              </span>
+            )}
+          </span>
+          <span>
+            <span className="text-slate-500">Install</span>{' '}
+            <b className="font-mono">{formatNumber(getApp, { compact: true })}</b>
+          </span>
+          <span>
+            <span className="text-slate-500">CR</span>{' '}
+            <b className="font-mono">{formatPercent(cr)}</b>
+          </span>
+          <span>
+            <span className="text-slate-500">Rank</span>{' '}
+            <b className="font-mono">{formatPos(pos)}</b>
+          </span>
+        </div>
       )}
     </div>
   );
@@ -224,29 +256,6 @@ export function KeywordTrendSheet() {
               </div>
             )}
 
-            {trendData.actionRows.length > 0 && (
-              <section className="space-y-1.5">
-                <h3 className="text-[11px] uppercase tracking-wide text-slate-500">
-                  Open actions
-                </h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {trendData.actionRows.map((r, i) => (
-                    <div
-                      key={`${r.keyword}-${i}`}
-                      className="flex items-center gap-1.5 text-[11px] bg-slate-50 border rounded px-2 py-1"
-                    >
-                      <span className="font-mono text-slate-500">{r.priority}</span>
-                      <span>{r.country}</span>
-                      <span className="text-slate-300">·</span>
-                      <span>{r.window}</span>
-                      <span className="text-slate-300">·</span>
-                      <AlertBadge alert={r.alert} compact />
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
             <section className="space-y-2">
               <h3 className="text-[11px] uppercase tracking-wide text-slate-500">
                 90-day Users trend (L7D sliding)
@@ -330,36 +339,30 @@ export function KeywordTrendSheet() {
                   Keyword này chưa có dữ liệu theo country ở {drillWindow}.
                 </div>
               ) : (
-                <div className="border rounded overflow-hidden">
-                  <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-slate-500 bg-slate-50 border-b">
-                    <span>Country</span>
-                    <span className="flex items-center gap-1 text-emerald-700">
-                      <Leaf className="h-3 w-3" /> Organic
-                    </span>
-                    <span className="flex items-center gap-1 text-amber-700">
-                      <DollarSign className="h-3 w-3" /> Paid
-                    </span>
-                  </div>
-                  <div className="divide-y max-h-[280px] overflow-y-auto">
-                    {countryBreakdown.slice(0, 20).map((c) => (
-                      <div
-                        key={c.country}
-                        className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 px-2.5 py-1.5 items-start hover:bg-slate-50/60"
-                      >
-                        <div>
-                          <div className="text-[12px] font-medium truncate">{c.country}</div>
-                          <div className="text-[10px] text-slate-500 tabular-nums">
-                            Σ {formatNumber(c.totalUsers, { compact: true })}u · {formatNumber(c.totalGetApp, { compact: true })}i
-                          </div>
-                        </div>
-                        <ChannelCell
+                <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
+                  {countryBreakdown.slice(0, 20).map((c) => (
+                    <div
+                      key={c.country}
+                      className="border rounded-lg bg-white px-3 py-2 hover:border-slate-300 transition"
+                    >
+                      <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                        <span className="font-semibold text-[13px] truncate">{c.country}</span>
+                        <span className="text-[11px] text-slate-500 tabular-nums shrink-0">
+                          Total <b className="font-mono text-slate-900">{formatNumber(c.totalUsers, { compact: true })}</b> users ·{' '}
+                          <b className="font-mono text-slate-900">{formatNumber(c.totalGetApp, { compact: true })}</b> installs
+                        </span>
+                      </div>
+                      <div className="space-y-1 pl-1">
+                        <ChannelRow
+                          type="organic"
                           users={c.organicUsers}
                           getApp={c.organicGetApp}
                           cr={c.organicCr}
                           pos={c.organicPos}
                           deltaUsersPct={c.organicDeltaUsersPct}
                         />
-                        <ChannelCell
+                        <ChannelRow
+                          type="paid"
                           users={c.paidUsers}
                           getApp={c.paidGetApp}
                           cr={c.paidCr}
@@ -367,10 +370,10 @@ export function KeywordTrendSheet() {
                           deltaUsersPct={c.paidDeltaUsersPct}
                         />
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
                   {countryBreakdown.length > 20 && (
-                    <div className="text-[10px] text-slate-400 text-center py-1.5 border-t">
+                    <div className="text-[10px] text-slate-400 text-center py-2 italic">
                       +{countryBreakdown.length - 20} country khác…
                     </div>
                   )}
