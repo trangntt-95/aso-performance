@@ -429,6 +429,11 @@ export function parseHistoryDaily(rows: string[][]): HistoryDailyRow[] {
         getAppL7D: numOrNull(row[4]),
         crL7D: numOrNull(row[5]),
         posL7D: numOrNull(row[6]),
+        usersDaily: numOrNull(row[7]),
+        getAppDaily: numOrNull(row[8]),
+        crDaily: numOrNull(row[9]),
+        posDaily: numOrNull(row[10]),
+        source: str(row[11]),
       };
     })
     .filter((r): r is HistoryDailyRow => r !== null);

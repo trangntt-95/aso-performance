@@ -204,10 +204,17 @@ export interface HistoryDailyRow {
   snapshotDate: string | number;
   searchTerm: string;
   surface: Surface;
+  // L7D rolling (written by daily-snapshot.gs runDailySnapshot)
   usersL7D: number;
   getAppL7D: number | null;
   crL7D: number | null;
   posL7D: number | null;
+  // Daily per-day (backfilled by Trang's l30_backfill or future daily-snapshot extension)
+  usersDaily: number | null;
+  getAppDaily: number | null;
+  crDaily: number | null;
+  posDaily: number | null;
+  source: string;
 }
 
 export interface AlertLogRow {

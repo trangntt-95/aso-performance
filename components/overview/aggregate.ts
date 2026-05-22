@@ -492,10 +492,42 @@ export function dailyTrend(
   const kw = opts.keyword?.toLowerCase();
   const target = surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
 
-  // Aggregate per date. Prefer History_Daily (has both users + getApp).
-  // Fall back to legacy History for dates History_Daily doesn't cover yet.
-  type Agg = { users: number; getApp: number | null; usersForCr: number; getAppForCr: number };
+  // Per-day aggregation. Prefer the Daily columns (true per-day metrics like
+  // usersDaily / getAppDaily) when present. Fall back to the L7D rolling
+  // columns from runDailySnapshot, then to the legacy History tab as a last
+  // resort for users when nothing else covers the date.
+  type Agg = {
+    usersDaily: number;
+    getAppDaily: number | null;
+    usersDailyForCr: number;
+    getAppDailyForCr: number;
+    usersL7D: number;
+    getAppL7D: number | null;
+    usersL7DForCr: number;
+    getAppL7DForCr: number;
+    hasDaily: boolean;
+    hasL7D: boolean;
+  };
   const byDate = new Map<number, Agg>();
+  const ensure = (k: number): Agg => {
+    let a = byDate.get(k);
+    if (!a) {
+      a = {
+        usersDaily: 0,
+        getAppDaily: null,
+        usersDailyForCr: 0,
+        getAppDailyForCr: 0,
+        usersL7D: 0,
+        getAppL7D: null,
+        usersL7DForCr: 0,
+        getAppL7DForCr: 0,
+        hasDaily: false,
+        hasL7D: false,
+      };
+      byDate.set(k, a);
+    }
+    return a;
+  };
 
   const dailyDates = new Set<number>();
   for (const r of data.historyDaily ?? []) {
@@ -504,26 +536,35 @@ export function dailyTrend(
     const k = dateKey(r.snapshotDate);
     if (k === null) continue;
     dailyDates.add(k);
-    const a = byDate.get(k) ?? { users: 0, getApp: 0, usersForCr: 0, getAppForCr: 0 };
-    a.users += r.usersL7D;
-    if (r.getAppL7D !== null) {
-      a.getApp = (a.getApp ?? 0) + r.getAppL7D;
-      // CR weighted by raw users / getApp totals (more honest than averaging crL7D).
-      a.usersForCr += r.usersL7D;
-      a.getAppForCr += r.getAppL7D;
+    const a = ensure(k);
+
+    if (r.usersDaily !== null) {
+      a.usersDaily += r.usersDaily;
+      a.hasDaily = true;
+      if (r.getAppDaily !== null) {
+        a.getAppDaily = (a.getAppDaily ?? 0) + r.getAppDaily;
+        a.usersDailyForCr += r.usersDaily;
+        a.getAppDailyForCr += r.getAppDaily;
+      }
     }
-    byDate.set(k, a);
+
+    a.usersL7D += r.usersL7D;
+    a.hasL7D = true;
+    if (r.getAppL7D !== null) {
+      a.getAppL7D = (a.getAppL7D ?? 0) + r.getAppL7D;
+      a.usersL7DForCr += r.usersL7D;
+      a.getAppL7DForCr += r.getAppL7D;
+    }
   }
 
-  // Backfill from legacy History for dates not present in History_Daily.
   for (const r of data.history) {
     if (target && r.surface !== target) continue;
     if (kw && r.searchTerm.toLowerCase() !== kw) continue;
     const k = dateKey(r.snapshotDate);
     if (k === null || dailyDates.has(k)) continue;
-    const a = byDate.get(k) ?? { users: 0, getApp: null, usersForCr: 0, getAppForCr: 0 };
-    a.users += r.usersL7D;
-    byDate.set(k, a);
+    const a = ensure(k);
+    a.usersL7D += r.usersL7D;
+    a.hasL7D = true;
   }
 
   return Array.from(byDate.entries())
@@ -533,12 +574,16 @@ export function dailyTrend(
       const yyyy = d.getUTCFullYear();
       const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
       const dd = String(d.getUTCDate()).padStart(2, '0');
-      const cr = agg.usersForCr > 0 ? agg.getAppForCr / agg.usersForCr : null;
+      const users = agg.hasDaily ? agg.usersDaily : agg.usersL7D;
+      const getApp = agg.hasDaily ? agg.getAppDaily : agg.getAppL7D;
+      const crNumer = agg.hasDaily ? agg.getAppDailyForCr : agg.getAppL7DForCr;
+      const crDenom = agg.hasDaily ? agg.usersDailyForCr : agg.usersL7DForCr;
+      const cr = crDenom > 0 ? crNumer / crDenom : null;
       return {
         date: `${yyyy}-${mm}-${dd}`,
         dateLabel: `${dd}/${mm}`,
-        users: agg.users,
-        getApp: agg.getApp,
+        users,
+        getApp,
         cr,
       };
     });

@@ -391,8 +391,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       </section>
 
       <SectionCard
-        title="Daily trend · last weeks"
-        hint="L7D rolling totals per day. Toggle metric: Users / GetApp / CR."
+        title="Daily trend · last 30 days"
+        hint="Per-day Users / GetApp / CR (toggle). Falls back to L7D rolling for days without daily data."
       >
         {isLoading ? (
           <Skeleton className="h-56" />

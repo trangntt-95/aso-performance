@@ -89,7 +89,7 @@ export function DailyTrendChart({ data, height = 220 }: Props) {
           })}
         </div>
         <span className="text-[10px] text-slate-500">
-          {chartData.length} ngày · {labelOf(metric)} L7D rolling
+          {chartData.length} ngày · {labelOf(metric)} per-day
         </span>
       </div>
       <div style={{ height }}>
