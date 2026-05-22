@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { MessageCircle, X, Send, Loader2, RotateCcw } from 'lucide-react';
+import { MessageCircle, Send, Loader2, RotateCcw, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MessagePart {
@@ -51,9 +51,12 @@ function MessageText({ parts }: { parts: MessagePart[] }) {
   );
 }
 
+const HISTORY_KEY = 'asoChatHistoryV1';
+
 export function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
+  const [hydrated, setHydrated] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { messages, sendMessage, status, error, setMessages } = useChat({
@@ -61,6 +64,34 @@ export function ChatWidget() {
       api: '/api/chat',
     }),
   });
+
+  // Load history on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(HISTORY_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+        }
+      }
+    } catch {
+      // ignore corrupt history
+    }
+    setHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Save history on change
+  useEffect(() => {
+    if (!hydrated || typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(HISTORY_KEY, JSON.stringify(messages));
+    } catch {
+      // localStorage full or blocked — ignore
+    }
+  }, [messages, hydrated]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -78,6 +109,13 @@ export function ChatWidget() {
 
   const resetChat = () => {
     setMessages([]);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.removeItem(HISTORY_KEY);
+      } catch {
+        // ignore
+      }
+    }
   };
 
   const isBusy = status === 'streaming' || status === 'submitted';
@@ -88,21 +126,26 @@ export function ChatWidget() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        title={open ? 'Thu gọn (giữ lịch sử)' : 'Mở AI Assistant'}
         className={cn(
           'fixed right-4 z-50 rounded-full shadow-xl ring-4 ring-white grid place-items-center transition-all',
           'bottom-20 md:bottom-6',
-          open
-            ? 'h-12 w-12 bg-rose-600 hover:bg-rose-700 text-white'
-            : 'h-14 px-4 bg-indigo-600 hover:bg-indigo-700 text-white gap-2 hover:scale-105',
+          'h-14 px-4 bg-indigo-600 hover:bg-indigo-700 text-white gap-2',
+          !open && 'hover:scale-105',
         )}
-        aria-label={open ? 'Close chat' : 'Open AI assistant'}
+        aria-label={open ? 'Minimize chat (history kept)' : 'Open AI assistant'}
       >
         {open ? (
-          <X className="h-5 w-5" strokeWidth={2.5} />
+          <>
+            <ChevronDown className="h-5 w-5" strokeWidth={2.5} />
+            <span className="text-sm font-semibold">Thu gọn</span>
+          </>
         ) : (
           <>
             <MessageCircle className="h-5 w-5" strokeWidth={2.5} />
-            <span className="text-sm font-semibold">Hỏi AI</span>
+            <span className="text-sm font-semibold">
+              {messages.length > 0 ? 'Tiếp tục' : 'Hỏi AI'}
+            </span>
           </>
         )}
       </button>
@@ -119,13 +162,24 @@ export function ChatWidget() {
             </div>
             {messages.length > 0 && (
               <button
-                onClick={resetChat}
+                onClick={() => {
+                  if (confirm('Xóa toàn bộ lịch sử chat? Không thể hoàn tác.')) {
+                    resetChat();
+                  }
+                }}
                 className="text-white/80 hover:text-white p-1 rounded hover:bg-white/10"
-                title="Clear chat"
+                title="Xóa lịch sử (end chat)"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
               </button>
             )}
+            <button
+              onClick={() => setOpen(false)}
+              className="text-white/80 hover:text-white p-1 rounded hover:bg-white/10"
+              title="Thu gọn (giữ lịch sử)"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
           </header>
 
           {/* Messages */}
