@@ -158,7 +158,7 @@ export function ChatWidget() {
             <MessageCircle className="h-4 w-4" />
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold">ASO Assistant</div>
-              <div className="text-[10px] opacity-80">Phân tích dashboard · Gemini Flash</div>
+              <div className="text-[10px] opacity-80">Phân tích dashboard · Gemini 2.0 Flash</div>
             </div>
             {messages.length > 0 && (
               <button

@@ -17,7 +17,7 @@ import { makeDashboardTools } from '@/lib/ai/dashboard-tools';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const MODEL_ID = 'gemini-flash-latest';
+const MODEL_ID = 'gemini-2.0-flash';
 
 const SYSTEM_PROMPT = `Bạn là trợ lý phân tích ASO cho **TrueProfit ASO Dashboard** (TrueProfit là Shopify net-profit analytics app trên App Store).
 
