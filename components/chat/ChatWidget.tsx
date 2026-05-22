@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { MessageCircle, Send, Loader2, RotateCcw, ChevronDown } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { MessageCircle, Send, Loader2, RotateCcw, ChevronDown, GripHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MessagePart {
@@ -13,15 +15,22 @@ interface MessagePart {
   toolName?: string;
 }
 
-function MessageText({ parts }: { parts: MessagePart[] }) {
+function MessageText({ parts, isUser }: { parts: MessagePart[]; isUser: boolean }) {
   return (
     <>
       {parts.map((p, i) => {
         if (p.type === 'text' && p.text) {
+          if (isUser) {
+            return (
+              <p key={i} className="whitespace-pre-wrap leading-relaxed">
+                {p.text}
+              </p>
+            );
+          }
           return (
-            <p key={i} className="whitespace-pre-wrap leading-relaxed">
-              {p.text}
-            </p>
+            <div key={i} className="chat-md leading-relaxed">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{p.text}</ReactMarkdown>
+            </div>
           );
         }
         if (p.type?.startsWith('tool-')) {
@@ -52,12 +61,28 @@ function MessageText({ parts }: { parts: MessagePart[] }) {
 }
 
 const HISTORY_KEY = 'asoChatHistoryV1';
+const SIZE_KEY = 'asoChatSizeV1';
+
+interface Size {
+  width: number;
+  height: number;
+}
+
+const DEFAULT_SIZE: Size = { width: 420, height: 640 };
+const MIN_SIZE: Size = { width: 340, height: 400 };
 
 export function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [hydrated, setHydrated] = useState(false);
+  const [size, setSize] = useState<Size>(DEFAULT_SIZE);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const resizeStateRef = useRef<{
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+  } | null>(null);
 
   const { messages, sendMessage, status, error, setMessages } = useChat({
     transport: new DefaultChatTransport({
@@ -65,35 +90,54 @@ export function ChatWidget() {
     }),
   });
 
-  // Load history on mount
+  // Load history + size on mount
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
       const raw = window.localStorage.getItem(HISTORY_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setMessages(parsed);
+        if (Array.isArray(parsed) && parsed.length > 0) setMessages(parsed);
+      }
+    } catch {
+      // ignore
+    }
+    try {
+      const rawSize = window.localStorage.getItem(SIZE_KEY);
+      if (rawSize) {
+        const parsed = JSON.parse(rawSize);
+        if (typeof parsed?.width === 'number' && typeof parsed?.height === 'number') {
+          setSize({
+            width: Math.max(MIN_SIZE.width, parsed.width),
+            height: Math.max(MIN_SIZE.height, parsed.height),
+          });
         }
       }
     } catch {
-      // ignore corrupt history
+      // ignore
     }
     setHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Save history on change
   useEffect(() => {
     if (!hydrated || typeof window === 'undefined') return;
     try {
       window.localStorage.setItem(HISTORY_KEY, JSON.stringify(messages));
     } catch {
-      // localStorage full or blocked — ignore
+      // ignore
     }
   }, [messages, hydrated]);
 
-  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    if (!hydrated || typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(SIZE_KEY, JSON.stringify(size));
+    } catch {
+      // ignore
+    }
+  }, [size, hydrated]);
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -120,9 +164,43 @@ export function ChatWidget() {
 
   const isBusy = status === 'streaming' || status === 'submitted';
 
+  const startResize = (e: MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    resizeStateRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startW: size.width,
+      startH: size.height,
+    };
+    const onMove = (ev: globalThis.MouseEvent) => {
+      const st = resizeStateRef.current;
+      if (!st) return;
+      // Dragging UP / LEFT = bigger (panel is anchored bottom-right)
+      const dx = st.startX - ev.clientX;
+      const dy = st.startY - ev.clientY;
+      const maxW = Math.min(window.innerWidth - 32, 900);
+      const maxH = Math.min(window.innerHeight - 120, 900);
+      setSize({
+        width: Math.max(MIN_SIZE.width, Math.min(maxW, st.startW + dx)),
+        height: Math.max(MIN_SIZE.height, Math.min(maxH, st.startH + dy)),
+      });
+    };
+    const onUp = () => {
+      resizeStateRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const panelStyle = {
+    width: `min(${size.width}px, calc(100vw - 2rem))`,
+    height: `min(${size.height}px, calc(100vh - 8rem))`,
+  };
+
   return (
     <>
-      {/* Floating button */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -150,11 +228,21 @@ export function ChatWidget() {
         )}
       </button>
 
-      {/* Chat panel */}
       {open && (
-        <div className="fixed right-4 z-40 w-[min(420px,calc(100vw-2rem))] h-[min(640px,calc(100vh-8rem))] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden bottom-36 md:bottom-24">
-          {/* Header */}
-          <header className="bg-gradient-to-r from-indigo-500 to-violet-600 text-white px-4 py-3 flex items-center gap-2">
+        <div
+          style={panelStyle}
+          className="fixed right-4 z-40 bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden bottom-36 md:bottom-24"
+        >
+          {/* Resize handle — drag from top-left corner to expand */}
+          <div
+            onMouseDown={startResize}
+            title="Kéo để chỉnh kích thước"
+            className="absolute top-0 left-0 w-5 h-5 cursor-nwse-resize z-10 grid place-items-end p-0.5 text-slate-300 hover:text-slate-500 hover:bg-slate-100/80 rounded-br-md"
+          >
+            <GripHorizontal className="h-3 w-3 rotate-45" />
+          </div>
+
+          <header className="bg-gradient-to-r from-indigo-500 to-violet-600 text-white px-4 py-3 flex items-center gap-2 pl-8">
             <MessageCircle className="h-4 w-4" />
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold">ASO Assistant</div>
@@ -182,7 +270,6 @@ export function ChatWidget() {
             </button>
           </header>
 
-          {/* Messages */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
             {messages.length === 0 && (
               <div className="text-center py-6 text-[12px] text-slate-500 space-y-2">
@@ -218,13 +305,13 @@ export function ChatWidget() {
               >
                 <div
                   className={cn(
-                    'max-w-[85%] rounded-2xl px-3 py-2 text-[13px]',
+                    'rounded-2xl px-3 py-2 text-[13px]',
                     m.role === 'user'
-                      ? 'bg-indigo-600 text-white rounded-br-sm'
-                      : 'bg-slate-100 text-slate-900 rounded-bl-sm',
+                      ? 'bg-indigo-600 text-white rounded-br-sm max-w-[85%]'
+                      : 'bg-slate-100 text-slate-900 rounded-bl-sm max-w-[95%]',
                   )}
                 >
-                  <MessageText parts={m.parts as MessagePart[]} />
+                  <MessageText parts={m.parts as MessagePart[]} isUser={m.role === 'user'} />
                 </div>
               </div>
             ))}
@@ -242,7 +329,6 @@ export function ChatWidget() {
             )}
           </div>
 
-          {/* Input */}
           <form
             onSubmit={handleSubmit}
             className="border-t border-slate-200 p-2 flex items-end gap-2 bg-white"
