@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import {
   Sheet,
   SheetContent,
@@ -210,6 +210,62 @@ export function KeywordTrendSheet() {
   const [sortKey, setSortKey] = useState<SortKey>('users');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
+  // Resizable width (px), persisted to localStorage.
+  const SHEET_WIDTH_KEY = 'asoKeywordSheetWidthV1';
+  const DEFAULT_WIDTH = 820;
+  const MIN_WIDTH = 480;
+  const [sheetWidth, setSheetWidth] = useState<number>(DEFAULT_WIDTH);
+  const [widthHydrated, setWidthHydrated] = useState(false);
+  const resizeRef = useRef<{ startX: number; startW: number } | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(SHEET_WIDTH_KEY);
+      if (raw) {
+        const n = Number(raw);
+        if (Number.isFinite(n) && n >= MIN_WIDTH) {
+          setSheetWidth(Math.min(n, window.innerWidth - 32));
+        }
+      }
+    } catch {
+      // ignore
+    }
+    setWidthHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!widthHydrated || typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(SHEET_WIDTH_KEY, String(sheetWidth));
+    } catch {
+      // ignore
+    }
+  }, [sheetWidth, widthHydrated]);
+
+  const startSheetResize = (e: MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = { startX: e.clientX, startW: sheetWidth };
+    const onMove = (ev: globalThis.MouseEvent) => {
+      const st = resizeRef.current;
+      if (!st) return;
+      // Sheet anchored on the right → drag left makes it wider.
+      const dx = st.startX - ev.clientX;
+      const maxW = window.innerWidth - 32;
+      setSheetWidth(Math.max(MIN_WIDTH, Math.min(maxW, st.startW + dx)));
+    };
+    const onUp = () => {
+      resizeRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+    };
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
   const countryBreakdown = useMemo(
     () => aggregateByCountry(data, keyword, drillWindow, surface),
     [data, keyword, drillWindow, surface],
@@ -293,7 +349,17 @@ export function KeywordTrendSheet() {
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && close()}>
-      <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
+      <SheetContent
+        side="right"
+        className="overflow-y-auto p-6"
+        style={{ width: `${sheetWidth}px`, maxWidth: 'calc(100vw - 2rem)' }}
+      >
+        {/* Resize handle on the left edge */}
+        <div
+          onMouseDown={startSheetResize}
+          title="Kéo để chỉnh độ rộng"
+          className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-indigo-400/40 active:bg-indigo-500/60 z-20 transition-colors"
+        />
         <SheetHeader>
           <SheetTitle className="font-mono break-all text-base">{keyword}</SheetTitle>
           <SheetDescription>
