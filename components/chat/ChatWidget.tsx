@@ -5,7 +5,7 @@ import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { MessageCircle, Send, Loader2, Plus, ChevronDown, GripHorizontal } from 'lucide-react';
+import { MessageCircle, Send, Loader2, CircleStop, ChevronDown, GripHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MessagePart {
@@ -251,23 +251,24 @@ export function ChatWidget() {
             {messages.length > 0 && (
               <button
                 onClick={() => {
-                  if (confirm('Kết thúc chat và bắt đầu session mới? Lịch sử hiện tại sẽ bị xóa.')) {
+                  if (confirm('Kết thúc chat? Toàn bộ lịch sử sẽ bị xóa, không thể hoàn tác.')) {
                     resetChat();
                   }
                 }}
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-white/90 hover:text-white px-2 py-1 rounded hover:bg-white/15 transition"
-                title="Kết thúc & bắt đầu chat mới"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-white/90 hover:text-white bg-rose-500/20 hover:bg-rose-500/40 px-2 py-1 rounded transition"
+                title="Kết thúc chat (xóa lịch sử)"
               >
-                <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
-                <span>Chat mới</span>
+                <CircleStop className="h-3.5 w-3.5" strokeWidth={2.2} />
+                <span>End chat</span>
               </button>
             )}
             <button
               onClick={() => setOpen(false)}
-              className="text-white/80 hover:text-white p-1 rounded hover:bg-white/10"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-white/90 hover:text-white px-2 py-1 rounded hover:bg-white/15 transition"
               title="Thu gọn (giữ lịch sử)"
             >
-              <ChevronDown className="h-3.5 w-3.5" />
+              <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.2} />
+              <span>Thu gọn</span>
             </button>
           </header>
 
