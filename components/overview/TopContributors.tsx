@@ -15,10 +15,12 @@ interface ColumnProps {
   total: number;
   accent: 'indigo' | 'emerald';
   activeKeyword?: string | null;
+  activeSurface?: 'all' | 'organic' | 'paid';
+  activeCountry?: string | null;
   onRowClick?: (keyword: string) => void;
 }
 
-function Column({ title, unitLabel, Icon, rows, total, accent, activeKeyword, onRowClick }: ColumnProps) {
+function Column({ title, unitLabel, Icon, rows, total, accent, activeKeyword, activeSurface, activeCountry, onRowClick }: ColumnProps) {
   const headerColor = accent === 'indigo' ? 'text-indigo-700' : 'text-emerald-700';
   const barColor = accent === 'indigo' ? 'bg-indigo-500' : 'bg-emerald-500';
   const barBg = accent === 'indigo' ? 'bg-indigo-100' : 'bg-emerald-100';
@@ -71,7 +73,12 @@ function Column({ title, unitLabel, Icon, rows, total, accent, activeKeyword, on
               </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <KeywordLink keyword={r.keyword} className="font-semibold text-sm" />
+                  <KeywordLink
+                    keyword={r.keyword}
+                    country={activeCountry ?? undefined}
+                    surface={activeSurface ?? 'all'}
+                    className="font-semibold text-sm"
+                  />
                   <CategoryChip category={r.category} compact />
                   <span
                     className={cn(
@@ -114,10 +121,21 @@ interface Props {
   totalUsers: number;
   totalGetApp: number;
   activeKeyword?: string | null;
+  activeSurface?: 'all' | 'organic' | 'paid';
+  activeCountry?: string | null;
   onRowClick?: (keyword: string) => void;
 }
 
-export function TopContributors({ users, getApp, totalUsers, totalGetApp, activeKeyword, onRowClick }: Props) {
+export function TopContributors({
+  users,
+  getApp,
+  totalUsers,
+  totalGetApp,
+  activeKeyword,
+  activeSurface,
+  activeCountry,
+  onRowClick,
+}: Props) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <Column
@@ -128,6 +146,8 @@ export function TopContributors({ users, getApp, totalUsers, totalGetApp, active
         total={totalUsers}
         accent="indigo"
         activeKeyword={activeKeyword}
+        activeSurface={activeSurface}
+        activeCountry={activeCountry}
         onRowClick={onRowClick}
       />
       <Column
@@ -138,6 +158,8 @@ export function TopContributors({ users, getApp, totalUsers, totalGetApp, active
         total={totalGetApp}
         accent="emerald"
         activeKeyword={activeKeyword}
+        activeSurface={activeSurface}
+        activeCountry={activeCountry}
         onRowClick={onRowClick}
       />
     </div>

@@ -454,6 +454,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             totalUsers={topUsers.total}
             totalGetApp={topGetApp.total}
             activeKeyword={keywordFocus}
+            activeSurface={surfaceFocus}
+            activeCountry={countryFocus}
             onRowClick={(k) => setKeywordFocus(keywordFocus === k ? null : k)}
           />
         )}
@@ -470,6 +472,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             organic={organicMovers}
             paid={paidMovers}
             activeKeyword={keywordFocus}
+            activeSurface={surfaceFocus}
+            activeCountry={countryFocus}
             onRowClick={(k) => setKeywordFocus(keywordFocus === k ? null : k)}
           />
         )}

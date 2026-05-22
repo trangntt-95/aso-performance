@@ -125,10 +125,14 @@ function deriveAction(m: VolumeMover): string {
 function MoverRow({
   m,
   isActive,
+  activeSurface,
+  activeCountry,
   onRowClick,
 }: {
   m: VolumeMover;
   isActive: boolean;
+  activeSurface?: 'all' | 'organic' | 'paid';
+  activeCountry?: string | null;
   onRowClick?: (kw: string) => void;
 }) {
   const up = m.direction === 'up';
@@ -162,7 +166,8 @@ function MoverRow({
           <div className="flex items-center gap-1.5 flex-wrap">
             <KeywordLink
               keyword={m.keyword}
-              country={m.country !== '(global)' ? m.country : undefined}
+              country={activeCountry ?? (m.country !== '(global)' ? m.country : undefined)}
+              surface={activeSurface ?? (m.surface as 'organic' | 'paid')}
               className="font-semibold text-[13px]"
             />
             <CategoryChip category={m.category} compact />
@@ -229,6 +234,8 @@ interface VolumeMoversProps {
   organic: VolumeMover[];
   paid: VolumeMover[];
   activeKeyword?: string | null;
+  activeSurface?: 'all' | 'organic' | 'paid';
+  activeCountry?: string | null;
   onRowClick?: (keyword: string) => void;
 }
 
@@ -252,7 +259,14 @@ function ColumnHeader({
   );
 }
 
-export function TopVolumeMovers({ organic, paid, activeKeyword, onRowClick }: VolumeMoversProps) {
+export function TopVolumeMovers({
+  organic,
+  paid,
+  activeKeyword,
+  activeSurface,
+  activeCountry,
+  onRowClick,
+}: VolumeMoversProps) {
   if (organic.length === 0 && paid.length === 0) {
     return (
       <div className="border rounded-lg bg-white py-4 text-center text-xs text-slate-500">
@@ -274,6 +288,8 @@ export function TopVolumeMovers({ organic, paid, activeKeyword, onRowClick }: Vo
                 key={`${m.keyword}-${m.country}-${i}`}
                 m={m}
                 isActive={activeKeyword?.toLowerCase() === m.keyword.toLowerCase()}
+                activeSurface={activeSurface}
+                activeCountry={activeCountry}
                 onRowClick={onRowClick}
               />
             ))}
@@ -291,6 +307,8 @@ export function TopVolumeMovers({ organic, paid, activeKeyword, onRowClick }: Vo
                 key={`${m.keyword}-${m.country}-${i}`}
                 m={m}
                 isActive={activeKeyword?.toLowerCase() === m.keyword.toLowerCase()}
+                activeSurface={activeSurface}
+                activeCountry={activeCountry}
                 onRowClick={onRowClick}
               />
             ))}

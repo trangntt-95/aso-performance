@@ -1,23 +1,24 @@
 'use client';
 
-import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
+import { useKeywordTrendStore, type KeywordTrendSurface } from '@/lib/store/keywordTrendStore';
 import { cn } from '@/lib/utils';
 
 interface Props {
   keyword: string;
   country?: string;
+  surface?: KeywordTrendSurface;
   className?: string;
   children?: React.ReactNode;
 }
 
-export function KeywordLink({ keyword, country, className, children }: Props) {
+export function KeywordLink({ keyword, country, surface, className, children }: Props) {
   const openKeyword = useKeywordTrendStore((s) => s.openKeyword);
   return (
     <button
       type="button"
       onClick={(e) => {
         e.stopPropagation();
-        openKeyword(keyword, country);
+        openKeyword(keyword, { country, surface });
       }}
       className={cn(
         'text-left hover:underline decoration-dotted underline-offset-2 cursor-pointer',

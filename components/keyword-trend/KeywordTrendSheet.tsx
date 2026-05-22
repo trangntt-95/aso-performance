@@ -28,33 +28,48 @@ function summarise(rows: KeywordRow[]) {
 }
 
 export function KeywordTrendSheet() {
-  const { open, keyword, country, close } = useKeywordTrendStore();
+  const { open, keyword, country, surface, close } = useKeywordTrendStore();
   const { data } = useSheetData();
   const notes = useStatusStore((s) => s.notes);
   const setNote = useStatusStore((s) => s.setNote);
 
   const trendData = useMemo(() => {
     if (!keyword || !data) return null;
-    const history: HistoryRow[] = data.history.filter((h) => h.searchTerm === keyword);
-    const inAllL7 = data.allL7.filter((r) => r.searchTerm === keyword);
-    const inAllL30 = data.allL30.filter((r) => r.searchTerm === keyword);
-    const inAllL90 = data.allL90.filter((r) => r.searchTerm === keyword);
-    const inCountryL7 = country
-      ? data.countryL7.filter((r) => r.searchTerm === keyword && r.country === country)
-      : [];
-    const actionRows: ActionQueueRow[] = data.actionQueue.filter(
-      (r) => r.keyword === keyword && (!country || r.country === country),
-    );
+    const surfaceTarget =
+      surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
+    const matchKw = (r: { searchTerm: string }) => r.searchTerm === keyword;
+    const matchSurface = (r: { surface: string }) =>
+      surfaceTarget ? r.surface === surfaceTarget : true;
+    const matchCountry = (r: { country?: string }) => (country ? r.country === country : true);
+
+    const history: HistoryRow[] = data.history.filter((h) => matchKw(h) && matchSurface(h));
+
+    // When country filter is active, prefer Country_L_* (those have the country column).
+    const pickL = (allTab: KeywordRow[], countryTab: KeywordRow[]) =>
+      country
+        ? countryTab.filter((r) => matchKw(r) && matchSurface(r) && matchCountry(r))
+        : allTab.filter((r) => matchKw(r) && matchSurface(r));
+
+    const inL7 = pickL(data.allL7, data.countryL7);
+    const inL30 = pickL(data.allL30, data.countryL30);
+    const inL90 = pickL(data.allL90, data.countryL90);
+
+    const actionRows: ActionQueueRow[] = data.actionQueue.filter((r) => {
+      if (r.keyword !== keyword) return false;
+      if (country && r.country !== country) return false;
+      if (surface !== 'all' && r.surface !== surface) return false;
+      return true;
+    });
+
     return {
       history,
-      l7: summarise(inAllL7),
-      l30: summarise(inAllL30),
-      l90: summarise(inAllL90),
-      countryL7: country ? summarise(inCountryL7) : null,
-      meta: inAllL7[0] ?? inAllL30[0] ?? inAllL90[0] ?? null,
+      l7: summarise(inL7),
+      l30: summarise(inL30),
+      l90: summarise(inL90),
+      meta: inL7[0] ?? inL30[0] ?? inL90[0] ?? null,
       actionRows,
     };
-  }, [keyword, country, data]);
+  }, [keyword, country, surface, data]);
 
   const noteKey = keyword ? `keyword::${keyword}` : '';
   const currentNote = noteKey ? notes[noteKey] ?? '' : '';
@@ -65,7 +80,10 @@ export function KeywordTrendSheet() {
         <SheetHeader>
           <SheetTitle className="font-mono break-all text-base">{keyword}</SheetTitle>
           <SheetDescription>
-            {country ? `Country focus: ${country}` : 'Across all countries'}
+            {[
+              country ? `Country: ${country}` : 'All countries',
+              surface === 'all' ? 'all surfaces' : surface,
+            ].join(' · ')}
           </SheetDescription>
         </SheetHeader>
 
@@ -140,11 +158,12 @@ export function KeywordTrendSheet() {
 
             <section className="space-y-2">
               <h3 className="text-[11px] uppercase tracking-wide text-slate-500">
-                Snapshot · current windows {country ? `(${country})` : '(global)'}
+                Snapshot · current windows{country ? ` (${country})` : ''}
+                {surface !== 'all' ? ` · ${surface}` : ''}
               </h3>
               <div className="grid grid-cols-3 gap-2 text-[12px]">
                 {[
-                  { label: 'L7', s: country ? trendData.countryL7 : trendData.l7 },
+                  { label: 'L7', s: trendData.l7 },
                   { label: 'L30', s: trendData.l30 },
                   { label: 'L90', s: trendData.l90 },
                 ].map(({ label, s }) => (
