@@ -1,5 +1,5 @@
 import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from 'ai';
-import { gateway } from 'ai';
+import { google } from '@ai-sdk/google';
 import { fetchAllTabs } from '@/lib/sheets/client';
 import {
   parseActionQueue,
@@ -17,7 +17,7 @@ import { makeDashboardTools } from '@/lib/ai/dashboard-tools';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const MODEL_ID = 'anthropic/claude-haiku-4.5';
+const MODEL_ID = 'gemini-flash-latest';
 
 const SYSTEM_PROMPT = `Bạn là trợ lý phân tích ASO (App Store Optimization) cho **TrueProfit ASO Dashboard** của TrueProfit (Shopify net-profit analytics app).
 
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
     const tools = makeDashboardTools(payload);
 
     const result = streamText({
-      model: gateway(MODEL_ID),
+      model: google(MODEL_ID),
       system: SYSTEM_PROMPT,
       messages: await convertToModelMessages(messages),
       tools,

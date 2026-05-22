@@ -17,6 +17,9 @@ import { cn } from '@/lib/utils';
 interface Props {
   data: DailyTrendPoint[];
   height?: number;
+  lastNDays?: number;
+  countryFilter?: string | null;
+  keywordFilter?: string | null;
 }
 
 type Metric = 'users' | 'getApp' | 'cr';
@@ -27,25 +30,33 @@ const METRICS: { key: Metric; label: string; needHistoryDaily: boolean }[] = [
   { key: 'cr', label: 'CR', needHistoryDaily: true },
 ];
 
-export function DailyTrendChart({ data, height = 220 }: Props) {
+export function DailyTrendChart({
+  data,
+  height = 220,
+  lastNDays,
+  countryFilter,
+  keywordFilter,
+}: Props) {
   const [metric, setMetric] = useState<Metric>('users');
-  const hasGetApp = data.some((d) => d.getApp !== null);
-  const hasCr = data.some((d) => d.cr !== null);
+  // Trim by window: if lastNDays is set, keep only the most recent N points.
+  const trimmed = lastNDays && data.length > lastNDays ? data.slice(-lastNDays) : data;
+  const hasGetApp = trimmed.some((d) => d.getApp !== null);
+  const hasCr = trimmed.some((d) => d.cr !== null);
 
   const availability: Record<Metric, boolean> = {
-    users: data.length > 0,
+    users: trimmed.length > 0,
     getApp: hasGetApp,
     cr: hasCr,
   };
 
-  if (data.length === 0) {
+  if (trimmed.length === 0) {
     return (
       <div className="py-10 text-center text-sm text-slate-500">Chưa có dữ liệu history.</div>
     );
   }
 
   // Filter points by metric availability so the area chart doesn't draw to 0.
-  const chartData = data.filter((d) => {
+  const chartData = trimmed.filter((d) => {
     if (metric === 'users') return d.users > 0;
     if (metric === 'getApp') return d.getApp !== null;
     return d.cr !== null;
@@ -57,6 +68,11 @@ export function DailyTrendChart({ data, height = 220 }: Props) {
 
   return (
     <div className="flex flex-col gap-2">
+      {countryFilter && (
+        <div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1">
+          Country filter (<b>{countryFilter}</b>) doesn&apos;t apply — History tab is global (no country breakdown).
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
           {METRICS.map((m, idx) => {
@@ -90,6 +106,7 @@ export function DailyTrendChart({ data, height = 220 }: Props) {
         </div>
         <span className="text-[10px] text-slate-500">
           {chartData.length} ngày · {labelOf(metric)} per-day
+          {keywordFilter ? ` · kw=${keywordFilter}` : ''}
         </span>
       </div>
       <div style={{ height }}>

@@ -89,24 +89,33 @@ export function ChatWidget() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'fixed bottom-4 right-4 z-50 h-12 w-12 rounded-full shadow-lg grid place-items-center transition-all',
-          'bg-gradient-to-br from-indigo-500 to-violet-600 text-white hover:scale-105 hover:shadow-xl',
-          open && 'rotate-180',
+          'fixed right-4 z-50 rounded-full shadow-xl ring-4 ring-white grid place-items-center transition-all',
+          'bottom-20 md:bottom-6',
+          open
+            ? 'h-12 w-12 bg-rose-600 hover:bg-rose-700 text-white'
+            : 'h-14 px-4 bg-indigo-600 hover:bg-indigo-700 text-white gap-2 hover:scale-105',
         )}
-        aria-label={open ? 'Close chat' : 'Open chat'}
+        aria-label={open ? 'Close chat' : 'Open AI assistant'}
       >
-        {open ? <X className="h-5 w-5" /> : <MessageCircle className="h-5 w-5" />}
+        {open ? (
+          <X className="h-5 w-5" strokeWidth={2.5} />
+        ) : (
+          <>
+            <MessageCircle className="h-5 w-5" strokeWidth={2.5} />
+            <span className="text-sm font-semibold">Hỏi AI</span>
+          </>
+        )}
       </button>
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-20 right-4 z-50 w-[min(420px,calc(100vw-2rem))] h-[min(640px,calc(100vh-6rem))] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="fixed right-4 z-40 w-[min(420px,calc(100vw-2rem))] h-[min(640px,calc(100vh-8rem))] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden bottom-36 md:bottom-24">
           {/* Header */}
           <header className="bg-gradient-to-r from-indigo-500 to-violet-600 text-white px-4 py-3 flex items-center gap-2">
             <MessageCircle className="h-4 w-4" />
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold">ASO Assistant</div>
-              <div className="text-[10px] opacity-80">Phân tích dashboard · Claude Haiku</div>
+              <div className="text-[10px] opacity-80">Phân tích dashboard · Gemini Flash</div>
             </div>
             {messages.length > 0 && (
               <button

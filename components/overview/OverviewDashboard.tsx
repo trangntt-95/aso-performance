@@ -397,7 +397,12 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         {isLoading ? (
           <Skeleton className="h-56" />
         ) : (
-          <DailyTrendChart data={dailyTrendData} />
+          <DailyTrendChart
+            data={dailyTrendData}
+            lastNDays={days}
+            countryFilter={countryFocus}
+            keywordFilter={keywordFocus}
+          />
         )}
       </SectionCard>
 
