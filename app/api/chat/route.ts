@@ -65,21 +65,7 @@ async function fetchPayload(): Promise<SheetPayload> {
   };
 }
 
-function checkPassword(req: Request): boolean {
-  const expected = process.env.CHAT_PASSWORD;
-  if (!expected) return true; // no password configured → open
-  const header = req.headers.get('x-chat-auth');
-  return header === expected;
-}
-
 export async function POST(req: Request) {
-  if (!checkPassword(req)) {
-    return new Response(JSON.stringify({ error: 'invalid_password' }), {
-      status: 401,
-      headers: { 'content-type': 'application/json' },
-    });
-  }
-
   try {
     const { messages }: { messages: UIMessage[] } = await req.json();
     const payload = await fetchPayload();
