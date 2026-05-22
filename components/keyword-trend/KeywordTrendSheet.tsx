@@ -16,7 +16,8 @@ import { useStatusStore } from '@/lib/store/statusStore';
 import type { ActionQueueRow, HistoryRow, KeywordRow, SheetPayload } from '@/lib/sheets/types';
 import { formatDeltaPct, formatNumber, formatPercent, formatPos, deltaTone } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
-import { Leaf, DollarSign } from 'lucide-react';
+import { Leaf, DollarSign, ArrowUpDown, ArrowDown, ArrowUp, Search } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 
 function summarise(rows: KeywordRow[]) {
   if (rows.length === 0) return null;
@@ -105,68 +106,96 @@ function aggregateByCountry(
   return result;
 }
 
-function ChannelRow({
-  type,
-  users,
-  getApp,
-  cr,
-  pos,
-  deltaUsersPct,
-}: {
-  type: 'organic' | 'paid';
+type ChannelView = 'all' | 'organic' | 'paid';
+type SortKey = 'country' | 'users' | 'installs' | 'cr' | 'pos' | 'delta';
+
+interface ViewRow {
+  country: string;
   users: number;
-  getApp: number;
+  installs: number;
   cr: number;
   pos: number | null;
   deltaUsersPct: number | null;
-}) {
-  const isEmpty = users === 0 && getApp === 0;
-  const isOrganic = type === 'organic';
-  const Icon = isOrganic ? Leaf : DollarSign;
-  const labelCls = isOrganic ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50';
-  const t = deltaUsersPct !== null ? deltaTone(deltaUsersPct) : 'flat';
-  const deltaCls =
-    t === 'pos' ? 'text-emerald-700' : t === 'neg' ? 'text-rose-700' : 'text-slate-500';
+}
 
+function projectRow(c: CountryRow, view: ChannelView): ViewRow {
+  if (view === 'organic') {
+    return {
+      country: c.country,
+      users: c.organicUsers,
+      installs: c.organicGetApp,
+      cr: c.organicCr,
+      pos: c.organicPos,
+      deltaUsersPct: c.organicDeltaUsersPct,
+    };
+  }
+  if (view === 'paid') {
+    return {
+      country: c.country,
+      users: c.paidUsers,
+      installs: c.paidGetApp,
+      cr: c.paidCr,
+      pos: c.paidPos,
+      deltaUsersPct: c.paidDeltaUsersPct,
+    };
+  }
+  // all = combined
+  const totalUsers = c.totalUsers;
+  const totalInstalls = c.totalGetApp;
+  // Weighted average pos by users (more useful than simple avg).
+  const orgWeight = c.organicUsers;
+  const paidWeight = c.paidUsers;
+  const weight = orgWeight + paidWeight;
+  const pos =
+    weight > 0
+      ? ((c.organicPos ?? 0) * orgWeight + (c.paidPos ?? 0) * paidWeight) / weight
+      : null;
+  // Weighted delta% by prior users… we don't have prior totals; fall back to weighted by current users.
+  const orgD = c.organicDeltaUsersPct;
+  const paidD = c.paidDeltaUsersPct;
+  let combinedDelta: number | null = null;
+  if (orgD !== null && paidD !== null) {
+    combinedDelta = (orgD * orgWeight + paidD * paidWeight) / Math.max(1, weight);
+  } else {
+    combinedDelta = orgD ?? paidD;
+  }
+  return {
+    country: c.country,
+    users: totalUsers,
+    installs: totalInstalls,
+    cr: totalUsers > 0 ? totalInstalls / totalUsers : 0,
+    pos: pos !== null && isFinite(pos) && pos > 0 ? pos : null,
+    deltaUsersPct: combinedDelta,
+  };
+}
+
+function SortHeader({
+  label,
+  active,
+  dir,
+  onClick,
+  align = 'right',
+}: {
+  label: string;
+  active: boolean;
+  dir: 'asc' | 'desc';
+  onClick: () => void;
+  align?: 'left' | 'right';
+}) {
+  const Icon = !active ? ArrowUpDown : dir === 'desc' ? ArrowDown : ArrowUp;
   return (
-    <div className="flex items-center gap-2 text-[12px]">
-      <span
-        className={cn(
-          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0',
-          labelCls,
-        )}
-      >
-        <Icon className="h-3 w-3" />
-        {isOrganic ? 'Organic' : 'Paid'}
-      </span>
-      {isEmpty ? (
-        <span className="text-slate-300">— không có</span>
-      ) : (
-        <div className="flex items-center gap-x-2.5 gap-y-0.5 flex-wrap text-slate-700 tabular-nums">
-          <span>
-            <span className="text-slate-500">Users</span>{' '}
-            <b className="font-mono">{formatNumber(users, { compact: true })}</b>
-            {deltaUsersPct !== null && (
-              <span className={cn('ml-1 font-medium text-[11px]', deltaCls)}>
-                {formatDeltaPct(deltaUsersPct)}
-              </span>
-            )}
-          </span>
-          <span>
-            <span className="text-slate-500">Install</span>{' '}
-            <b className="font-mono">{formatNumber(getApp, { compact: true })}</b>
-          </span>
-          <span>
-            <span className="text-slate-500">CR</span>{' '}
-            <b className="font-mono">{formatPercent(cr)}</b>
-          </span>
-          <span>
-            <span className="text-slate-500">Rank</span>{' '}
-            <b className="font-mono">{formatPos(pos)}</b>
-          </span>
-        </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-medium hover:text-slate-900 transition',
+        active ? 'text-slate-900' : 'text-slate-500',
+        align === 'right' && 'ml-auto',
       )}
-    </div>
+    >
+      <span>{label}</span>
+      <Icon className="h-2.5 w-2.5" />
+    </button>
   );
 }
 
@@ -176,11 +205,50 @@ export function KeywordTrendSheet() {
   const notes = useStatusStore((s) => s.notes);
   const setNote = useStatusStore((s) => s.setNote);
   const [drillWindow, setDrillWindow] = useState<DrillWindow>('L7');
+  const [channelView, setChannelView] = useState<ChannelView>('all');
+  const [countrySearch, setCountrySearch] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('users');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const countryBreakdown = useMemo(
     () => aggregateByCountry(data, keyword, drillWindow, surface),
     [data, keyword, drillWindow, surface],
   );
+
+  const tableRows = useMemo(() => {
+    const projected = countryBreakdown.map((c) => projectRow(c, channelView));
+    const q = countrySearch.trim().toLowerCase();
+    const filtered = q ? projected.filter((r) => r.country.toLowerCase().includes(q)) : projected;
+    const cmp = (a: ViewRow, b: ViewRow): number => {
+      if (sortKey === 'country') return a.country.localeCompare(b.country);
+      if (sortKey === 'pos') {
+        // null pos sorts to the end
+        const av = a.pos ?? Number.MAX_VALUE;
+        const bv = b.pos ?? Number.MAX_VALUE;
+        return av - bv;
+      }
+      if (sortKey === 'delta') {
+        const av = a.deltaUsersPct ?? -Infinity;
+        const bv = b.deltaUsersPct ?? -Infinity;
+        return av - bv;
+      }
+      const av = a[sortKey] as number;
+      const bv = b[sortKey] as number;
+      return av - bv;
+    };
+    filtered.sort((a, b) => (sortDir === 'desc' ? -cmp(a, b) : cmp(a, b)));
+    return filtered;
+  }, [countryBreakdown, channelView, countrySearch, sortKey, sortDir]);
+
+  const toggleSort = (k: SortKey) => {
+    if (sortKey === k) {
+      setSortDir(sortDir === 'desc' ? 'asc' : 'desc');
+    } else {
+      setSortKey(k);
+      // numeric defaults to desc, country to asc
+      setSortDir(k === 'country' ? 'asc' : 'desc');
+    }
+  };
 
   const trendData = useMemo(() => {
     if (!keyword || !data) return null;
@@ -313,70 +381,180 @@ export function KeywordTrendSheet() {
             <Separator />
 
             <section className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <h3 className="text-[11px] uppercase tracking-wide text-slate-500">
-                  By country · {drillWindow}
+                  By country
                 </h3>
-                <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[10px]">
-                  {(['L7', 'L30', 'L90'] as const).map((w, i) => (
-                    <button
-                      key={w}
-                      type="button"
-                      onClick={() => setDrillWindow(w)}
-                      className={cn(
-                        'px-2 py-0.5 font-medium transition',
-                        i > 0 && 'border-l border-slate-200',
-                        drillWindow === w ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
-                      )}
-                    >
-                      {w}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[10px]">
+                    {(['L7', 'L30', 'L90'] as const).map((w, i) => (
+                      <button
+                        key={w}
+                        type="button"
+                        onClick={() => setDrillWindow(w)}
+                        className={cn(
+                          'px-2 py-0.5 font-medium transition',
+                          i > 0 && 'border-l border-slate-200',
+                          drillWindow === w ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
+                        )}
+                      >
+                        {w}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[10px]">
+                    {(
+                      [
+                        { v: 'all', label: 'All', Icon: null },
+                        { v: 'organic', label: 'Organic', Icon: Leaf },
+                        { v: 'paid', label: 'Paid', Icon: DollarSign },
+                      ] as const
+                    ).map(({ v, label, Icon }, i) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setChannelView(v)}
+                        className={cn(
+                          'px-2 py-0.5 font-medium transition inline-flex items-center gap-0.5',
+                          i > 0 && 'border-l border-slate-200',
+                          channelView === v
+                            ? v === 'organic'
+                              ? 'bg-emerald-600 text-white'
+                              : v === 'paid'
+                              ? 'bg-amber-600 text-white'
+                              : 'bg-slate-900 text-white'
+                            : 'bg-white text-slate-600 hover:bg-slate-50',
+                        )}
+                      >
+                        {Icon && <Icon className="h-2.5 w-2.5" />}
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-              {countryBreakdown.length === 0 ? (
+
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400 pointer-events-none" />
+                <Input
+                  value={countrySearch}
+                  onChange={(e) => setCountrySearch(e.target.value)}
+                  placeholder="Filter country…"
+                  className="pl-6 h-7 text-[12px]"
+                />
+              </div>
+
+              {tableRows.length === 0 ? (
                 <div className="text-[12px] text-slate-500 italic py-4 text-center border rounded">
-                  Keyword này chưa có dữ liệu theo country ở {drillWindow}.
+                  {countryBreakdown.length === 0
+                    ? `Keyword này chưa có dữ liệu theo country ở ${drillWindow}.`
+                    : 'Không có country nào khớp filter.'}
                 </div>
               ) : (
-                <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
-                  {countryBreakdown.slice(0, 20).map((c) => (
-                    <div
-                      key={c.country}
-                      className="border rounded-lg bg-white px-3 py-2 hover:border-slate-300 transition"
-                    >
-                      <div className="flex items-baseline justify-between gap-2 mb-1.5">
-                        <span className="font-semibold text-[13px] truncate">{c.country}</span>
-                        <span className="text-[11px] text-slate-500 tabular-nums shrink-0">
-                          Total <b className="font-mono text-slate-900">{formatNumber(c.totalUsers, { compact: true })}</b> users ·{' '}
-                          <b className="font-mono text-slate-900">{formatNumber(c.totalGetApp, { compact: true })}</b> installs
-                        </span>
-                      </div>
-                      <div className="space-y-1 pl-1">
-                        <ChannelRow
-                          type="organic"
-                          users={c.organicUsers}
-                          getApp={c.organicGetApp}
-                          cr={c.organicCr}
-                          pos={c.organicPos}
-                          deltaUsersPct={c.organicDeltaUsersPct}
-                        />
-                        <ChannelRow
-                          type="paid"
-                          users={c.paidUsers}
-                          getApp={c.paidGetApp}
-                          cr={c.paidCr}
-                          pos={c.paidPos}
-                          deltaUsersPct={c.paidDeltaUsersPct}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                  {countryBreakdown.length > 20 && (
-                    <div className="text-[10px] text-slate-400 text-center py-2 italic">
-                      +{countryBreakdown.length - 20} country khác…
-                    </div>
-                  )}
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="max-h-[360px] overflow-auto">
+                    <table className="w-full text-[12px] tabular-nums">
+                      <thead className="bg-slate-50 sticky top-0 z-10">
+                        <tr>
+                          <th className="text-left px-2.5 py-1.5 border-b border-slate-200">
+                            <SortHeader
+                              label="Country"
+                              active={sortKey === 'country'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('country')}
+                              align="left"
+                            />
+                          </th>
+                          <th className="text-right px-2 py-1.5 border-b border-slate-200">
+                            <SortHeader
+                              label="Users"
+                              active={sortKey === 'users'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('users')}
+                            />
+                          </th>
+                          <th className="text-right px-2 py-1.5 border-b border-slate-200">
+                            <SortHeader
+                              label="Install"
+                              active={sortKey === 'installs'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('installs')}
+                            />
+                          </th>
+                          <th className="text-right px-2 py-1.5 border-b border-slate-200">
+                            <SortHeader
+                              label="CR"
+                              active={sortKey === 'cr'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('cr')}
+                            />
+                          </th>
+                          <th className="text-right px-2 py-1.5 border-b border-slate-200">
+                            <SortHeader
+                              label="Rank"
+                              active={sortKey === 'pos'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('pos')}
+                            />
+                          </th>
+                          <th className="text-right px-2 py-1.5 border-b border-slate-200">
+                            <SortHeader
+                              label="Δ Users"
+                              active={sortKey === 'delta'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('delta')}
+                            />
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {tableRows.map((r) => {
+                          const t = r.deltaUsersPct !== null ? deltaTone(r.deltaUsersPct) : 'flat';
+                          const deltaCls =
+                            t === 'pos'
+                              ? 'text-emerald-700'
+                              : t === 'neg'
+                              ? 'text-rose-700'
+                              : 'text-slate-500';
+                          const empty = r.users === 0 && r.installs === 0;
+                          return (
+                            <tr
+                              key={r.country}
+                              className={cn('hover:bg-slate-50', empty && 'opacity-50')}
+                            >
+                              <td className="px-2.5 py-1 text-left max-w-[140px]">
+                                <div className="truncate font-medium text-slate-800" title={r.country}>
+                                  {r.country}
+                                </div>
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono">
+                                {empty ? '—' : formatNumber(r.users, { compact: true })}
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono">
+                                {empty ? '—' : formatNumber(r.installs, { compact: true })}
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono">
+                                {empty ? '—' : formatPercent(r.cr)}
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono">
+                                {r.pos === null ? '—' : formatPos(r.pos)}
+                              </td>
+                              <td className={cn('px-2 py-1 text-right font-mono font-medium', deltaCls)}>
+                                {r.deltaUsersPct === null ? '—' : formatDeltaPct(r.deltaUsersPct)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="text-[10px] text-slate-400 px-2.5 py-1 bg-slate-50 border-t">
+                    {tableRows.length} country
+                    {countryBreakdown.length !== tableRows.length
+                      ? ` / ${countryBreakdown.length} total`
+                      : ''}
+                    · view: <b>{channelView}</b> · {drillWindow}
+                  </div>
                 </div>
               )}
             </section>
