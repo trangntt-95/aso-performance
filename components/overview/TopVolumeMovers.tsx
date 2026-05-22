@@ -75,6 +75,41 @@ function diagnose(m: VolumeMover): Diagnosis {
   return { changes, cause };
 }
 
+function toneCls(t: 'pos' | 'neg' | 'flat'): string {
+  if (t === 'pos') return 'text-emerald-700';
+  if (t === 'neg') return 'text-rose-700';
+  return 'text-slate-700';
+}
+
+function MetricPair({
+  label,
+  prior,
+  latest,
+  delta,
+  t,
+}: {
+  label: string;
+  prior: string;
+  latest: string;
+  delta: string | null;
+  t: 'pos' | 'neg' | 'flat';
+}) {
+  return (
+    <span>
+      <span className="text-slate-500">{label}:</span>{' '}
+      <span className="font-mono text-slate-500">{prior}</span>
+      <span className="text-slate-400 mx-0.5">→</span>
+      <span className={cn('font-mono font-medium', toneCls(t))}>{latest}</span>
+      {delta && (
+        <>
+          {' '}
+          <span className={cn('text-[11px]', toneCls(t))}>({delta})</span>
+        </>
+      )}
+    </span>
+  );
+}
+
 function deriveAction(m: VolumeMover): string {
   if (m.bidAction) return actionCopy(m.bidAction);
   if (m.direction === 'up') {
@@ -136,40 +171,33 @@ function MoverRow({
 
           {/* Số liệu: abs → abs (delta %) cho từng metric */}
           <div className="mt-1 text-[12px] text-slate-700 flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums">
-            <span>
-              <span className="text-slate-500">Users:</span>{' '}
-              <span className="font-mono">{formatNumber(m.usersP)}→{formatNumber(m.usersL)}</span>{' '}
-              <span className={cn('text-[11px]', diag.changes[0]?.tone === 'pos' ? 'text-emerald-700' : diag.changes[0]?.tone === 'neg' ? 'text-rose-700' : 'text-slate-500')}>
-                ({pct(m.deltaUsersPct)})
-              </span>
-            </span>
+            <MetricPair label="Users" prior={formatNumber(m.usersP)} latest={formatNumber(m.usersL)} delta={pct(m.deltaUsersPct)} t={tone(m.deltaUsersPct)} />
             {(m.getAppP > 0 || m.getAppL > 0) && (
-              <span>
-                <span className="text-slate-500">GetApp:</span>{' '}
-                <span className="font-mono">{formatNumber(m.getAppP)}→{formatNumber(m.getAppL)}</span>{' '}
-                {m.deltaGetAppPct !== null && (
-                  <span className={cn('text-[11px]', tone(m.deltaGetAppPct) === 'pos' ? 'text-emerald-700' : tone(m.deltaGetAppPct) === 'neg' ? 'text-rose-700' : 'text-slate-500')}>
-                    ({pct(m.deltaGetAppPct)})
-                  </span>
-                )}
-              </span>
+              <MetricPair
+                label="GetApp"
+                prior={formatNumber(m.getAppP)}
+                latest={formatNumber(m.getAppL)}
+                delta={m.deltaGetAppPct !== null ? pct(m.deltaGetAppPct) : null}
+                t={m.deltaGetAppPct !== null ? tone(m.deltaGetAppPct) : 'flat'}
+              />
             )}
             {m.crP !== null && m.crL !== null && (
-              <span>
-                <span className="text-slate-500">CR:</span>{' '}
-                <span className="font-mono">{(m.crP * 100).toFixed(1)}%→{(m.crL * 100).toFixed(1)}%</span>{' '}
-                {m.deltaCrPct !== null && (
-                  <span className={cn('text-[11px]', tone(m.deltaCrPct) === 'pos' ? 'text-emerald-700' : tone(m.deltaCrPct) === 'neg' ? 'text-rose-700' : 'text-slate-500')}>
-                    ({pct(m.deltaCrPct)})
-                  </span>
-                )}
-              </span>
+              <MetricPair
+                label="CR"
+                prior={`${(m.crP * 100).toFixed(1)}%`}
+                latest={`${(m.crL * 100).toFixed(1)}%`}
+                delta={m.deltaCrPct !== null ? pct(m.deltaCrPct) : null}
+                t={m.deltaCrPct !== null ? tone(m.deltaCrPct) : 'flat'}
+              />
             )}
             {m.posL !== null && m.posP !== null && (
-              <span>
-                <span className="text-slate-500">Rank:</span>{' '}
-                <span className="font-mono">{formatPos(m.posP)}→{formatPos(m.posL)}</span>
-              </span>
+              <MetricPair
+                label="Rank"
+                prior={formatPos(m.posP)}
+                latest={formatPos(m.posL)}
+                delta={null}
+                t={tone(m.posL - m.posP, true)}
+              />
             )}
           </div>
 

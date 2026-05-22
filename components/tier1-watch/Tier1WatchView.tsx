@@ -82,24 +82,37 @@ function groupByKeyword(rows: KeywordRow[], window: Window): GroupedRow[] {
   return Array.from(map.values()).filter((g) => hasInterestingAlert(g.topAlert.alert));
 }
 
-function ChannelMini({ row, tone }: { row: KeywordRow | null; tone: 'organic' | 'paid' }) {
+function ChannelMini({ row }: { row: KeywordRow | null; tone?: 'organic' | 'paid' }) {
   if (!row) {
     return <span className="text-[11px] text-slate-300">—</span>;
   }
-  const dTone = deltaTone(row.deltaUsersPct);
-  const accent = tone === 'organic' ? 'text-emerald-700' : 'text-amber-700';
+  const userDTone = deltaTone(row.deltaUsersPct);
+  const userToneCls =
+    userDTone === 'pos' ? 'text-emerald-700' : userDTone === 'neg' ? 'text-rose-700' : 'text-slate-700';
+  // Position: lower = better, so improving (posL < posP) is positive.
+  let posToneCls = 'text-slate-700';
+  if (row.posL !== null && row.posP !== null) {
+    const diff = row.posL - row.posP;
+    if (Math.abs(diff) >= 0.5) {
+      posToneCls = diff < 0 ? 'text-emerald-700' : 'text-rose-700';
+    }
+  }
   return (
-    <div className="flex items-center gap-2 text-[11px] tabular-nums">
-      <span className={cn('font-mono text-[10px]', accent)}>P{formatPos(row.posL)}</span>
-      <span className="font-mono">{formatNumber(row.usersL, { compact: true })}u</span>
-      <span
-        className={cn(
-          'font-medium',
-          dTone === 'pos' ? 'text-emerald-700' : dTone === 'neg' ? 'text-rose-700' : 'text-slate-500',
-        )}
-      >
-        {formatDeltaPct(row.deltaUsersPct)}
+    <div className="flex items-center gap-1.5 text-[11px] tabular-nums">
+      {row.posP !== null && row.posL !== null && (
+        <span className="font-mono text-[10px]" title="Position (lower = better)">
+          P<span className="text-slate-500">{formatPos(row.posP)}</span>
+          <span className="text-slate-400 mx-0.5">→</span>
+          <span className={cn('font-medium', posToneCls)}>{formatPos(row.posL)}</span>
+        </span>
+      )}
+      <span className="font-mono">
+        <span className="text-slate-500">{formatNumber(row.usersP, { compact: true })}</span>
+        <span className="text-slate-400 mx-0.5">→</span>
+        <span className={cn('font-medium', userToneCls)}>{formatNumber(row.usersL, { compact: true })}</span>
+        <span className="text-slate-400 ml-0.5">u</span>
       </span>
+      <span className={cn('font-medium', userToneCls)}>{formatDeltaPct(row.deltaUsersPct)}</span>
     </div>
   );
 }
