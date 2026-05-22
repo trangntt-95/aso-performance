@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Sheet,
   SheetContent,
@@ -14,8 +14,10 @@ import { useSheetData } from '@/lib/hooks/useSheetData';
 import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
 import { useStatusStore } from '@/lib/store/statusStore';
 import { AlertBadge } from '@/components/action-queue/AlertBadge';
-import type { ActionQueueRow, HistoryRow, KeywordRow } from '@/lib/sheets/types';
-import { formatNumber, formatPercent, formatPos } from '@/lib/utils/format';
+import type { ActionQueueRow, HistoryRow, KeywordRow, SheetPayload } from '@/lib/sheets/types';
+import { formatDeltaPct, formatNumber, formatPercent, formatPos, deltaTone } from '@/lib/utils/format';
+import { cn } from '@/lib/utils';
+import { Leaf, DollarSign } from 'lucide-react';
 
 function summarise(rows: KeywordRow[]) {
   if (rows.length === 0) return null;
@@ -27,11 +29,126 @@ function summarise(rows: KeywordRow[]) {
   return { totalUsers, totalGetApp, cr, avgPos, count: rows.length };
 }
 
+type DrillWindow = 'L7' | 'L30' | 'L90';
+
+const COUNTRY_TAB: Record<DrillWindow, keyof SheetPayload> = {
+  L7: 'countryL7',
+  L30: 'countryL30',
+  L90: 'countryL90',
+};
+
+interface CountryRow {
+  country: string;
+  organicUsers: number;
+  organicGetApp: number;
+  organicCr: number;
+  organicPos: number | null;
+  organicDeltaUsersPct: number | null;
+  paidUsers: number;
+  paidGetApp: number;
+  paidCr: number;
+  paidPos: number | null;
+  paidDeltaUsersPct: number | null;
+  totalUsers: number;
+  totalGetApp: number;
+}
+
+function aggregateByCountry(
+  data: SheetPayload | undefined,
+  keyword: string | null,
+  window: DrillWindow,
+  surfaceFilter: 'all' | 'organic' | 'paid',
+): CountryRow[] {
+  if (!data || !keyword) return [];
+  const rows = (data[COUNTRY_TAB[window]] as KeywordRow[]).filter(
+    (r) => r.searchTerm === keyword && r.country,
+  );
+  const map = new Map<string, CountryRow>();
+  for (const r of rows) {
+    const country = r.country ?? '(global)';
+    let bucket = map.get(country);
+    if (!bucket) {
+      bucket = {
+        country,
+        organicUsers: 0, organicGetApp: 0, organicCr: 0, organicPos: null, organicDeltaUsersPct: null,
+        paidUsers: 0, paidGetApp: 0, paidCr: 0, paidPos: null, paidDeltaUsersPct: null,
+        totalUsers: 0, totalGetApp: 0,
+      };
+      map.set(country, bucket);
+    }
+    if (r.surface === 'search_ad') {
+      bucket.paidUsers += r.usersL;
+      bucket.paidGetApp += r.getAppL;
+      bucket.paidCr = bucket.paidUsers > 0 ? bucket.paidGetApp / bucket.paidUsers : 0;
+      bucket.paidPos = r.posL;
+      bucket.paidDeltaUsersPct = r.deltaUsersPct;
+    } else {
+      bucket.organicUsers += r.usersL;
+      bucket.organicGetApp += r.getAppL;
+      bucket.organicCr = bucket.organicUsers > 0 ? bucket.organicGetApp / bucket.organicUsers : 0;
+      bucket.organicPos = r.posL;
+      bucket.organicDeltaUsersPct = r.deltaUsersPct;
+    }
+    bucket.totalUsers += r.usersL;
+    bucket.totalGetApp += r.getAppL;
+  }
+  let result = Array.from(map.values());
+  if (surfaceFilter === 'organic') {
+    result = result.filter((c) => c.organicUsers > 0);
+  } else if (surfaceFilter === 'paid') {
+    result = result.filter((c) => c.paidUsers > 0);
+  }
+  result.sort((a, b) => {
+    const aSort = surfaceFilter === 'paid' ? a.paidUsers : surfaceFilter === 'organic' ? a.organicUsers : a.totalUsers;
+    const bSort = surfaceFilter === 'paid' ? b.paidUsers : surfaceFilter === 'organic' ? b.organicUsers : b.totalUsers;
+    return bSort - aSort;
+  });
+  return result;
+}
+
+function ChannelCell({
+  users,
+  getApp,
+  cr,
+  pos,
+  deltaUsersPct,
+}: {
+  users: number;
+  getApp: number;
+  cr: number;
+  pos: number | null;
+  deltaUsersPct: number | null;
+}) {
+  if (users === 0 && getApp === 0) {
+    return <span className="text-slate-300">—</span>;
+  }
+  const t = deltaUsersPct !== null ? deltaTone(deltaUsersPct) : 'flat';
+  const cls = t === 'pos' ? 'text-emerald-700' : t === 'neg' ? 'text-rose-700' : 'text-slate-600';
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-1.5 text-[11px] tabular-nums">
+      <span className="font-mono font-medium">{formatNumber(users, { compact: true })}u</span>
+      <span className="text-slate-500">/</span>
+      <span className="font-mono">{formatNumber(getApp, { compact: true })}i</span>
+      <span className="text-[10px] text-slate-500">CR {formatPercent(cr)}</span>
+      <span className="text-[10px] text-slate-500">P{formatPos(pos)}</span>
+      {deltaUsersPct !== null && (
+        <span className={cn('text-[10px] font-medium', cls)}>{formatDeltaPct(deltaUsersPct)}</span>
+      )}
+    </div>
+  );
+}
+
 export function KeywordTrendSheet() {
   const { open, keyword, country, surface, close } = useKeywordTrendStore();
   const { data } = useSheetData();
   const notes = useStatusStore((s) => s.notes);
   const setNote = useStatusStore((s) => s.setNote);
+  const [drillWindow, setDrillWindow] = useState<DrillWindow>('L7');
+
+  const countryBreakdown = useMemo(
+    () => aggregateByCountry(data, keyword, drillWindow, surface),
+    [data, keyword, drillWindow, surface],
+  );
 
   const trendData = useMemo(() => {
     if (!keyword || !data) return null;
@@ -182,6 +299,83 @@ export function KeywordTrendSheet() {
                   </div>
                 ))}
               </div>
+            </section>
+
+            <Separator />
+
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-[11px] uppercase tracking-wide text-slate-500">
+                  By country · {drillWindow}
+                </h3>
+                <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[10px]">
+                  {(['L7', 'L30', 'L90'] as const).map((w, i) => (
+                    <button
+                      key={w}
+                      type="button"
+                      onClick={() => setDrillWindow(w)}
+                      className={cn(
+                        'px-2 py-0.5 font-medium transition',
+                        i > 0 && 'border-l border-slate-200',
+                        drillWindow === w ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
+                      )}
+                    >
+                      {w}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {countryBreakdown.length === 0 ? (
+                <div className="text-[12px] text-slate-500 italic py-4 text-center border rounded">
+                  Keyword này chưa có dữ liệu theo country ở {drillWindow}.
+                </div>
+              ) : (
+                <div className="border rounded overflow-hidden">
+                  <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-slate-500 bg-slate-50 border-b">
+                    <span>Country</span>
+                    <span className="flex items-center gap-1 text-emerald-700">
+                      <Leaf className="h-3 w-3" /> Organic
+                    </span>
+                    <span className="flex items-center gap-1 text-amber-700">
+                      <DollarSign className="h-3 w-3" /> Paid
+                    </span>
+                  </div>
+                  <div className="divide-y max-h-[280px] overflow-y-auto">
+                    {countryBreakdown.slice(0, 20).map((c) => (
+                      <div
+                        key={c.country}
+                        className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 px-2.5 py-1.5 items-start hover:bg-slate-50/60"
+                      >
+                        <div>
+                          <div className="text-[12px] font-medium truncate">{c.country}</div>
+                          <div className="text-[10px] text-slate-500 tabular-nums">
+                            Σ {formatNumber(c.totalUsers, { compact: true })}u · {formatNumber(c.totalGetApp, { compact: true })}i
+                          </div>
+                        </div>
+                        <ChannelCell
+                          users={c.organicUsers}
+                          getApp={c.organicGetApp}
+                          cr={c.organicCr}
+                          pos={c.organicPos}
+                          deltaUsersPct={c.organicDeltaUsersPct}
+                        />
+                        <ChannelCell
+                          users={c.paidUsers}
+                          getApp={c.paidGetApp}
+                          cr={c.paidCr}
+                          pos={c.paidPos}
+                          deltaUsersPct={c.paidDeltaUsersPct}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {countryBreakdown.length > 20 && (
+                    <div className="text-[10px] text-slate-400 text-center py-1.5 border-t">
+                      +{countryBreakdown.length - 20} country khác…
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
 
             <Separator />

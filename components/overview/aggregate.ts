@@ -422,6 +422,8 @@ export interface ContributorRow {
   category: Category;
   surface: SurfaceLabel;
   value: number;
+  prior: number;
+  deltaPct: number | null;
   sharePct: number;
 }
 
@@ -441,18 +443,26 @@ export function topContributors(
   if (!data) return { rows: [], total: 0, fullCount: 0 };
   const rows = rowsForWindow(data, window, opts);
   const key: keyof KeywordRow = metric === 'users' ? 'usersL' : 'getAppL';
+  const priorKey: keyof KeywordRow = metric === 'users' ? 'usersP' : 'getAppP';
   const total = rows.reduce((s, r) => s + (r[key] as number), 0);
   if (total <= 0) return { rows: [], total: 0, fullCount: rows.length };
   const ranked = [...rows]
     .sort((a, b) => (b[key] as number) - (a[key] as number))
     .slice(0, limit)
-    .map((r) => ({
-      keyword: r.searchTerm,
-      category: r.category,
-      surface: (r.surface === 'search_ad' ? 'paid' : 'organic') as SurfaceLabel,
-      value: r[key] as number,
-      sharePct: ((r[key] as number) / total) * 100,
-    }));
+    .map((r) => {
+      const value = r[key] as number;
+      const prior = r[priorKey] as number;
+      const deltaPct = prior > 0 ? (value - prior) / prior : null;
+      return {
+        keyword: r.searchTerm,
+        category: r.category,
+        surface: (r.surface === 'search_ad' ? 'paid' : 'organic') as SurfaceLabel,
+        value,
+        prior,
+        deltaPct,
+        sharePct: (value / total) * 100,
+      };
+    });
   return { rows: ranked, total, fullCount: rows.length };
 }
 

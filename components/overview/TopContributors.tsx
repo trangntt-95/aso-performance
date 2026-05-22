@@ -2,9 +2,8 @@
 
 import { Users, Target } from 'lucide-react';
 import type { ContributorRow } from './aggregate';
-import { CategoryChip } from '@/components/shared/CategoryChip';
 import { KeywordLink } from '@/components/shared/KeywordLink';
-import { formatNumber } from '@/lib/utils/format';
+import { formatDeltaPct, formatNumber, deltaTone } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 
 interface ColumnProps {
@@ -79,7 +78,6 @@ function Column({ title, unitLabel, Icon, rows, total, accent, activeKeyword, ac
                     surface={activeSurface ?? 'all'}
                     className="font-semibold text-sm"
                   />
-                  <CategoryChip category={r.category} compact />
                   <span
                     className={cn(
                       'text-[10px] px-1.5 py-0.5 rounded-full font-medium',
@@ -90,6 +88,21 @@ function Column({ title, unitLabel, Icon, rows, total, accent, activeKeyword, ac
                   >
                     {r.surface}
                   </span>
+                  {r.deltaPct !== null && (
+                    <span
+                      className={cn(
+                        'text-[10px] font-mono font-medium tabular-nums',
+                        deltaTone(r.deltaPct) === 'pos'
+                          ? 'text-emerald-700'
+                          : deltaTone(r.deltaPct) === 'neg'
+                          ? 'text-rose-700'
+                          : 'text-slate-500',
+                      )}
+                      title={`Prior: ${formatNumber(r.prior)}`}
+                    >
+                      {formatDeltaPct(r.deltaPct)}
+                    </span>
+                  )}
                 </div>
                 <div className="mt-1.5 flex items-center gap-2">
                   <span className="text-sm font-mono font-semibold text-slate-900 tabular-nums shrink-0">
