@@ -1,7 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Leaf, DollarSign, Layers, ArrowUp, ArrowDown, ArrowRight } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import {
+  Leaf,
+  DollarSign,
+  Layers,
+  ArrowUp,
+  ArrowDown,
+  ArrowRight,
+  ArrowUpDown,
+  Search,
+} from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -10,22 +19,25 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { useCategoryDetailStore } from '@/lib/store/categoryDetailStore';
 import { KeywordLink } from '@/components/shared/KeywordLink';
-import { AlertBadge } from '@/components/action-queue/AlertBadge';
 import { categoryStyle } from '@/lib/utils/colors';
-import { formatNumber, formatPercent, formatDeltaPct, deltaTone } from '@/lib/utils/format';
+import { formatNumber, formatPercent, formatPos, formatDeltaPct, deltaTone } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 import type { Category, KeywordRow, SheetPayload } from '@/lib/sheets/types';
 
-const ALL_TAB: Record<string, keyof SheetPayload> = {
-  L3: 'allL3',
+type DrillWindow = 'L7' | 'L30' | 'L90';
+
+const ALL_TAB: Record<DrillWindow, keyof SheetPayload> = {
   L7: 'allL7',
-  L14: 'allL14',
   L30: 'allL30',
   L90: 'allL90',
 };
+
+type ChannelView = 'all' | 'organic' | 'paid';
+type SortKey = 'keyword' | 'users' | 'installs' | 'cr' | 'pos' | 'delta';
 
 function deltaRel(latest: number, prior: number): number {
   if (!prior) return 0;
@@ -105,18 +117,117 @@ function ChannelBlock({
   );
 }
 
+function SortHeader({
+  label,
+  active,
+  dir,
+  onClick,
+  align = 'right',
+}: {
+  label: string;
+  active: boolean;
+  dir: 'asc' | 'desc';
+  onClick: () => void;
+  align?: 'left' | 'right';
+}) {
+  const Icon = !active ? ArrowUpDown : dir === 'desc' ? ArrowDown : ArrowUp;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-medium hover:text-slate-900 transition',
+        active ? 'text-slate-900' : 'text-slate-500',
+        align === 'right' && 'ml-auto',
+      )}
+    >
+      <span>{label}</span>
+      <Icon className="h-2.5 w-2.5" />
+    </button>
+  );
+}
+
 export function CategoryDetailSheet() {
   const { open, category, window: w, close } = useCategoryDetailStore();
   const { data } = useSheetData();
-  const [channelFilter, setChannelFilter] = useState<'all' | 'organic' | 'paid'>('all');
+  const [channelFilter, setChannelFilter] = useState<ChannelView>('all');
+  const [drillWindow, setDrillWindow] = useState<DrillWindow>('L7');
+  const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('users');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  // Resizable width persisted to localStorage.
+  const SHEET_WIDTH_KEY = 'asoCategorySheetWidthV1';
+  const DEFAULT_WIDTH = 820;
+  const MIN_WIDTH = 480;
+  const [sheetWidth, setSheetWidth] = useState<number>(DEFAULT_WIDTH);
+  const [widthHydrated, setWidthHydrated] = useState(false);
+  const resizeRef = useRef<{ startX: number; startW: number } | null>(null);
 
   useEffect(() => {
     setChannelFilter('all');
-  }, [category, w, open]);
+    setSearch('');
+  }, [category, open]);
+
+  // Sync drillWindow with the window the user clicked from on the overview.
+  useEffect(() => {
+    if (open && (w === 'L7' || w === 'L30' || w === 'L90')) {
+      setDrillWindow(w);
+    } else if (open) {
+      setDrillWindow('L7');
+    }
+  }, [w, open]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(SHEET_WIDTH_KEY);
+      if (raw) {
+        const n = Number(raw);
+        if (Number.isFinite(n) && n >= MIN_WIDTH) {
+          setSheetWidth(Math.min(n, window.innerWidth - 32));
+        }
+      }
+    } catch {
+      // ignore
+    }
+    setWidthHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!widthHydrated || typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(SHEET_WIDTH_KEY, String(sheetWidth));
+    } catch {
+      // ignore
+    }
+  }, [sheetWidth, widthHydrated]);
+
+  const startSheetResize = (e: MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = { startX: e.clientX, startW: sheetWidth };
+    const onMove = (ev: globalThis.MouseEvent) => {
+      const st = resizeRef.current;
+      if (!st) return;
+      const dx = st.startX - ev.clientX;
+      const maxW = window.innerWidth - 32;
+      setSheetWidth(Math.max(MIN_WIDTH, Math.min(maxW, st.startW + dx)));
+    };
+    const onUp = () => {
+      resizeRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+    };
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   const detail = useMemo(() => {
     if (!data || !category) return null;
-    const tabKey = ALL_TAB[w] ?? 'allL7';
+    const tabKey = ALL_TAB[drillWindow];
     const allRows = (data[tabKey] as KeywordRow[]).filter((r) => r.category === category);
     const organic = allRows.filter((r) => r.surface !== 'search_ad');
     const paid = allRows.filter((r) => r.surface === 'search_ad');
@@ -124,7 +235,6 @@ export function CategoryDetailSheet() {
     const totalGetApp = (data[tabKey] as KeywordRow[]).reduce((s, r) => s + r.getAppL, 0);
     const myUsers = allRows.reduce((s, r) => s + r.usersL, 0);
     const myGetApp = allRows.reduce((s, r) => s + r.getAppL, 0);
-    const actions = data.actionQueue.filter((r) => r.category === category);
     return {
       allRows,
       organic,
@@ -133,23 +243,69 @@ export function CategoryDetailSheet() {
       myGetApp,
       shareUsers: totalUsers > 0 ? myUsers / totalUsers : 0,
       shareGetApp: totalGetApp > 0 ? myGetApp / totalGetApp : 0,
-      actions,
     };
-  }, [data, category, w]);
+  }, [data, category, drillWindow]);
 
-  const filteredKeywords = useMemo(() => {
+  const tableRows = useMemo(() => {
     if (!detail) return [];
     let rows = detail.allRows;
     if (channelFilter === 'organic') rows = detail.organic;
     if (channelFilter === 'paid') rows = detail.paid;
-    return [...rows].sort((a, b) => b.usersL - a.usersL).slice(0, 25);
-  }, [detail, channelFilter]);
+
+    const q = search.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter(
+        (r) =>
+          r.searchTerm.toLowerCase().includes(q) ||
+          (r.english && r.english.toLowerCase().includes(q)),
+      );
+    }
+
+    const cmp = (a: KeywordRow, b: KeywordRow): number => {
+      if (sortKey === 'keyword') return a.searchTerm.localeCompare(b.searchTerm);
+      if (sortKey === 'pos') {
+        const av = a.posL ?? Number.MAX_VALUE;
+        const bv = b.posL ?? Number.MAX_VALUE;
+        return av - bv;
+      }
+      if (sortKey === 'delta') {
+        const av = a.deltaUsersPct ?? -Infinity;
+        const bv = b.deltaUsersPct ?? -Infinity;
+        return av - bv;
+      }
+      if (sortKey === 'users') return a.usersL - b.usersL;
+      if (sortKey === 'installs') return a.getAppL - b.getAppL;
+      if (sortKey === 'cr') return (a.crL ?? 0) - (b.crL ?? 0);
+      return 0;
+    };
+    return [...rows].sort((a, b) => (sortDir === 'desc' ? -cmp(a, b) : cmp(a, b))).slice(0, 200);
+  }, [detail, channelFilter, search, sortKey, sortDir]);
+
+  const toggleSort = (k: SortKey) => {
+    if (sortKey === k) {
+      setSortDir(sortDir === 'desc' ? 'asc' : 'desc');
+    } else {
+      setSortKey(k);
+      setSortDir(k === 'keyword' ? 'asc' : 'desc');
+    }
+  };
 
   const styleObj = category ? categoryStyle(category as Category) : null;
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && close()}>
-      <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
+      <SheetContent
+        side="right"
+        className="overflow-y-auto p-6"
+        style={{ width: `${sheetWidth}px`, maxWidth: 'calc(100vw - 2rem)' }}
+      >
+        {/* Resize handle on left edge */}
+        <div
+          onMouseDown={startSheetResize}
+          title="Kéo để chỉnh độ rộng"
+          className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-indigo-400/40 active:bg-indigo-500/60 z-20 transition-colors"
+        />
+
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2 text-base">
             <Layers className="h-4 w-4 text-indigo-600" />
@@ -165,7 +321,7 @@ export function CategoryDetailSheet() {
             </span>
           </SheetTitle>
           <SheetDescription>
-            Last {Number(w.slice(1))} days · breakdown by channel and contributing keywords
+            Last {Number(drillWindow.slice(1))} days · breakdown by channel and keywords
           </SheetDescription>
         </SheetHeader>
 
@@ -173,9 +329,31 @@ export function CategoryDetailSheet() {
 
         {detail && (
           <div className="mt-4 space-y-5">
+            {/* Window selector */}
+            <div className="flex items-center justify-end">
+              <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
+                {(['L7', 'L30', 'L90'] as const).map((wk, i) => (
+                  <button
+                    key={wk}
+                    type="button"
+                    onClick={() => setDrillWindow(wk)}
+                    className={cn(
+                      'px-2.5 py-1 font-medium transition',
+                      i > 0 && 'border-l border-slate-200',
+                      drillWindow === wk
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-white text-slate-600 hover:bg-slate-50',
+                    )}
+                  >
+                    {wk}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <section className="rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-3">
               <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">
-                Total this category · this window
+                Total this category · {drillWindow}
               </div>
               <div className="flex items-baseline gap-3 flex-wrap">
                 <div>
@@ -209,9 +387,7 @@ export function CategoryDetailSheet() {
                 iconCls="bg-emerald-100 text-emerald-700"
                 rows={detail.organic}
                 selected={channelFilter === 'organic'}
-                onClick={() =>
-                  setChannelFilter((c) => (c === 'organic' ? 'all' : 'organic'))
-                }
+                onClick={() => setChannelFilter((c) => (c === 'organic' ? 'all' : 'organic'))}
               />
               <ChannelBlock
                 label="Paid"
@@ -219,9 +395,7 @@ export function CategoryDetailSheet() {
                 iconCls="bg-amber-100 text-amber-700"
                 rows={detail.paid}
                 selected={channelFilter === 'paid'}
-                onClick={() =>
-                  setChannelFilter((c) => (c === 'paid' ? 'all' : 'paid'))
-                }
+                onClick={() => setChannelFilter((c) => (c === 'paid' ? 'all' : 'paid'))}
               />
             </section>
 
@@ -229,94 +403,175 @@ export function CategoryDetailSheet() {
 
             <section className="space-y-2">
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <h3 className="text-[11px] uppercase tracking-wider text-slate-500">
-                  Top contributing keywords (by users)
+                <h3 className="text-[11px] uppercase tracking-wide text-slate-500">
+                  Keywords trong category
                 </h3>
-                <div className="flex items-center gap-1">
-                  {(['all', 'organic', 'paid'] as const).map((c) => (
+                <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[10px]">
+                  {(
+                    [
+                      { v: 'all', label: 'All', Icon: null },
+                      { v: 'organic', label: 'Organic', Icon: Leaf },
+                      { v: 'paid', label: 'Paid', Icon: DollarSign },
+                    ] as const
+                  ).map(({ v, label, Icon }, i) => (
                     <button
-                      key={c}
+                      key={v}
                       type="button"
-                      onClick={() => setChannelFilter(c)}
+                      onClick={() => setChannelFilter(v)}
                       className={cn(
-                        'px-2 py-0.5 rounded-full text-[10px] border transition',
-                        channelFilter === c
-                          ? 'bg-slate-900 text-white border-slate-900'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400',
+                        'px-2 py-0.5 font-medium transition inline-flex items-center gap-0.5',
+                        i > 0 && 'border-l border-slate-200',
+                        channelFilter === v
+                          ? v === 'organic'
+                            ? 'bg-emerald-600 text-white'
+                            : v === 'paid'
+                            ? 'bg-amber-600 text-white'
+                            : 'bg-slate-900 text-white'
+                          : 'bg-white text-slate-600 hover:bg-slate-50',
                       )}
                     >
-                      {c === 'all' ? 'Tất cả' : c === 'organic' ? 'Organic' : 'Paid'}
+                      {Icon && <Icon className="h-2.5 w-2.5" />}
+                      {label}
                     </button>
                   ))}
                 </div>
               </div>
-              {filteredKeywords.length === 0 ? (
-                <div className="text-sm text-slate-500 py-6 text-center">
-                  Không có keyword {channelFilter !== 'all' ? channelFilter : ''} trong window này.
+
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400 pointer-events-none" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Filter keyword…"
+                  className="pl-6 h-7 text-[12px]"
+                />
+              </div>
+
+              {tableRows.length === 0 ? (
+                <div className="text-[12px] text-slate-500 italic py-4 text-center border rounded">
+                  Không có keyword khớp filter.
                 </div>
               ) : (
-                <div className="border rounded-lg divide-y">
-                  {filteredKeywords.map((r, i) => {
-                    const surface = r.surface === 'search_ad' ? 'paid' : 'organic';
-                    const surfaceCls =
-                      surface === 'paid'
-                        ? 'text-amber-700 bg-amber-50'
-                        : 'text-emerald-700 bg-emerald-50';
-                    return (
-                      <div
-                        key={`${r.searchTerm}-${r.surface}-${i}`}
-                        className="px-3 py-2 flex items-center gap-2 text-sm"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <KeywordLink
-                            keyword={r.searchTerm}
-                            className="font-medium text-sm truncate block w-full"
-                          />
-                          <div className="text-[10px] text-slate-500 flex gap-1.5 items-center mt-0.5 flex-wrap">
-                            <span className={cn('inline-flex items-center px-1.5 rounded', surfaceCls)}>
-                              {surface}
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="max-h-[460px] overflow-auto">
+                    <table className="w-full text-[12px] tabular-nums">
+                      <thead className="bg-slate-50 sticky top-0 z-10">
+                        <tr>
+                          <th className="text-left px-2.5 py-1.5 border-b border-slate-200">
+                            <SortHeader
+                              label="Keyword"
+                              active={sortKey === 'keyword'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('keyword')}
+                              align="left"
+                            />
+                          </th>
+                          <th className="text-center px-2 py-1.5 border-b border-slate-200">
+                            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">
+                              Channel
                             </span>
-                            <span className="font-mono">U {formatNumber(r.usersL, { compact: true })}</span>
-                            <Pill value={r.deltaUsersPct ?? 0} />
-                            <span className="font-mono text-slate-500">
-                              G {formatNumber(r.getAppL, { compact: true })}
-                            </span>
-                            <span className="font-mono text-slate-500">
-                              CR {formatPercent(r.crL)}
-                            </span>
-                          </div>
-                        </div>
-                        {r.alert && r.alert !== 'OK' && <AlertBadge alert={r.alert} compact />}
-                      </div>
-                    );
-                  })}
+                          </th>
+                          <th className="text-right px-2 py-1.5 border-b border-slate-200">
+                            <SortHeader
+                              label="Users"
+                              active={sortKey === 'users'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('users')}
+                            />
+                          </th>
+                          <th className="text-right px-2 py-1.5 border-b border-slate-200">
+                            <SortHeader
+                              label="Install"
+                              active={sortKey === 'installs'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('installs')}
+                            />
+                          </th>
+                          <th className="text-right px-2 py-1.5 border-b border-slate-200">
+                            <SortHeader
+                              label="CR"
+                              active={sortKey === 'cr'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('cr')}
+                            />
+                          </th>
+                          <th className="text-right px-2 py-1.5 border-b border-slate-200">
+                            <SortHeader
+                              label="Rank"
+                              active={sortKey === 'pos'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('pos')}
+                            />
+                          </th>
+                          <th className="text-right px-2 py-1.5 border-b border-slate-200">
+                            <SortHeader
+                              label="Δ Users"
+                              active={sortKey === 'delta'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('delta')}
+                            />
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {tableRows.map((r, i) => {
+                          const surface = r.surface === 'search_ad' ? 'paid' : 'organic';
+                          const surfaceCls =
+                            surface === 'paid'
+                              ? 'text-amber-700 bg-amber-50'
+                              : 'text-emerald-700 bg-emerald-50';
+                          const t = deltaTone(r.deltaUsersPct);
+                          const deltaCls =
+                            t === 'pos'
+                              ? 'text-emerald-700'
+                              : t === 'neg'
+                              ? 'text-rose-700'
+                              : 'text-slate-500';
+                          return (
+                            <tr key={`${r.searchTerm}-${r.surface}-${i}`} className="hover:bg-slate-50">
+                              <td className="px-2.5 py-1 text-left max-w-[220px]">
+                                <KeywordLink
+                                  keyword={r.searchTerm}
+                                  surface={surface}
+                                  className="font-medium text-slate-800 truncate inline-block max-w-full"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <span className={cn('inline-block px-1.5 rounded text-[10px] font-medium', surfaceCls)}>
+                                  {surface}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono">
+                                {formatNumber(r.usersL, { compact: true })}
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono">
+                                {formatNumber(r.getAppL, { compact: true })}
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono">
+                                {r.crL !== null ? formatPercent(r.crL) : '—'}
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono">
+                                {r.posL === null ? '—' : formatPos(r.posL)}
+                              </td>
+                              <td className={cn('px-2 py-1 text-right font-mono font-medium', deltaCls)}>
+                                {formatDeltaPct(r.deltaUsersPct)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="text-[10px] text-slate-400 px-2.5 py-1 bg-slate-50 border-t">
+                    {tableRows.length} keyword
+                    {detail.allRows.length !== tableRows.length
+                      ? ` / ${detail.allRows.length} total`
+                      : ''}
+                    · view: <b>{channelFilter}</b> · {drillWindow}
+                  </div>
                 </div>
               )}
             </section>
-
-            {detail.actions.length > 0 && (
-              <>
-                <Separator />
-                <section className="space-y-2">
-                  <h3 className="text-[11px] uppercase tracking-wider text-slate-500">
-                    Open actions in {category}
-                  </h3>
-                  <div className="border rounded-lg divide-y">
-                    {detail.actions.slice(0, 8).map((a, i) => (
-                      <div key={`${a.keyword}-${i}`} className="px-3 py-2 text-sm flex items-center gap-2">
-                        <span className="font-mono text-[10px] text-slate-500">{a.priority}</span>
-                        <KeywordLink
-                          keyword={a.keyword}
-                          country={a.country !== '(global)' ? a.country : undefined}
-                          className="flex-1 truncate font-medium"
-                        />
-                        <AlertBadge alert={a.alert} compact />
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              </>
-            )}
           </div>
         )}
       </SheetContent>
