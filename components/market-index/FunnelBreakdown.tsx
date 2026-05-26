@@ -87,7 +87,7 @@ export function FunnelBreakdownCard({ funnel }: Props) {
                 <td className="px-2 py-2 text-right text-slate-400">{formatNumber(total.P.users, { compact: true })}</td>
               </tr>
               <tr className="border-t">
-                <td className="px-3 py-2 font-medium">GetApp</td>
+                <td className="px-3 py-2 font-medium">Install</td>
                 <td className={cn('px-2 py-2 text-right', highlightCls(getAppTone.org))}>{formatNumber(organic.L.getapp, { compact: true })}</td>
                 <td className="px-2 py-2 text-right text-slate-400">{formatNumber(organic.P.getapp, { compact: true })}</td>
                 <td className={cn('px-2 py-2 text-right', highlightCls(getAppTone.paid))}>{formatNumber(paid.L.getapp, { compact: true })}</td>

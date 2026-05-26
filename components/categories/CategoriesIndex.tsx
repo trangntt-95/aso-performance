@@ -83,7 +83,7 @@ export function CategoriesIndex() {
                       <div className="font-mono text-right">{count}</div>
                       <div className="text-slate-500">Users L7</div>
                       <div className="font-mono text-right">{formatNumber(users, { compact: true })}</div>
-                      <div className="text-slate-500">GetApp L7</div>
+                      <div className="text-slate-500">Install L7</div>
                       <div className="font-mono text-right">{formatNumber(getApp, { compact: true })}</div>
                       <div className="text-slate-500">Alerts</div>
                       <div className={cn('font-mono text-right', alerts > 0 ? 'text-red-700 font-semibold' : 'text-slate-400')}>

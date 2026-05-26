@@ -30,7 +30,7 @@ function diagnose(m: VolumeMover): Diagnosis {
   const changes: Diagnosis['changes'] = [];
   changes.push({ label: 'Users', value: pct(m.deltaUsersPct), tone: tone(m.deltaUsersPct) });
   if (m.deltaGetAppPct !== null) {
-    changes.push({ label: 'Installs', value: pct(m.deltaGetAppPct), tone: tone(m.deltaGetAppPct) });
+    changes.push({ label: 'Install', value: pct(m.deltaGetAppPct), tone: tone(m.deltaGetAppPct) });
   }
   if (m.deltaCrPct !== null) {
     changes.push({ label: 'CR', value: pct(m.deltaCrPct), tone: tone(m.deltaCrPct) });
@@ -179,7 +179,7 @@ function MoverRow({
             <MetricPair label="Users" prior={formatNumber(m.usersP)} latest={formatNumber(m.usersL)} delta={pct(m.deltaUsersPct)} t={tone(m.deltaUsersPct)} />
             {(m.getAppP > 0 || m.getAppL > 0) && (
               <MetricPair
-                label="GetApp"
+                label="Install"
                 prior={formatNumber(m.getAppP)}
                 latest={formatNumber(m.getAppL)}
                 delta={m.deltaGetAppPct !== null ? pct(m.deltaGetAppPct) : null}

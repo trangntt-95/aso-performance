@@ -100,7 +100,7 @@ function ChannelBlock({
           <Pill value={deltaRel(usersL, usersP)} />
         </div>
         <div>
-          <dt className="text-[10px] uppercase tracking-wider text-slate-500">GetApp</dt>
+          <dt className="text-[10px] uppercase tracking-wider text-slate-500">Install</dt>
           <dd className="text-base font-semibold tabular-nums">{formatNumber(getAppL, { compact: true })}</dd>
           <Pill value={deltaRel(getAppL, getAppP)} />
         </div>

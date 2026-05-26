@@ -164,7 +164,7 @@ export function TopContributors({
         onRowClick={onRowClick}
       />
       <Column
-        title="Top GetApp"
+        title="Top Install"
         unitLabel="installs · share %"
         Icon={Target}
         rows={getApp}

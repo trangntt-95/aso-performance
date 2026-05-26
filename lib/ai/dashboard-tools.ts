@@ -30,7 +30,7 @@ export function makeDashboardTools(data: SheetPayload) {
   return {
     get_overview: tool({
       description:
-        'Get the top-line KPI snapshot for a window (Users, GetApp installs, CR, paid Ads target + runrate). Use for "tổng quan tuần này" / "what does this week look like" style questions.',
+        'Get the top-line KPI snapshot for a window (Users, Install, CR, paid Ads target + runrate). Use for "tổng quan tuần này" / "what does this week look like" style questions.',
       inputSchema: z.object({
         window: WindowSchema.describe('Time window (L3=3d, L7=7d, L14=14d, L30=30d, L90=90d)'),
         surface: SurfaceSchema,
@@ -92,7 +92,7 @@ export function makeDashboardTools(data: SheetPayload) {
 
     get_top_keywords: tool({
       description:
-        'Get top contributing keywords by Users or GetApp installs in a window. Returns up to 30 keywords sorted by absolute volume.',
+        'Get top contributing keywords by Users or Install in a window. Returns up to 30 keywords sorted by absolute volume.',
       inputSchema: z.object({
         metric: z.enum(['users', 'getApp']).describe('Sort metric'),
         window: WindowSchema,
@@ -122,7 +122,7 @@ export function makeDashboardTools(data: SheetPayload) {
 
     get_country_breakdown: tool({
       description:
-        'Top countries ranked by Users or GetApp installs in a window. Returns top 20.',
+        'Top countries ranked by Users or Install in a window. Returns top 20.',
       inputSchema: z.object({
         window: WindowSchema,
         metric: MetricSchema.default('users'),
@@ -226,7 +226,7 @@ export function makeDashboardTools(data: SheetPayload) {
 
     get_market_trajectory: tool({
       description:
-        'Δ Users %, Δ GetApp %, Δ Weighted % across all windows (L3 → L90) — useful to see if the market is accelerating or decelerating.',
+        'Δ Users %, Δ Install %, Δ Weighted % across all windows (L3 → L90) — useful to see if the market is accelerating or decelerating.',
       inputSchema: z.object({
         surface: SurfaceSchema,
         country: z.string().nullish(),
@@ -265,7 +265,7 @@ export function makeDashboardTools(data: SheetPayload) {
 
     get_daily_trend: tool({
       description:
-        'Daily L7D-rolling time series (Users, optionally GetApp + CR when History_Daily covers the date). Last ~30 days. Use for trend questions like "users 2 tuần gần nhất ra sao".',
+        'Daily L7D-rolling time series (Users, optionally Install + CR when History_Daily covers the date). Last ~30 days. Use for trend questions like "users 2 tuần gần nhất ra sao".',
       inputSchema: z.object({
         surface: SurfaceSchema,
         keyword: z.string().nullish().describe('Filter to a specific keyword'),

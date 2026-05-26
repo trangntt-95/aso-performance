@@ -211,7 +211,7 @@ export function CategoryDrilldown({ category }: { category: string }) {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            U = Users · G = GetApp · CR = conversion · P = avg position
+            U = Users · G = Install · CR = conversion · P = avg position
           </div>
         </div>
       )}

@@ -432,7 +432,7 @@ export function KeywordTrendSheet() {
                     {s ? (
                       <>
                         <div>Users: <b>{formatNumber(s.totalUsers, { compact: true })}</b></div>
-                        <div>GetApp: <b>{formatNumber(s.totalGetApp, { compact: true })}</b></div>
+                        <div>Install: <b>{formatNumber(s.totalGetApp, { compact: true })}</b></div>
                         <div>CR: <b>{formatPercent(s.cr)}</b></div>
                         <div>Pos: <b>{formatPos(s.avgPos)}</b></div>
                       </>

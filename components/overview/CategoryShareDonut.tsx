@@ -27,11 +27,14 @@ interface Props {
   onCategoryClick?: (category: string) => void;
 }
 
-type Metric = 'users' | 'getApp';
+type Metric = 'users' | 'getApp' | 'cr';
+
+const METRIC_LABEL: Record<Metric, string> = { users: 'Users', getApp: 'Install', cr: 'CR' };
 
 export function CategoryShareDonut({ data, height = 260, onCategoryClick }: Props) {
   const [metric, setMetric] = useState<Metric>('users');
   const clickable = Boolean(onCategoryClick);
+  const isCr = metric === 'cr';
 
   // Compute getApp share on the fly (CategoryShare carries getApp value but not its share %).
   const totalGetApp = useMemo(() => data.reduce((s, d) => s + d.getApp, 0), [data]);
@@ -39,10 +42,11 @@ export function CategoryShareDonut({ data, height = 260, onCategoryClick }: Prop
   const enriched = useMemo(
     () =>
       data
-        .filter((d) => (metric === 'users' ? d.users > 0 : d.getApp > 0))
+        .filter((d) => (metric === 'getApp' ? d.getApp > 0 : d.users > 0))
         .map((d) => ({
           ...d,
-          metricValue: metric === 'users' ? d.users : d.getApp,
+          // For CR the slice size is the CR value itself (installs/users); share % is not meaningful.
+          metricValue: metric === 'users' ? d.users : metric === 'getApp' ? d.getApp : d.cr,
           metricShare: metric === 'users' ? d.share : totalGetApp > 0 ? d.getApp / totalGetApp : 0,
         }))
         .sort((a, b) => b.metricValue - a.metricValue),
@@ -71,11 +75,21 @@ export function CategoryShareDonut({ data, height = 260, onCategoryClick }: Prop
               metric === 'getApp' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
             )}
           >
-            GetApp
+            Install
+          </button>
+          <button
+            type="button"
+            onClick={() => setMetric('cr')}
+            className={cn(
+              'px-2.5 py-1 font-medium transition border-l border-slate-200',
+              metric === 'cr' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
+            )}
+          >
+            CR
           </button>
         </div>
         <span className="text-[10px] text-slate-500">
-          Share theo {metric === 'users' ? 'Users' : 'GetApp'}
+          {isCr ? 'CR (installs/users) theo category' : `Share theo ${METRIC_LABEL[metric]}`}
         </span>
       </div>
       <div className="flex-1 flex items-center min-h-0">
@@ -106,6 +120,7 @@ export function CategoryShareDonut({ data, height = 260, onCategoryClick }: Prop
                 const n = typeof value === 'number' ? value : Number(value);
                 const payload = item?.payload as (CategoryShare & { metricShare?: number }) | undefined;
                 const cat = payload?.category ?? '';
+                if (isCr) return [`CR ${formatPercent(payload?.cr ?? 0)}`, cat];
                 const share = payload?.metricShare ?? 0;
                 return [`${formatNumber(n, { compact: true })} · ${formatPercent(share)}`, cat];
               }}
@@ -126,7 +141,7 @@ export function CategoryShareDonut({ data, height = 260, onCategoryClick }: Prop
             >
               <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: PALETTE[d.category] ?? '#94a3b8' }} />
               <span className="text-slate-700 truncate flex-1">{d.category}</span>
-              <span className="text-slate-500 font-mono tabular-nums">{formatPercent(d.metricShare)}</span>
+              <span className="text-slate-500 font-mono tabular-nums">{formatPercent(isCr ? d.cr : d.metricShare)}</span>
             </button>
           ))}
         </div>

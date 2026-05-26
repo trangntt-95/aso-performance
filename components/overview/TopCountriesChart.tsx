@@ -12,12 +12,14 @@ import {
   YAxis,
 } from 'recharts';
 import type { CountryRollup } from './aggregate';
-import { formatNumber } from '@/lib/utils/format';
+import { formatNumber, formatPercent } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 
 const PALETTE = ['#4f46e5', '#6366f1', '#818cf8', '#a5b4fc', '#c7d2fe', '#e0e7ff', '#eef2ff', '#f5f3ff'];
 
-type Metric = 'users' | 'getApp';
+type Metric = 'users' | 'getApp' | 'cr';
+
+const METRIC_LABEL: Record<Metric, string> = { users: 'Users', getApp: 'Install', cr: 'CR' };
 
 interface Props {
   data: CountryRollup[];
@@ -34,7 +36,9 @@ function tickFmt(n: number): string {
 export function TopCountriesChart({ data, height = 280, onCountryClick, activeCountry }: Props) {
   const [metric, setMetric] = useState<Metric>('users');
   const clickable = Boolean(onCountryClick);
+  const isCr = metric === 'cr';
   const sortedData = [...data].sort((a, b) => b[metric] - a[metric]);
+  const axisFmt = (n: number) => (isCr ? formatPercent(n) : tickFmt(n));
 
   return (
     <div className="flex flex-col gap-2" style={{ height }}>
@@ -58,7 +62,17 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
               metric === 'getApp' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
             )}
           >
-            GetApp
+            Install
+          </button>
+          <button
+            type="button"
+            onClick={() => setMetric('cr')}
+            className={cn(
+              'px-2.5 py-0.5 font-medium transition border-l border-slate-200',
+              metric === 'cr' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
+            )}
+          >
+            CR
           </button>
         </div>
       </div>
@@ -72,7 +86,7 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
               stroke="#cbd5e1"
               tickLine={false}
               axisLine={false}
-              tickFormatter={tickFmt}
+              tickFormatter={axisFmt}
             />
             <YAxis
               type="category"
@@ -87,11 +101,14 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
             <Tooltip
               cursor={{ fill: '#f1f5f9' }}
               contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
-              formatter={(v) => formatNumber(typeof v === 'number' ? v : Number(v))}
+              formatter={(v) => {
+                const n = typeof v === 'number' ? v : Number(v);
+                return [isCr ? formatPercent(n) : formatNumber(n), METRIC_LABEL[metric]];
+              }}
             />
             <Bar
               dataKey={metric}
-              name={metric === 'users' ? 'Users' : 'GetApp'}
+              name={METRIC_LABEL[metric]}
               radius={[0, 6, 6, 0]}
               maxBarSize={20}
               cursor={clickable ? 'pointer' : undefined}

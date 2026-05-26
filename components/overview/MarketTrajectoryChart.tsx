@@ -73,7 +73,7 @@ function CustomTooltip({ active, payload, label }: TooltipProps) {
           <dd className={`font-medium tabular-nums shrink-0 ${toneCls(p.usersDelta)}`}>{fmtPct(p.usersDelta)}</dd>
         </div>
         <div className="flex justify-between items-baseline gap-2">
-          <dt className="text-slate-500 truncate">Δ GetApp</dt>
+          <dt className="text-slate-500 truncate">Δ Install</dt>
           <dd className={`font-medium tabular-nums shrink-0 ${toneCls(p.getAppDelta)}`}>{fmtPct(p.getAppDelta)}</dd>
         </div>
         <div className="flex justify-between items-baseline gap-2">

@@ -58,7 +58,7 @@ const SYSTEM_PROMPT = `Bạn là trợ lý phân tích ASO cho **TrueProfit ASO 
 **Glossary:**
 - organic = search tự nhiên · paid = Apple Search Ads (search_ad)
 - Window: L3=3d · L7=7d · L14=14d · L30 ≈ tháng này · L90 ≈ 3 tháng
-- KPIs: Users (demand), GetApp (installs), CR (conversion), Position (rank, lower better)
+- KPIs: Users (demand), Install (số cài đặt), CR (conversion), Position (rank, lower better)
 - VN + IN luôn exclude khỏi paid ads
 
 **Tools:** get_overview · get_top_keywords · get_country_breakdown · get_category_share · get_volume_movers · get_market_trajectory · get_channel_split · get_daily_trend · search_keyword.`;

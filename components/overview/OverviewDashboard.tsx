@@ -267,7 +267,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               Icon={Users}
             />
             <KpiTile
-              label={`GetApp · ${window}`}
+              label={`Install · ${window}`}
               value={formatNumber(kpis.getAppL, { compact: true })}
               deltaPct={kpis.getAppDeltaPct}
               helper={`vs prior ${days}d`}
@@ -356,7 +356,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         </SectionCard>
         <SectionCard
           title="Channel split % · all windows"
-          hint={`Organic vs Paid share by ${splitMetric === 'users' ? 'Users' : 'GetApp'} across windows.`}
+          hint={`Organic vs Paid share by ${splitMetric === 'users' ? 'Users' : 'Install'} across windows.`}
         >
           <div className="mb-2 flex justify-end">
             <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
@@ -382,7 +382,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                     : 'bg-white text-slate-600 hover:bg-slate-50',
                 )}
               >
-                GetApp
+                Install
               </button>
             </div>
           </div>
@@ -391,8 +391,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       </section>
 
       <SectionCard
-        title="Daily trend · last 30 days"
-        hint="Per-day Users / GetApp / CR (toggle). Falls back to L7D rolling for days without daily data."
+        title="Daily trend"
+        hint="Per-day Users / Install / CR (toggle). Chọn range L7 / L30 / L90 / L365 ở góc phải. Falls back to L7D rolling for days without daily data."
       >
         {isLoading ? (
           <Skeleton className="h-56" />
@@ -428,7 +428,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         </SectionCard>
         <SectionCard
           title={`Category share · ${window}`}
-          hint="Toggle Users / GetApp at the top right. Click a slice for details."
+          hint="Toggle Users / Install at the top right. Click a slice for details."
         >
           {isLoading ? (
             <Skeleton className="h-64" />

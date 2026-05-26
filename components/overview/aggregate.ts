@@ -297,6 +297,7 @@ export interface CategoryShare {
   users: number;
   getApp: number;
   share: number;
+  cr: number;
 }
 
 export function categoryShareFor(
@@ -308,14 +309,14 @@ export function categoryShareFor(
   const map = new Map<string, CategoryShare>();
   let totalUsers = 0;
   rows.forEach((r) => {
-    const cur = map.get(r.category) ?? { category: r.category, users: 0, getApp: 0, share: 0 };
+    const cur = map.get(r.category) ?? { category: r.category, users: 0, getApp: 0, share: 0, cr: 0 };
     cur.users += r.usersL;
     cur.getApp += r.getAppL;
     totalUsers += r.usersL;
     map.set(r.category, cur);
   });
   return Array.from(map.values())
-    .map((c) => ({ ...c, share: totalUsers > 0 ? c.users / totalUsers : 0 }))
+    .map((c) => ({ ...c, share: totalUsers > 0 ? c.users / totalUsers : 0, cr: c.users > 0 ? c.getApp / c.users : 0 }))
     .sort((a, b) => b.users - a.users);
 }
 

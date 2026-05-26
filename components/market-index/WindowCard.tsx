@@ -57,7 +57,7 @@ export function WindowCard({ row, isSelected, onClick }: Props) {
         </div>
         <div className="space-y-0.5">
           <DeltaLine label="Δ Users" value={row.deltaUsersPct} />
-          <DeltaLine label="Δ GetApp" value={row.deltaGetAppPct} />
+          <DeltaLine label="Δ Install" value={row.deltaGetAppPct} />
         </div>
         {row.primaryCause && (
           <div

@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import {
   Area,
-  AreaChart,
   CartesianGrid,
+  ComposedChart,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -26,9 +27,11 @@ type Metric = 'users' | 'getApp' | 'cr';
 
 const METRICS: { key: Metric; label: string; needHistoryDaily: boolean }[] = [
   { key: 'users', label: 'Users', needHistoryDaily: false },
-  { key: 'getApp', label: 'GetApp', needHistoryDaily: true },
+  { key: 'getApp', label: 'Install', needHistoryDaily: true },
   { key: 'cr', label: 'CR', needHistoryDaily: true },
 ];
+
+const RANGES = [7, 30, 90, 365] as const;
 
 export function DailyTrendChart({
   data,
@@ -38,8 +41,11 @@ export function DailyTrendChart({
   keywordFilter,
 }: Props) {
   const [metric, setMetric] = useState<Metric>('users');
-  // Trim by window: if lastNDays is set, keep only the most recent N points.
-  const trimmed = lastNDays && data.length > lastNDays ? data.slice(-lastNDays) : data;
+  const [rangeDays, setRangeDays] = useState<number>(
+    lastNDays && (RANGES as readonly number[]).includes(lastNDays) ? lastNDays : 30,
+  );
+  // Trim by selected range: keep only the most recent N points.
+  const trimmed = data.length > rangeDays ? data.slice(-rangeDays) : data;
   const hasGetApp = trimmed.some((d) => d.getApp !== null);
   const hasCr = trimmed.some((d) => d.cr !== null);
 
@@ -61,6 +67,21 @@ export function DailyTrendChart({
     if (metric === 'getApp') return d.getApp !== null;
     return d.cr !== null;
   });
+
+  // Faint linear-regression trend line over the visible points (least squares).
+  const withTrend = (() => {
+    const ys = chartData.map((d) => Number(d[metric]) || 0);
+    const n = ys.length;
+    if (n < 2) return chartData.map((d) => ({ ...d, trend: null as number | null }));
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    ys.forEach((y, i) => {
+      sumX += i; sumY += y; sumXY += i * y; sumX2 += i * i;
+    });
+    const denom = n * sumX2 - sumX * sumX;
+    const slope = denom === 0 ? 0 : (n * sumXY - sumX * sumY) / denom;
+    const intercept = (sumY - slope * sumX) / n;
+    return chartData.map((d, i) => ({ ...d, trend: intercept + slope * i }));
+  })();
 
   const yFmt = (v: number) => (metric === 'cr' ? formatPercent(v) : formatNumber(v, { compact: true }));
   const valueFmt = (v: number) => (metric === 'cr' ? formatPercent(v) : formatNumber(v));
@@ -104,14 +125,34 @@ export function DailyTrendChart({
             );
           })}
         </div>
-        <span className="text-[10px] text-slate-500">
-          {chartData.length} ngày · {labelOf(metric)} per-day
-          {keywordFilter ? ` · kw=${keywordFilter}` : ''}
-        </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
+            {RANGES.map((r, idx) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setRangeDays(r)}
+                className={cn(
+                  'px-2.5 py-1 font-medium transition',
+                  idx > 0 && 'border-l border-slate-200',
+                  rangeDays === r
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-50',
+                )}
+              >
+                {`L${r}`}
+              </button>
+            ))}
+          </div>
+          <span className="text-[10px] text-slate-500">
+            {chartData.length} ngày · {labelOf(metric)} per-day
+            {keywordFilter ? ` · kw=${keywordFilter}` : ''}
+          </span>
+        </div>
       </div>
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData} margin={{ top: 10, right: 12, bottom: 4, left: -8 }}>
+          <ComposedChart data={withTrend} margin={{ top: 10, right: 12, bottom: 4, left: -8 }}>
             <defs>
               <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#4f46e5" stopOpacity={0.35} />
@@ -139,7 +180,8 @@ export function DailyTrendChart({
             <Tooltip
               cursor={{ stroke: '#94a3b8', strokeDasharray: '3 3' }}
               contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
-              formatter={(value) => {
+              formatter={(value, _name, item) => {
+                if (item?.dataKey === 'trend') return null;
                 const n = typeof value === 'number' ? value : Number(value);
                 return [valueFmt(n), labelOf(metric)];
               }}
@@ -158,7 +200,19 @@ export function DailyTrendChart({
               activeDot={{ r: 4 }}
               connectNulls={false}
             />
-          </AreaChart>
+            <Line
+              type="linear"
+              dataKey="trend"
+              stroke="#64748b"
+              strokeWidth={1}
+              strokeDasharray="4 4"
+              strokeOpacity={0.45}
+              dot={false}
+              activeDot={false}
+              isAnimationActive={false}
+              connectNulls
+            />
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     </div>

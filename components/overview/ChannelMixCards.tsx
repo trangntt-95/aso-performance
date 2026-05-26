@@ -92,7 +92,7 @@ function Channel({
           <DeltaPill value={usersDelta} />
         </div>
         <div>
-          <dt className="text-[10px] uppercase tracking-wider text-slate-500">GetApp</dt>
+          <dt className="text-[10px] uppercase tracking-wider text-slate-500">Install</dt>
           <dd className="text-lg font-semibold text-slate-900 leading-tight tabular-nums">
             {formatNumber(getApp, { compact: true })}
           </dd>
