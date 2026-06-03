@@ -143,9 +143,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   });
   const [rangeFrom, setRangeFrom] = useState(() => initParam('from') ?? '');
   const [rangeTo, setRangeTo] = useState(() => initParam('to') ?? '');
-  const [splitMetric, setSplitMetric] = useState<'users' | 'getapp'>(() =>
-    initParam('metric') === 'getapp' ? 'getapp' : 'users',
-  );
+  const [splitMetric, setSplitMetric] = useState<'users' | 'getapp' | 'cr'>(() => {
+    const m = initParam('metric');
+    return m === 'getapp' || m === 'cr' ? m : 'users';
+  });
   // Section to scroll to + briefly highlight (consumed once on mount).
   const [focusTarget] = useState<string | null>(() => initParam('focus'));
   const [highlightKey, setHighlightKey] = useState<string | null>(() => initParam('focus'));
@@ -265,9 +266,6 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   // Note appended to window-based sections that can't be date-scoped.
   const winNote = inDateMode ? ` · ⚠️ theo window ${window}, chưa lọc ngày` : '';
   const dateLabel = dateRange ? (isSingleDay ? dateRange.from : `${dateRange.from} → ${dateRange.to}`) : '';
-  const rangeDays = dateRange
-    ? Math.round((Date.parse(dateRange.to) - Date.parse(dateRange.from)) / 86400000) + 1
-    : 0;
 
   const openCategoryDetail = useCategoryDetailStore((s) => s.openCategory);
 
@@ -567,31 +565,6 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         </div>
       </header>
 
-      {inDateMode && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900 flex items-start gap-1.5">
-          <span>
-            📅 <b>Date mode</b> · {isSingleDay ? 'ngày' : `${rangeDays} ngày`} <b>{dateLabel}</b> — KPIs ·
-            Channel mix · Top KW · Category <b>theo ngày</b>. Country &amp; so-sánh-window vẫn là snapshot{' '}
-            <b>{window}</b> (xem badge).
-          </span>
-          <span
-            className="shrink-0 mt-px cursor-help inline-flex h-4 w-4 items-center justify-center rounded-full border border-rose-300 text-[10px] font-bold text-rose-500"
-            title={
-              `Vì sao chia 2 nhóm:\n` +
-              `History_Daily (nguồn per-ngày) KHÔNG có cột country và KHÔNG có so sánh giữa các window.\n\n` +
-              `• Theo ngày được: KPIs, Channel mix (có surface), Top contribution (có keyword), Category share.\n` +
-              `• Vẫn theo window ${window}: Market Performance, Channel split, Top countries, Volume movers, Ads target.` +
-              (!isSingleDay
-                ? `\n\nKhoảng nhiều ngày chỉ cộng cột per-ngày thật (usersDaily/getAppDaily). ` +
-                  `Ngày chỉ có L7D rolling bị bỏ (tránh đếm trùng ~7×) — backfill per-ngày hiện chỉ tới ~26/05.`
-                : '')
-            }
-          >
-            i
-          </span>
-        </div>
-      )}
-
       <section
         id="sec-kpis"
         className={cn(
@@ -708,8 +681,12 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             )}
           </SectionCard>
           <SectionCard
-            title="Channel split % · all windows"
-            hint={`Organic vs Paid share by ${splitMetric === 'users' ? 'Users' : 'Install'} across windows.${winNote}`}
+            title="Channel split · all windows"
+            hint={
+              splitMetric === 'cr'
+                ? `Organic CR vs Paid CR (install/users) theo từng window.${winNote}`
+                : `Organic vs Paid share by ${splitMetric === 'users' ? 'Users' : 'Install'} across windows.${winNote}`
+            }
             anchorId="sec-channel-split"
             highlighted={highlightKey === 'channel-split'}
             onCopyLink={embedded ? undefined : () => copyLink('channel-split')}
@@ -740,6 +717,18 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                   )}
                 >
                   Install
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSplitMetric('cr')}
+                  className={cn(
+                    'px-2.5 py-1 font-medium transition border-l border-slate-200',
+                    splitMetric === 'cr'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50',
+                  )}
+                >
+                  CR
                 </button>
               </div>
             </div>

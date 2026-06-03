@@ -16,7 +16,7 @@ import { formatNumber } from '@/lib/utils/format';
 
 interface Props {
   data: ChannelSplitPoint[];
-  metric: 'users' | 'getapp';
+  metric: 'users' | 'getapp' | 'cr';
   height?: number;
 }
 
@@ -24,30 +24,54 @@ const ORG = '#059669';
 const PAID = '#b45309';
 
 interface EnrichedPoint extends ChannelSplitPoint {
-  _total: number;
-  _orgAbs: number;
+  orgVal: number; // % share (users/getapp) or CR % (cr)
+  paidVal: number;
+  _orgAbs: number; // numerator for tooltip (users / install)
   _paidAbs: number;
-  orgPct: number;
-  paidPct: number;
+  _orgBase: number; // CR denominator (users) — 0 in share mode
+  _paidBase: number;
 }
 
 export function ChannelSplitChart({ data, metric, height = 260 }: Props) {
-  const orgKey = metric === 'users' ? 'organicUsers' : 'organicGetApp';
-  const paidKey = metric === 'users' ? 'paidUsers' : 'paidGetApp';
+  const isCr = metric === 'cr';
 
   const enriched: EnrichedPoint[] = data.map((d) => {
-    const org = d[orgKey];
-    const paid = d[paidKey];
+    if (isCr) {
+      // CR mode: each channel's own conversion rate = getApp / users.
+      const orgCr = d.organicUsers > 0 ? (d.organicGetApp / d.organicUsers) * 100 : 0;
+      const paidCr = d.paidUsers > 0 ? (d.paidGetApp / d.paidUsers) * 100 : 0;
+      return {
+        ...d,
+        orgVal: orgCr,
+        paidVal: paidCr,
+        _orgAbs: d.organicGetApp,
+        _paidAbs: d.paidGetApp,
+        _orgBase: d.organicUsers,
+        _paidBase: d.paidUsers,
+      };
+    }
+    // Share mode: organic vs paid % of total (sums to 100).
+    const org = metric === 'users' ? d.organicUsers : d.organicGetApp;
+    const paid = metric === 'users' ? d.paidUsers : d.paidGetApp;
     const total = org + paid;
     return {
       ...d,
-      _total: total,
+      orgVal: total > 0 ? (org / total) * 100 : 0,
+      paidVal: total > 0 ? (paid / total) * 100 : 0,
       _orgAbs: org,
       _paidAbs: paid,
-      orgPct: total > 0 ? (org / total) * 100 : 0,
-      paidPct: total > 0 ? (paid / total) * 100 : 0,
+      _orgBase: 0,
+      _paidBase: 0,
     };
   });
+
+  const maxCr = isCr
+    ? Math.max(1, ...enriched.flatMap((e) => [e.orgVal, e.paidVal]))
+    : 100;
+  const yDomain: [number, number] = isCr ? [0, Math.ceil((maxCr * 1.25) / 5) * 5] : [0, 100];
+  const orgName = isCr ? 'Organic CR' : 'Organic %';
+  const paidName = isCr ? 'Paid CR' : 'Paid %';
+  const decimals = isCr ? 1 : 0;
 
   return (
     <div style={{ height }}>
@@ -62,8 +86,8 @@ export function ChannelSplitChart({ data, metric, height = 260 }: Props) {
             axisLine={false}
           />
           <YAxis
-            domain={[0, 100]}
-            ticks={[0, 25, 50, 75, 100]}
+            domain={yDomain}
+            ticks={isCr ? undefined : [0, 25, 50, 75, 100]}
             tick={{ fontSize: 10, fill: '#64748b' }}
             stroke="#cbd5e1"
             tickLine={false}
@@ -75,47 +99,52 @@ export function ChannelSplitChart({ data, metric, height = 260 }: Props) {
             contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
             formatter={(value, name, item) => {
               const p = item?.payload as EnrichedPoint | undefined;
-              if (!p) return [`${(value as number).toFixed(1)}%`, name];
-              const pct = value as number;
-              const abs = name === 'Organic %' ? p._orgAbs : p._paidAbs;
-              return [`${pct.toFixed(1)}% · ${formatNumber(abs)}`, name];
+              const val = value as number;
+              if (!p) return [`${val.toFixed(decimals)}%`, name];
+              const isOrg = name === orgName;
+              const abs = isOrg ? p._orgAbs : p._paidAbs;
+              if (isCr) {
+                const base = isOrg ? p._orgBase : p._paidBase;
+                return [`${val.toFixed(1)}% · ${formatNumber(abs)} / ${formatNumber(base)}`, name];
+              }
+              return [`${val.toFixed(1)}% · ${formatNumber(abs)}`, name];
             }}
           />
           <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} iconType="circle" />
           <Line
             type="monotone"
-            dataKey="orgPct"
-            name="Organic %"
+            dataKey="orgVal"
+            name={orgName}
             stroke={ORG}
             strokeWidth={2.5}
             dot={{ r: 4, fill: ORG, strokeWidth: 0 }}
             activeDot={{ r: 5 }}
           >
             <LabelList
-              dataKey="orgPct"
+              dataKey="orgVal"
               position="top"
               fill={ORG}
               fontSize={11}
               fontWeight={600}
-              formatter={(v) => (typeof v === 'number' ? `${v.toFixed(0)}%` : '')}
+              formatter={(v) => (typeof v === 'number' ? `${v.toFixed(decimals)}%` : '')}
             />
           </Line>
           <Line
             type="monotone"
-            dataKey="paidPct"
-            name="Paid %"
+            dataKey="paidVal"
+            name={paidName}
             stroke={PAID}
             strokeWidth={2.5}
             dot={{ r: 4, fill: PAID, strokeWidth: 0 }}
             activeDot={{ r: 5 }}
           >
             <LabelList
-              dataKey="paidPct"
+              dataKey="paidVal"
               position="bottom"
               fill={PAID}
               fontSize={11}
               fontWeight={600}
-              formatter={(v) => (typeof v === 'number' ? `${v.toFixed(0)}%` : '')}
+              formatter={(v) => (typeof v === 'number' ? `${v.toFixed(decimals)}%` : '')}
             />
           </Line>
         </LineChart>

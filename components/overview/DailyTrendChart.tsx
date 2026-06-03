@@ -54,8 +54,14 @@ export function DailyTrendChart({
   const [rangeDays, setRangeDays] = useState<number>(
     lastNDays && (RANGES as readonly number[]).includes(lastNDays) ? lastNDays : 30,
   );
-  // Trim by selected range: keep only the most recent N points.
-  const trimmed = data.length > rangeDays ? data.slice(-rangeDays) : data;
+  // When a date RANGE is pinned (date mode From→To), scope the chart to exactly
+  // that range. Otherwise keep the most recent N points (the L7/L30/... toggle).
+  const isRangeScope = !!selectedFrom && !!selectedTo && selectedFrom !== selectedTo;
+  const trimmed = isRangeScope
+    ? data.filter((d) => d.date >= (selectedFrom as string) && d.date <= (selectedTo as string))
+    : data.length > rangeDays
+    ? data.slice(-rangeDays)
+    : data;
   const hasGetApp = trimmed.some((d) => d.getApp !== null);
   const hasCr = trimmed.some((d) => d.cr !== null);
 
