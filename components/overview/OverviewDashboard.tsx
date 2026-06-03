@@ -738,7 +738,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
       <SectionCard
         title="Daily trend (rolling 7 ngày)"
-        hint="Users / Install / CR — mỗi điểm là tổng/giá trị rolling 7 ngày (đồng nhất, hết spike). Click 1 ngày để lọc."
+        hint="Users / Install / CR — mỗi điểm là tổng/giá trị rolling 7 ngày (đồng nhất, hết spike)."
         anchorId="sec-daily-trend"
         highlighted={highlightKey === 'daily-trend'}
         onCopyLink={embedded ? undefined : () => copyLink('daily-trend')}

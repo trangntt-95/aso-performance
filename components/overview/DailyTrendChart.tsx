@@ -156,51 +156,49 @@ export function DailyTrendChart({
           })}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
-            {RANGES.map((r, idx) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setRangeDays(r)}
-                className={cn(
-                  'px-2.5 py-1 font-medium transition',
-                  idx > 0 && 'border-l border-slate-200',
-                  rangeDays === r
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-50',
-                )}
-              >
-                {`L${r}`}
-              </button>
-            ))}
-          </div>
+          {isRangeScope ? (
+            <span className="text-[10px] text-rose-700 bg-rose-50 border border-rose-100 rounded px-2 py-0.5 font-medium">
+              Theo khoảng đã lọc · bỏ lọc ngày để dùng lại L7/L30/L90/L365
+            </span>
+          ) : (
+            <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
+              {RANGES.map((r, idx) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setRangeDays(r)}
+                  className={cn(
+                    'px-2.5 py-1 font-medium transition',
+                    idx > 0 && 'border-l border-slate-200',
+                    rangeDays === r
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50',
+                  )}
+                >
+                  {`L${r}`}
+                </button>
+              ))}
+            </div>
+          )}
           <span className="text-[10px] text-slate-500">
             {chartData.length} ngày · {labelOf(metric)} (rolling 7 ngày)
             {keywordFilter ? ` · kw=${keywordFilter}` : ''}
           </span>
         </div>
       </div>
-      {onDateSelect && (
+      {onDateSelect && anyPinned && (
         <div className="flex items-center gap-2 text-[10px]">
-          {anyPinned ? (
-            <>
-              <span className="inline-flex items-center gap-1 rounded bg-rose-100 text-rose-800 px-2 py-0.5 font-medium">
-                📅 {isRange ? 'Đang lọc khoảng' : 'Đang ghim ngày'} {pinnedLabel}
-                {pinnedOutOfRange && ' (ngoài range đang xem)'}
-              </span>
-              <button
-                type="button"
-                onClick={() => onDateSelect(null)}
-                className="text-slate-500 hover:text-slate-700 underline underline-offset-2"
-              >
-                Bỏ ghim ✕
-              </button>
-            </>
-          ) : (
-            <span className="text-slate-400">
-              Click 1 ngày để lọc theo ngày đó, hoặc dùng ô From→To ở header để lọc khoảng.
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1 rounded bg-rose-100 text-rose-800 px-2 py-0.5 font-medium">
+            📅 {isRange ? 'Đang lọc khoảng' : 'Đang ghim ngày'} {pinnedLabel}
+            {pinnedOutOfRange && ' (ngoài range đang xem)'}
+          </span>
+          <button
+            type="button"
+            onClick={() => onDateSelect(null)}
+            className="text-slate-500 hover:text-slate-700 underline underline-offset-2"
+          >
+            Bỏ ghim ✕
+          </button>
         </div>
       )}
       <div style={{ height }}>
