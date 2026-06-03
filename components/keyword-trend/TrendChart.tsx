@@ -9,13 +9,18 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { HistoryRow } from '@/lib/sheets/types';
+import type { HistoryDailyRow, HistoryRow } from '@/lib/sheets/types';
 import { useMemo } from 'react';
 import { parseSheetDate } from '@/lib/utils/format';
 
+type Metric = 'users' | 'pos' | 'getApp';
+
 interface Props {
   history: HistoryRow[];
-  metric: 'users' | 'pos';
+  // Required for the 'getApp' metric — install data lives in History_Daily, not
+  // the legacy History tab (which only carries users + pos).
+  dailyHistory?: HistoryDailyRow[];
+  metric: Metric;
 }
 
 interface SeriesPoint {
@@ -24,20 +29,45 @@ interface SeriesPoint {
   paid: number | null;
 }
 
-function buildSeries(rows: HistoryRow[], metric: 'users' | 'pos'): SeriesPoint[] {
+function buildSeries(
+  rows: HistoryRow[],
+  dailyRows: HistoryDailyRow[],
+  metric: Metric,
+): SeriesPoint[] {
   const byTs = new Map<number, SeriesPoint>();
-  rows.forEach((r) => {
-    const d = parseSheetDate(r.snapshotDate);
-    if (!d) return;
-    const ts = d.getTime();
-    if (!byTs.has(ts)) {
-      byTs.set(ts, { ts, organic: null, paid: null });
+  const ensure = (ts: number): SeriesPoint => {
+    let p = byTs.get(ts);
+    if (!p) {
+      p = { ts, organic: null, paid: null };
+      byTs.set(ts, p);
     }
-    const point = byTs.get(ts)!;
-    const value = metric === 'users' ? r.usersL7D : r.posL7D;
-    if (r.surface === 'search_ad') point.paid = value;
-    else point.organic = value;
-  });
+    return p;
+  };
+
+  if (metric === 'getApp') {
+    // Install = the ASO tool's keyword-attributed "Get App" (getAppL7D, 7-day
+    // rolling), snapshotted daily by daily-snapshot.gs (~20/05 onward). We do NOT
+    // use getAppDaily — that backfill column turned out to be GA4 paid ad-CLICKS,
+    // not installs. GA4 has no per-keyword install at all.
+    dailyRows.forEach((r) => {
+      const value = r.getAppL7D;
+      if (value === null || value === undefined) return;
+      const d = parseSheetDate(r.snapshotDate);
+      if (!d) return;
+      const point = ensure(d.getTime());
+      if (r.surface === 'search_ad') point.paid = (point.paid ?? 0) + value;
+      else point.organic = (point.organic ?? 0) + value;
+    });
+  } else {
+    rows.forEach((r) => {
+      const d = parseSheetDate(r.snapshotDate);
+      if (!d) return;
+      const point = ensure(d.getTime());
+      const value = metric === 'users' ? r.usersL7D : r.posL7D;
+      if (r.surface === 'search_ad') point.paid = value;
+      else point.organic = value;
+    });
+  }
   return Array.from(byTs.values()).sort((a, b) => a.ts - b.ts);
 }
 
@@ -49,8 +79,11 @@ function formatTick(ts: number | string): string {
   return t.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 }
 
-export function TrendChart({ history, metric }: Props) {
-  const data = useMemo(() => buildSeries(history, metric), [history, metric]);
+export function TrendChart({ history, dailyHistory = [], metric }: Props) {
+  const data = useMemo(
+    () => buildSeries(history, dailyHistory, metric),
+    [history, dailyHistory, metric],
+  );
 
   if (data.length === 0) {
     return (

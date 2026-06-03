@@ -1,19 +1,19 @@
 /**
- * Daily snapshot of L7 metrics per keyword × surface.
+ * Daily snapshot of L7 metrics per keyword x surface.
  * Reads `All_L7` once per day, appends to `History_Daily`.
  *
  * Schema of History_Daily:
  *   date | searchTerm | surface | usersL7D | getAppL7D | crL7D | posL7D
  *
  * Setup (one-time):
- *   1. Paste this file into Sheet → Extensions → Apps Script
+ *   1. Paste this file into Sheet -> Extensions -> Apps Script
  *   2. Run `installDailySnapshotTrigger()` once to set up the 7am trigger
  *   3. Optional: run `backfillFromHistory()` to copy past usersL7D + posL7D
  *      from the existing History tab into History_Daily. getAppL7D + crL7D
  *      stay empty for those past dates (install data isn't preserved
  *      historically anywhere in the sheet).
  *
- * The script is idempotent — running runDailySnapshot twice on the same day
+ * The script is idempotent - running runDailySnapshot twice on the same day
  * does nothing the second time.
  */
 
@@ -168,4 +168,104 @@ function backfillFromHistory() {
   }
   dest.getRange(dest.getLastRow() + 1, 1, out.length, HEADERS.length).setValues(out);
   Logger.log('Backfilled ' + out.length + ' rows from History');
+}
+
+// ============================================================================
+// PER-DAY snapshot (added 2026-06-03)
+// ----------------------------------------------------------------------------
+// Writes the TRUE per-day columns (usersDaily/getAppDaily/crDaily/posDaily +
+// source) so the dashboard's date filter + daily trend keep advancing past the
+// 26/05 backfill end. The backfill only went to 26/05 and the L7D snapshot is
+// rolling-7d (not per-day) - this fills the per-day gap going forward.
+//
+// REQUIRES fetchGA4Data_(startDate, endDate) from the main tracker Code.gs in
+// the SAME Apps Script project. Queries GA4 for a single day = real per-day
+// users + attributed install (shopify_app_install w/ surface) per kw x surface.
+//
+// History_Daily 12-col layout (live):
+//   date | searchTerm | surface | usersL7D | getAppL7D | crL7D | posL7D
+//        | usersDaily | getAppDaily | crDaily | posDaily | source
+//
+// Setup: run `installPerDayTrigger()` once. Optionally `backfillPerDay('2026-05-27','<yesterday>')`
+// to fill the current gap. NOTE: GA4 may threshold per-day totalUsers when data
+// is sparse, so very-low-traffic days can under-report users slightly.
+// ============================================================================
+
+var PERDAY_SOURCE = 'daily_perday';
+var PERDAY_COLS = 12;
+var PERDAY_TAB = 'History_Daily';
+var PERDAY_TZ = 'Asia/Ho_Chi_Minh';
+
+function writePerDayFor_(ss, dateStr) {
+  if (typeof fetchGA4Data_ !== 'function') {
+    throw new Error('fetchGA4Data_ not found - run inside the project that has Code.gs (main tracker).');
+  }
+  const dest = ss.getSheetByName(PERDAY_TAB);
+  if (!dest) throw new Error('Missing tab: ' + PERDAY_TAB);
+
+  // Idempotent on (date + source).
+  const lastRow = dest.getLastRow();
+  if (lastRow > 1) {
+    const vals = dest.getRange(2, 1, lastRow - 1, PERDAY_COLS).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      if (String(vals[i][0]) === dateStr && String(vals[i][11]) === PERDAY_SOURCE) {
+        Logger.log('Per-day already written: ' + dateStr);
+        return 0;
+      }
+    }
+  }
+
+  const data = fetchGA4Data_(dateStr, dateStr); // single calendar day
+  const out = [];
+  for (let i = 0; i < data.length; i++) {
+    const r = data[i];
+    const surface = String(r.surface_type || '').toLowerCase();
+    if (surface !== 'search' && surface !== 'search_ad') continue;
+    const users = Number(r.users) || 0;
+    const getApp = Number(r.getApp) || 0;
+    if (users === 0 && getApp === 0) continue;
+    const cr = users > 0 ? getApp / users : '';
+    const pos = (r.position !== null && r.position !== undefined && isFinite(r.position)) ? r.position : '';
+    // L7D cols empty (4-7), per-day cols filled (8-11), source (12).
+    out.push([dateStr, r.search_term, surface, '', '', '', '', users, getApp, cr, pos, PERDAY_SOURCE]);
+  }
+  if (out.length === 0) { Logger.log('No per-day rows for ' + dateStr); return 0; }
+  dest.getRange(dest.getLastRow() + 1, 1, out.length, PERDAY_COLS).setValues(out);
+  Logger.log('Per-day: wrote ' + out.length + ' rows for ' + dateStr);
+  return out.length;
+}
+
+// Daily trigger target - writes YESTERDAY per-day rows.
+function runDailyPerDaySnapshot() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  writePerDayFor_(ss, Utilities.formatDate(y, PERDAY_TZ, 'yyyy-MM-dd'));
+}
+
+// One-time gap fill. Eg: backfillPerDay('2026-05-27', '2026-06-02')
+function backfillPerDay(startStr, endStr) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const start = new Date(startStr + 'T00:00:00Z');
+  const end = new Date(endStr + 'T00:00:00Z');
+  let total = 0;
+  for (let d = new Date(start); d.getTime() <= end.getTime(); d.setUTCDate(d.getUTCDate() + 1)) {
+    const ds = Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
+    try { total += writePerDayFor_(ss, ds); } catch (e) { Logger.log('skip ' + ds + ': ' + e); }
+  }
+  Logger.log('Backfill per-day done: ' + total + ' rows');
+}
+
+function installPerDayTrigger() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'runDailyPerDaySnapshot') ScriptApp.deleteTrigger(triggers[i]);
+  }
+  ScriptApp.newTrigger('runDailyPerDaySnapshot')
+    .timeBased()
+    .atHour(8) // after the 7am L7D snapshot
+    .everyDays(1)
+    .inTimezone(PERDAY_TZ)
+    .create();
+  Logger.log('Per-day snapshot trigger installed (08:00 ' + PERDAY_TZ + ')');
 }

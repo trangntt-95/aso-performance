@@ -56,9 +56,12 @@ export function expectedAdsInstalls(windowDays: number, asOf: Date = new Date())
 /**
  * Runrate cuối kỳ theo window.
  *   - L3/L7/L14/L30 (windowDays ≤ days_in_month):
- *     pace = actual / min(windowDays, days_elapsed_in_month)  ← treat L30 mid-month như MTD
- *     projection = pace × days_in_month
- *     pct = projection / monthly_target
+ *     pace = actual / effectiveDays, projection = pace × days_in_month, pct = projection / monthly_target
+ *     effectiveDays:
+ *       - MTD-style (= min(windowDays, daysElapsedInMonth)) khi đã qua ≥ ½ window trong tháng
+ *         → mid/late-month L30 phản ánh đúng pace tháng hiện tại, không bị tháng trước dilute.
+ *       - Pure rolling (= windowDays) khi đầu tháng (daysElapsed < ½ window)
+ *         → tránh divide-by-tiny gây projection bùng nổ (vd ngày 1: L30/1×30 = ×30).
  *   - L90 (windowDays > days_in_month):
  *     pct = actual / L90 target (= tổng target 3 tháng gần nhất, lấy từ expectedAdsInstalls)
  *     projection = actual (không extrapolate vì window đã ≥ 1 tháng)
@@ -96,7 +99,10 @@ export function runrateAdsToMonthEnd(
   const monthlyTarget = ADS_MONTHLY_TARGETS[ymKey(asOf)];
   if (monthlyTarget === undefined || monthlyTarget <= 0) return null;
   const daysElapsedInMonth = asOf.getDate();
-  const effectiveDays = Math.min(windowDays, daysElapsedInMonth);
+  const minMtdDays = Math.ceil(windowDays / 2);
+  const effectiveDays = daysElapsedInMonth >= minMtdDays
+    ? Math.min(windowDays, daysElapsedInMonth)
+    : windowDays;
   if (effectiveDays <= 0) return null;
   const projectedInstalls = (actualInstalls / effectiveDays) * days;
   return {

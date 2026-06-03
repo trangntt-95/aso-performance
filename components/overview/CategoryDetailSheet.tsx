@@ -36,6 +36,14 @@ const ALL_TAB: Record<DrillWindow, keyof SheetPayload> = {
   L90: 'allL90',
 };
 
+// When the page has a country focus we read from the Country_L tabs (which carry
+// the country column) so the deep-dive matches what the page is showing.
+const COUNTRY_TAB: Record<DrillWindow, keyof SheetPayload> = {
+  L7: 'countryL7',
+  L30: 'countryL30',
+  L90: 'countryL90',
+};
+
 type ChannelView = 'all' | 'organic' | 'paid';
 type SortKey = 'keyword' | 'users' | 'installs' | 'cr' | 'pos' | 'delta';
 
@@ -148,7 +156,7 @@ function SortHeader({
 }
 
 export function CategoryDetailSheet() {
-  const { open, category, window: w, close } = useCategoryDetailStore();
+  const { open, category, window: w, country, surface, close } = useCategoryDetailStore();
   const { data } = useSheetData();
   const [channelFilter, setChannelFilter] = useState<ChannelView>('all');
   const [drillWindow, setDrillWindow] = useState<DrillWindow>('L7');
@@ -164,10 +172,11 @@ export function CategoryDetailSheet() {
   const [widthHydrated, setWidthHydrated] = useState(false);
   const resizeRef = useRef<{ startX: number; startW: number } | null>(null);
 
+  // Inherit the page's surface focus so the deep-dive opens on the same channel.
   useEffect(() => {
-    setChannelFilter('all');
+    setChannelFilter(surface ?? 'all');
     setSearch('');
-  }, [category, open]);
+  }, [category, open, surface]);
 
   // Sync drillWindow with the window the user clicked from on the overview.
   useEffect(() => {
@@ -227,12 +236,17 @@ export function CategoryDetailSheet() {
 
   const detail = useMemo(() => {
     if (!data || !category) return null;
-    const tabKey = ALL_TAB[drillWindow];
-    const allRows = (data[tabKey] as KeywordRow[]).filter((r) => r.category === category);
+    // Country focus → read the Country_L tab and scope to that country so totals
+    // (and the share %) match the page. Otherwise use the global All_L tab.
+    const tabKey = country ? COUNTRY_TAB[drillWindow] : ALL_TAB[drillWindow];
+    const baseRows = (data[tabKey] as KeywordRow[]).filter(
+      (r) => !country || r.country === country,
+    );
+    const allRows = baseRows.filter((r) => r.category === category);
     const organic = allRows.filter((r) => r.surface !== 'search_ad');
     const paid = allRows.filter((r) => r.surface === 'search_ad');
-    const totalUsers = (data[tabKey] as KeywordRow[]).reduce((s, r) => s + r.usersL, 0);
-    const totalGetApp = (data[tabKey] as KeywordRow[]).reduce((s, r) => s + r.getAppL, 0);
+    const totalUsers = baseRows.reduce((s, r) => s + r.usersL, 0);
+    const totalGetApp = baseRows.reduce((s, r) => s + r.getAppL, 0);
     const myUsers = allRows.reduce((s, r) => s + r.usersL, 0);
     const myGetApp = allRows.reduce((s, r) => s + r.getAppL, 0);
     return {
@@ -244,7 +258,7 @@ export function CategoryDetailSheet() {
       shareUsers: totalUsers > 0 ? myUsers / totalUsers : 0,
       shareGetApp: totalGetApp > 0 ? myGetApp / totalGetApp : 0,
     };
-  }, [data, category, drillWindow]);
+  }, [data, category, drillWindow, country]);
 
   const tableRows = useMemo(() => {
     if (!detail) return [];
@@ -322,6 +336,7 @@ export function CategoryDetailSheet() {
           </SheetTitle>
           <SheetDescription>
             Last {Number(drillWindow.slice(1))} days · breakdown by channel and keywords
+            {country ? ` · scoped to ${country}` : ''}
           </SheetDescription>
         </SheetHeader>
 
@@ -535,6 +550,11 @@ export function CategoryDetailSheet() {
                                   surface={surface}
                                   className="font-medium text-slate-800 truncate inline-block max-w-full"
                                 />
+                                {category === 'Language' && r.english && (
+                                  <div className="text-[10px] text-slate-500 italic truncate" title={r.english}>
+                                    → {r.english}
+                                  </div>
+                                )}
                               </td>
                               <td className="px-2 py-1 text-center">
                                 <span className={cn('inline-block px-1.5 rounded text-[10px] font-medium', surfaceCls)}>

@@ -1,12 +1,22 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react';
+import { usePathname } from 'next/navigation';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { MessageCircle, Send, Loader2, CircleStop, ChevronDown, GripHorizontal } from 'lucide-react';
+import { useDashboardContext } from '@/lib/store/dashboardContextStore';
 import { cn } from '@/lib/utils';
+
+const PAGE_BY_PATH: Record<string, string> = {
+  '/': 'Overview',
+  '/market-index': 'Market Health',
+  '/tier1-watch': 'Tier 1 Watch',
+  '/categories': 'Categories',
+  '/actions': 'Action Queue',
+};
 
 interface MessagePart {
   type: string;
@@ -84,11 +94,22 @@ export function ChatWidget() {
     startH: number;
   } | null>(null);
 
+  const pathname = usePathname();
+  const dashboardContext = useDashboardContext((s) => s.context);
+
   const { messages, sendMessage, status, error, setMessages } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/chat',
     }),
   });
+
+  // Send a message with the current dashboard view attached so the assistant
+  // can scope its answer to what the user is actually looking at.
+  const send = (text: string) => {
+    const page = (pathname && PAGE_BY_PATH[pathname]) || dashboardContext.page;
+    const ctx = { ...dashboardContext, page, path: pathname };
+    sendMessage({ text }, { body: { dashboardContext: ctx } });
+  };
 
   // Load history + size on mount
   useEffect(() => {
@@ -147,7 +168,7 @@ export function ChatWidget() {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!input.trim() || status === 'streaming' || status === 'submitted') return;
-    sendMessage({ text: input.trim() });
+    send(input.trim());
     setInput('');
   };
 
@@ -208,7 +229,9 @@ export function ChatWidget() {
         className={cn(
           'fixed right-4 z-50 rounded-full shadow-xl ring-4 ring-white grid place-items-center transition-all',
           'bottom-20 md:bottom-6',
-          'h-14 px-4 bg-indigo-600 hover:bg-indigo-700 text-white gap-2',
+          // Mobile: icon-only round; ≥md: pill with label
+          'h-12 w-12 md:h-14 md:w-auto md:px-4 md:gap-2',
+          'bg-indigo-600 hover:bg-indigo-700 text-white',
           !open && 'hover:scale-105',
         )}
         aria-label={open ? 'Minimize chat (history kept)' : 'Open AI assistant'}
@@ -216,12 +239,12 @@ export function ChatWidget() {
         {open ? (
           <>
             <ChevronDown className="h-5 w-5" strokeWidth={2.5} />
-            <span className="text-sm font-semibold">Thu gọn</span>
+            <span className="hidden md:inline text-sm font-semibold">Thu gọn</span>
           </>
         ) : (
           <>
             <MessageCircle className="h-5 w-5" strokeWidth={2.5} />
-            <span className="text-sm font-semibold">
+            <span className="hidden md:inline text-sm font-semibold">
               {messages.length > 0 ? 'Tiếp tục' : 'Hỏi AI'}
             </span>
           </>
@@ -246,7 +269,7 @@ export function ChatWidget() {
             <MessageCircle className="h-4 w-4" />
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold">ASO Assistant</div>
-              <div className="text-[10px] opacity-80">Phân tích dashboard · Gemini 2.5 Flash Lite</div>
+              <div className="text-[10px] opacity-80">Phân tích dashboard · Gemini 2.5 Flash</div>
             </div>
             {messages.length > 0 && (
               <button
@@ -287,7 +310,7 @@ export function ChatWidget() {
                       key={q}
                       type="button"
                       onClick={() => {
-                        sendMessage({ text: q });
+                        send(q);
                       }}
                       className="block w-full text-left text-[11px] px-2.5 py-1.5 rounded-md border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 text-slate-700"
                     >

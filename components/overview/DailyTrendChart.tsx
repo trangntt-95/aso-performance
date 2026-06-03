@@ -6,6 +6,8 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -21,6 +23,11 @@ interface Props {
   lastNDays?: number;
   countryFilter?: string | null;
   keywordFilter?: string | null;
+  /** Pinned date range (date mode). from === to means a single day. */
+  selectedFrom?: string | null;
+  selectedTo?: string | null;
+  /** Click a day to pin/unpin it → scopes the whole page to that single date. */
+  onDateSelect?: (iso: string | null) => void;
 }
 
 type Metric = 'users' | 'getApp' | 'cr';
@@ -39,6 +46,9 @@ export function DailyTrendChart({
   lastNDays,
   countryFilter,
   keywordFilter,
+  selectedFrom,
+  selectedTo,
+  onDateSelect,
 }: Props) {
   const [metric, setMetric] = useState<Metric>('users');
   const [rangeDays, setRangeDays] = useState<number>(
@@ -86,6 +96,20 @@ export function DailyTrendChart({
   const yFmt = (v: number) => (metric === 'cr' ? formatPercent(v) : formatNumber(v, { compact: true }));
   const valueFmt = (v: number) => (metric === 'cr' ? formatPercent(v) : formatNumber(v));
   const labelOf = (m: Metric) => METRICS.find((x) => x.key === m)?.label ?? m;
+
+  // Pinned-range marker: map ISO from/to → x-axis labels (if in view).
+  const isRange = !!selectedFrom && !!selectedTo && selectedFrom !== selectedTo;
+  const fromLabel = selectedFrom
+    ? withTrend.find((d) => d.date === selectedFrom)?.dateLabel ?? null
+    : null;
+  const toLabel = selectedTo
+    ? withTrend.find((d) => d.date === selectedTo)?.dateLabel ?? null
+    : null;
+  const anyPinned = !!selectedFrom || !!selectedTo;
+  const pinnedOutOfRange = anyPinned && !fromLabel && !toLabel;
+  const pinnedLabel = isRange
+    ? `${selectedFrom} → ${selectedTo}`
+    : selectedFrom ?? selectedTo ?? '';
 
   return (
     <div className="flex flex-col gap-2">
@@ -145,14 +169,52 @@ export function DailyTrendChart({
             ))}
           </div>
           <span className="text-[10px] text-slate-500">
-            {chartData.length} ngày · {labelOf(metric)} per-day
+            {chartData.length} ngày · {labelOf(metric)} (rolling 7 ngày)
             {keywordFilter ? ` · kw=${keywordFilter}` : ''}
           </span>
         </div>
       </div>
+      {onDateSelect && (
+        <div className="flex items-center gap-2 text-[10px]">
+          {anyPinned ? (
+            <>
+              <span className="inline-flex items-center gap-1 rounded bg-rose-100 text-rose-800 px-2 py-0.5 font-medium">
+                📅 {isRange ? 'Đang lọc khoảng' : 'Đang ghim ngày'} {pinnedLabel}
+                {pinnedOutOfRange && ' (ngoài range đang xem)'}
+              </span>
+              <button
+                type="button"
+                onClick={() => onDateSelect(null)}
+                className="text-slate-500 hover:text-slate-700 underline underline-offset-2"
+              >
+                Bỏ ghim ✕
+              </button>
+            </>
+          ) : (
+            <span className="text-slate-400">
+              Click 1 ngày để lọc theo ngày đó, hoặc dùng ô From→To ở header để lọc khoảng.
+            </span>
+          )}
+        </div>
+      )}
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={withTrend} margin={{ top: 10, right: 12, bottom: 4, left: -8 }}>
+          <ComposedChart
+            data={withTrend}
+            margin={{ top: 10, right: 12, bottom: 4, left: -8 }}
+            onClick={
+              onDateSelect
+                ? (state) => {
+                    const p = (state as { activePayload?: { payload?: DailyTrendPoint }[] })
+                      ?.activePayload?.[0]?.payload;
+                    if (!p?.date) return;
+                    const single = selectedFrom && selectedFrom === selectedTo ? selectedFrom : null;
+                    onDateSelect(p.date === single ? null : p.date);
+                  }
+                : undefined
+            }
+            style={onDateSelect ? { cursor: 'pointer' } : undefined}
+          >
             <defs>
               <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#4f46e5" stopOpacity={0.35} />
@@ -190,6 +252,27 @@ export function DailyTrendChart({
                 return p?.date ?? String(label);
               }}
             />
+            {isRange && fromLabel && toLabel ? (
+              <ReferenceArea
+                x1={fromLabel}
+                x2={toLabel}
+                fill="#e11d48"
+                fillOpacity={0.08}
+                stroke="#e11d48"
+                strokeOpacity={0.3}
+                ifOverflow="extendDomain"
+              />
+            ) : (
+              (fromLabel || toLabel) && (
+                <ReferenceLine
+                  x={(fromLabel ?? toLabel) as string}
+                  stroke="#e11d48"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 2"
+                  ifOverflow="extendDomain"
+                />
+              )
+            )}
             <Area
               type="monotone"
               dataKey={metric}

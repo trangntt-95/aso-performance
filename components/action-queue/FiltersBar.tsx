@@ -7,6 +7,8 @@ import type { ActionQueueRow, Category, Priority, RowStatus, SurfaceLabel } from
 import { cn } from '@/lib/utils';
 import { useMemo } from 'react';
 
+export type PaidStatusFilter = 'all' | 'in_paid' | 'manual' | 'not_in_paid';
+
 export interface FilterState {
   search: string;
   priority: Priority | 'all';
@@ -15,6 +17,7 @@ export interface FilterState {
   country: string | 'all';
   alertPattern: 'all' | 'negative' | 'positive' | 'geo';
   status: RowStatus | 'all' | 'unresolved';
+  paidStatus: PaidStatusFilter;
 }
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -25,6 +28,7 @@ export const DEFAULT_FILTERS: FilterState = {
   country: 'all',
   alertPattern: 'all',
   status: 'unresolved',
+  paidStatus: 'all',
 };
 
 interface Props {
@@ -62,6 +66,13 @@ const STATUSES: Array<{ value: FilterState['status']; label: string }> = [
   { value: 'done', label: 'Done' },
   { value: 'skipped', label: 'Skipped' },
   { value: 'snoozed', label: 'Snoozed' },
+];
+
+const PAID_STATUSES: Array<{ value: PaidStatusFilter; label: string }> = [
+  { value: 'all', label: 'Paid: All' },
+  { value: 'in_paid', label: '📌 In Paid' },
+  { value: 'manual', label: '✍️ Added (manual)' },
+  { value: 'not_in_paid', label: '❌ Not in Paid' },
 ];
 
 function Pill({
@@ -139,7 +150,8 @@ export function FiltersBar({ rows, value, onChange }: Props) {
     value.surface !== 'all' ||
     value.country !== 'all' ||
     value.alertPattern !== 'all' ||
-    value.status !== 'unresolved';
+    value.status !== 'unresolved' ||
+    value.paidStatus !== 'all';
 
   return (
     <div className="sticky top-[57px] z-20 bg-slate-50 py-2 -mx-4 px-4 md:-mx-6 md:px-6 border-b space-y-2">
@@ -170,6 +182,12 @@ export function FiltersBar({ rows, value, onChange }: Props) {
           onChange={(v) => set('country', v)}
           options={[{ value: 'all', label: 'Country: All' }, ...countries.map((c) => ({ value: c, label: c }))]}
           label="Country"
+        />
+        <Select
+          value={value.paidStatus}
+          onChange={(v) => set('paidStatus', v)}
+          options={PAID_STATUSES}
+          label="Paid status (Master KW + Manual add)"
         />
         {dirty && (
           <Button

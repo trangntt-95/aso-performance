@@ -24,6 +24,7 @@ const PALETTE: Record<string, string> = {
 interface Props {
   data: CategoryShare[];
   height?: number;
+  activeCategory?: string | null;
   onCategoryClick?: (category: string) => void;
 }
 
@@ -31,7 +32,7 @@ type Metric = 'users' | 'getApp' | 'cr';
 
 const METRIC_LABEL: Record<Metric, string> = { users: 'Users', getApp: 'Install', cr: 'CR' };
 
-export function CategoryShareDonut({ data, height = 260, onCategoryClick }: Props) {
+export function CategoryShareDonut({ data, height = 260, activeCategory, onCategoryClick }: Props) {
   const [metric, setMetric] = useState<Metric>('users');
   const clickable = Boolean(onCategoryClick);
   const isCr = metric === 'cr';
@@ -111,7 +112,11 @@ export function CategoryShareDonut({ data, height = 260, onCategoryClick }: Prop
               }}
             >
               {enriched.map((d, i) => (
-                <Cell key={i} fill={PALETTE[d.category] ?? '#94a3b8'} />
+                <Cell
+                  key={i}
+                  fill={PALETTE[d.category] ?? '#94a3b8'}
+                  opacity={activeCategory && activeCategory !== d.category ? 0.3 : 1}
+                />
               ))}
             </Pie>
             <Tooltip
@@ -135,8 +140,10 @@ export function CategoryShareDonut({ data, height = 260, onCategoryClick }: Prop
               onClick={() => onCategoryClick?.(d.category)}
               disabled={!clickable}
               className={cn(
-                'flex items-center gap-2 text-left rounded px-1 py-0.5',
+                'flex items-center gap-2 text-left rounded px-1 py-0.5 transition',
                 clickable && 'hover:bg-slate-100',
+                activeCategory === d.category && 'bg-indigo-50 ring-1 ring-indigo-300',
+                activeCategory && activeCategory !== d.category && 'opacity-50',
               )}
             >
               <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: PALETTE[d.category] ?? '#94a3b8' }} />

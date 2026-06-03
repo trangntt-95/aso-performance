@@ -7,17 +7,22 @@ import {
   parseHistory,
   parseHistoryDaily,
   parseKeywordTab,
+  parseKwAddedManual,
   parseMarketIndex,
+  parseMasterKw,
+  parseNegativeKw,
   parseSnapshot,
+  parseWindowDateRange,
   parseTier1Watch,
 } from '@/lib/sheets/parsers';
+import { languageOnlyKeywords, overrideToLanguage } from '@/lib/sheets/languageOverride';
 import type { SheetPayload } from '@/lib/sheets/types';
 import { makeDashboardTools } from '@/lib/ai/dashboard-tools';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const MODEL_ID = 'gemini-2.5-flash-lite';
+const MODEL_ID = 'gemini-2.5-flash';
 
 const SYSTEM_PROMPT = `Bạn là trợ lý phân tích ASO cho **TrueProfit ASO Dashboard** (TrueProfit là Shopify net-profit analytics app trên App Store).
 
@@ -65,38 +70,77 @@ const SYSTEM_PROMPT = `Bạn là trợ lý phân tích ASO cho **TrueProfit ASO 
 
 async function fetchPayload(): Promise<SheetPayload> {
   const raw = await fetchAllTabs();
+  const masterKwLookup = parseMasterKw(raw['Master KW Lookup'] ?? []);
+  const langKws = languageOnlyKeywords(masterKwLookup);
   return {
     actionQueue: parseActionQueue(raw['Action_Queue'] ?? []),
     marketIndex: parseMarketIndex(raw['Market_Index'] ?? []),
     tier1Watch: parseTier1Watch(raw['Tier1_Market_Watch'] ?? []),
-    allL3: parseKeywordTab(raw['All_L3'] ?? [], false),
-    allL7: parseKeywordTab(raw['All_L7'] ?? [], false),
-    allL14: parseKeywordTab(raw['All_L14'] ?? [], false),
-    allL30: parseKeywordTab(raw['All_L30'] ?? [], false),
-    allL90: parseKeywordTab(raw['All_L90'] ?? [], false),
-    countryL3: parseKeywordTab(raw['Country_L3'] ?? [], true),
-    countryL7: parseKeywordTab(raw['Country_L7'] ?? [], true),
-    countryL14: parseKeywordTab(raw['Country_L14'] ?? [], true),
-    countryL30: parseKeywordTab(raw['Country_L30'] ?? [], true),
-    countryL90: parseKeywordTab(raw['Country_L90'] ?? [], true),
-    allL365: parseSnapshot(raw['All_L365'] ?? [], false),
-    countryL365: parseSnapshot(raw['Country_L365'] ?? [], true),
+    allL3: overrideToLanguage(parseKeywordTab(raw['All_L3'] ?? [], false), langKws),
+    allL7: overrideToLanguage(parseKeywordTab(raw['All_L7'] ?? [], false), langKws),
+    allL14: overrideToLanguage(parseKeywordTab(raw['All_L14'] ?? [], false), langKws),
+    allL30: overrideToLanguage(parseKeywordTab(raw['All_L30'] ?? [], false), langKws),
+    allL90: overrideToLanguage(parseKeywordTab(raw['All_L90'] ?? [], false), langKws),
+    countryL3: overrideToLanguage(parseKeywordTab(raw['Country_L3'] ?? [], true), langKws),
+    countryL7: overrideToLanguage(parseKeywordTab(raw['Country_L7'] ?? [], true), langKws),
+    countryL14: overrideToLanguage(parseKeywordTab(raw['Country_L14'] ?? [], true), langKws),
+    countryL30: overrideToLanguage(parseKeywordTab(raw['Country_L30'] ?? [], true), langKws),
+    countryL90: overrideToLanguage(parseKeywordTab(raw['Country_L90'] ?? [], true), langKws),
+    allL365: overrideToLanguage(parseSnapshot(raw['All_L365'] ?? [], false), langKws),
+    countryL365: overrideToLanguage(parseSnapshot(raw['Country_L365'] ?? [], true), langKws),
     history: parseHistory(raw['History'] ?? []),
     historyDaily: parseHistoryDaily(raw['History_Daily'] ?? []),
     alertLog: parseAlertLog(raw['AlertLog'] ?? []),
+    kwAddedManual: parseKwAddedManual(raw['KW_Added_Manual'] ?? []),
+    masterKwLookup,
+    negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
+    windowDates: (() => {
+      const wd: Record<string, { from: string; to: string }> = {};
+      (['L3', 'L7', 'L14', 'L30', 'L90'] as const).forEach((w) => {
+        const r = parseWindowDateRange(raw[`All_${w}`] ?? []);
+        if (r) wd[w] = r;
+      });
+      return wd;
+    })(),
     fetchedAt: new Date().toISOString(),
   };
 }
 
+interface DashboardContext {
+  page?: string;
+  path?: string;
+  window?: string;
+  surface?: string;
+  country?: string;
+  keyword?: string;
+  category?: string;
+  date?: string;
+}
+
+function buildContextBlock(ctx: DashboardContext | undefined): string {
+  if (!ctx) return '';
+  const parts: string[] = [];
+  if (ctx.page) parts.push(`Trang đang xem: ${ctx.page}`);
+  if (ctx.date) parts.push(`Date mode — đang ghim ngày: ${ctx.date} (data per-ngày)`);
+  if (ctx.window && !ctx.date) parts.push(`Window: ${ctx.window}`);
+  if (ctx.surface && ctx.surface !== 'all') parts.push(`Surface: ${ctx.surface}`);
+  if (ctx.country) parts.push(`Country focus: ${ctx.country}`);
+  if (ctx.keyword) parts.push(`Keyword focus: ${ctx.keyword}`);
+  if (ctx.category) parts.push(`Category focus: ${ctx.category}`);
+  if (parts.length === 0) return '';
+  return `\n\n**CONTEXT DASHBOARD (user ĐANG XEM cái này ngay lúc hỏi — DÙNG LÀM SCOPE MẶC ĐỊNH):**\n- ${parts.join('\n- ')}\n\nQuy tắc dùng context:\n- Khi user hỏi chung chung ("keyword này tụt sao", "tại sao giảm", "so với trước", "đang bao nhiêu") mà KHÔNG nói rõ window/country/surface/keyword → MẶC ĐỊNH lấy đúng các giá trị context ở trên (thay vì auto L7/all).\n- Nếu user nói rõ thông số khác → ưu tiên user, bỏ context.\n- Nếu đang date mode: trả lời theo ngày đã ghim; nếu user hỏi thứ không có data per-ngày (country/window) thì nói rõ giới hạn.`;
+}
+
 export async function POST(req: Request) {
   try {
-    const { messages }: { messages: UIMessage[] } = await req.json();
+    const { messages, dashboardContext }: { messages: UIMessage[]; dashboardContext?: DashboardContext } =
+      await req.json();
     const payload = await fetchPayload();
     const tools = makeDashboardTools(payload);
 
     const result = streamText({
       model: google(MODEL_ID),
-      system: SYSTEM_PROMPT,
+      system: SYSTEM_PROMPT + buildContextBlock(dashboardContext),
       messages: await convertToModelMessages(messages),
       tools,
       stopWhen: stepCountIs(10),

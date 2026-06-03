@@ -217,6 +217,24 @@ export interface HistoryDailyRow {
   source: string;
 }
 
+export interface KwAddedManualRow {
+  keyword: string;
+  camp: string;
+  note: string;
+}
+
+export interface MasterKwRow {
+  category: string;
+  camp: string;
+  keyword: string;
+  matchType: string;
+  bidMax: string;
+  impressions: number;
+  clicks: number;
+  installs: number;
+  classification: string;
+}
+
 export interface AlertLogRow {
   snapshotDate: string | number;
   keyword: string;
@@ -268,6 +286,12 @@ export interface SheetPayload {
   history: HistoryRow[];
   historyDaily: HistoryDailyRow[];
   alertLog: AlertLogRow[];
+  kwAddedManual: KwAddedManualRow[];
+  masterKwLookup: MasterKwRow[];
+  /** Keywords explicitly set as negatives (from 'Negative KW list' tab, col B). */
+  negativeKw: string[];
+  /** Actual date range each window (L3/L7/...) covers, parsed from tab titles. */
+  windowDates: Record<string, { from: string; to: string }>;
   fetchedAt: string;
 }
 

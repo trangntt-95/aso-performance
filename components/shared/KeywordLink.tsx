@@ -9,9 +9,12 @@ interface Props {
   surface?: KeywordTrendSurface;
   className?: string;
   children?: React.ReactNode;
+  // Fired alongside opening the detail sheet — lets the caller also set a page
+  // filter so one click does both (filter + deep-dive).
+  onSelect?: (keyword: string) => void;
 }
 
-export function KeywordLink({ keyword, country, surface, className, children }: Props) {
+export function KeywordLink({ keyword, country, surface, className, children, onSelect }: Props) {
   const openKeyword = useKeywordTrendStore((s) => s.openKeyword);
   return (
     <button
@@ -19,6 +22,7 @@ export function KeywordLink({ keyword, country, surface, className, children }: 
       onClick={(e) => {
         e.stopPropagation();
         openKeyword(keyword, { country, surface });
+        onSelect?.(keyword);
       }}
       className={cn(
         'text-left hover:underline decoration-dotted underline-offset-2 cursor-pointer',

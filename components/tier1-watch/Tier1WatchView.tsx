@@ -119,18 +119,35 @@ function ChannelMini({ row }: { row: KeywordRow | null; tone?: 'organic' | 'paid
 
 const GRID = 'grid grid-cols-[3.5rem_6rem_minmax(0,1fr)_minmax(11rem,14rem)_minmax(11rem,14rem)_minmax(8rem,11rem)] gap-2 items-center';
 
+type SeverityFilter = 'all' | 'critical' | 'warning' | 'opportunity';
+
 function Tier1WatchInner({
   rows,
   filter,
   selectedWindow,
+  countryFilter,
+  categoryFilter,
+  severityFilter,
 }: {
   rows: GroupedRow[];
   filter: string;
   selectedWindow: Window | 'ALL';
+  countryFilter: string;
+  categoryFilter: string;
+  severityFilter: SeverityFilter;
 }) {
   const q = filter.trim().toLowerCase();
   const filtered = rows
     .filter((g) => (selectedWindow === 'ALL' ? true : g.window === selectedWindow))
+    .filter((g) => (countryFilter === 'all' ? true : g.country === countryFilter))
+    .filter((g) => (categoryFilter === 'all' ? true : g.category === categoryFilter))
+    .filter((g) => {
+      if (severityFilter === 'all') return true;
+      if (severityFilter === 'critical') return g.maxSeverity >= 4;
+      if (severityFilter === 'warning') return g.maxSeverity >= 1 && g.maxSeverity < 4;
+      if (severityFilter === 'opportunity') return g.topAlert.alert.startsWith('🎯');
+      return true;
+    })
     .filter((g) =>
       q ? `${g.keyword} ${g.country} ${g.category}`.toLowerCase().includes(q) : true,
     )
@@ -237,6 +254,9 @@ export function Tier1WatchView() {
   const { data, isLoading, error } = useSheetData();
   const [filter, setFilter] = useState('');
   const [selectedWindow, setSelectedWindow] = useState<Window | 'ALL'>('L7');
+  const [countryFilter, setCountryFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
 
   const groupedAll = useMemo<GroupedRow[]>(() => {
     if (!data) return [];
@@ -275,6 +295,28 @@ export function Tier1WatchView() {
     return counts;
   }, [groupedAll]);
 
+  const { countriesInData, categoriesInData } = useMemo(() => {
+    const c = new Set<string>();
+    const k = new Set<string>();
+    for (const g of groupedAll) {
+      c.add(g.country);
+      if (g.category) k.add(g.category);
+    }
+    return {
+      countriesInData: Array.from(c).sort(),
+      categoriesInData: Array.from(k).sort(),
+    };
+  }, [groupedAll]);
+
+  const dirty =
+    filter !== '' || countryFilter !== 'all' || categoryFilter !== 'all' || severityFilter !== 'all';
+  const resetFilters = () => {
+    setFilter('');
+    setCountryFilter('all');
+    setCategoryFilter('all');
+    setSeverityFilter('all');
+  };
+
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -306,7 +348,7 @@ export function Tier1WatchView() {
         </div>
       )}
 
-      {/* Window tabs + filter */}
+      {/* Window tabs + filters */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
           {(['ALL', 'L3', 'L7', 'L14', 'L30'] as const).map((w, idx) => (
@@ -332,9 +374,55 @@ export function Tier1WatchView() {
         <Input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter keyword / country / category…"
+          placeholder="Tìm keyword / country / category…"
           className="h-7 max-w-xs text-sm"
         />
+        <select
+          value={countryFilter}
+          onChange={(e) => setCountryFilter(e.target.value)}
+          className="h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          title="Country"
+        >
+          <option value="all">Country: All</option>
+          {countriesInData.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          title="Category"
+        >
+          <option value="all">Category: All</option>
+          {categoriesInData.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <select
+          value={severityFilter}
+          onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
+          className="h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          title="Severity"
+        >
+          <option value="all">Severity: All</option>
+          <option value="critical">🚨 Critical</option>
+          <option value="warning">⚠️ Warning</option>
+          <option value="opportunity">🎯 Opportunity</option>
+        </select>
+        {dirty && (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="text-[11px] text-slate-500 hover:text-slate-700 underline underline-offset-2"
+          >
+            Reset
+          </button>
+        )}
       </div>
 
       {isLoading ? (
@@ -344,7 +432,14 @@ export function Tier1WatchView() {
           ))}
         </div>
       ) : (
-        <Tier1WatchInner rows={groupedAll} filter={filter} selectedWindow={selectedWindow} />
+        <Tier1WatchInner
+          rows={groupedAll}
+          filter={filter}
+          selectedWindow={selectedWindow}
+          countryFilter={countryFilter}
+          categoryFilter={categoryFilter}
+          severityFilter={severityFilter}
+        />
       )}
     </div>
   );

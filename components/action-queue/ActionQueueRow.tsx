@@ -8,6 +8,8 @@ import { StatusDropdown } from './StatusDropdown';
 import { CategoryChip } from '@/components/shared/CategoryChip';
 import { SurfaceIcon } from '@/components/shared/SurfaceIcon';
 import { KeywordLink } from '@/components/shared/KeywordLink';
+import { PaidStatusBadge } from '@/components/shared/PaidStatusBadge';
+import type { PaidStatus } from '@/lib/sheets/paidStatus';
 import { useStatusStore, rowKeyOf } from '@/lib/store/statusStore';
 import { alertCopy, actionCopy } from '@/lib/utils/copy';
 import { alertStyle, bidActionStyle } from '@/lib/utils/colors';
@@ -30,7 +32,7 @@ function actionTone(action: string): string {
   return 'text-slate-700';
 }
 
-export function ActionQueueRowItem({ row }: { row: Row }) {
+export function ActionQueueRowItem({ row, paidStatus }: { row: Row; paidStatus?: PaidStatus }) {
   const [expanded, setExpanded] = useState(false);
   const rowKey = rowKeyOf(row);
   const status = useStatusStore((s) => s.statuses[rowKey]?.status ?? 'new');
@@ -43,42 +45,47 @@ export function ActionQueueRowItem({ row }: { row: Row }) {
         aria-hidden
       />
       <div className="px-3 py-2 pl-4 hover:bg-slate-50/60">
-        {/* Desktop: 1-line layout */}
-        <div className="hidden md:grid items-center gap-2 grid-cols-[1rem_auto_2.5rem_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_8rem]">
+        {/* Desktop: 2-line keyword cell so KW is readable, meta wraps below */}
+        <div className="hidden md:grid items-start gap-2 grid-cols-[1rem_auto_2.5rem_minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1.1fr)_8rem]">
           <button
             type="button"
             aria-label={expanded ? 'Collapse' : 'Expand'}
-            className="text-slate-400 hover:text-slate-700 shrink-0"
+            className="text-slate-400 hover:text-slate-700 shrink-0 mt-0.5"
             onClick={() => setExpanded((v) => !v)}
           >
             {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
-          <PriorityBadge priority={row.priority} />
-          <span className="text-[10px] text-slate-400 font-mono tabular-nums text-right" title="Score">
+          <div className="mt-0.5">
+            <PriorityBadge priority={row.priority} />
+          </div>
+          <span className="text-[10px] text-slate-400 font-mono tabular-nums text-right mt-1" title="Score">
             {row.score}
           </span>
-          <div className="min-w-0 flex items-center gap-1.5">
+          <div className="min-w-0">
             <KeywordLink
               keyword={row.keyword}
               country={row.country !== '(global)' ? row.country : undefined}
-              className="font-medium text-[13px] truncate"
+              className="font-semibold text-[15px] text-slate-900 truncate block leading-tight"
             />
-            <CategoryChip category={row.category} compact />
-            <span className="text-[10px] text-slate-500 inline-flex items-center gap-0.5 shrink-0">
-              <SurfaceIcon surface={row.surface} />
-              {row.country} · {row.window}
-            </span>
+            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+              <CategoryChip category={row.category} compact />
+              {paidStatus && <PaidStatusBadge status={paidStatus} size="xs" />}
+              <span className="text-[10px] text-slate-500 inline-flex items-center gap-0.5 shrink-0">
+                <SurfaceIcon surface={row.surface} />
+                {row.country} · {row.window}
+              </span>
+            </div>
           </div>
-          <span className="text-[12px] text-slate-700 truncate" title={alertCopy(row.alert)}>
+          <span className="text-[12px] text-slate-700 truncate mt-1" title={alertCopy(row.alert)}>
             <span className="font-medium text-slate-900">Vấn đề:</span> {alertCopy(row.alert)}
           </span>
-          <span className={cn('text-[12px] truncate font-medium', actionTone(row.bidAction))} title={actionCopy(row.bidAction)}>
+          <span className={cn('text-[12px] truncate font-medium mt-1', actionTone(row.bidAction))} title={actionCopy(row.bidAction)}>
             → {actionCopy(row.bidAction)}
             {row.bidSuggest && row.bidSuggest !== '—' && (
               <span className="ml-1 text-slate-500 font-mono text-[10px]">{row.bidSuggest}</span>
             )}
           </span>
-          <div className="shrink-0">
+          <div className="shrink-0 mt-0.5">
             <StatusDropdown rowKey={rowKey} />
           </div>
         </div>
@@ -99,7 +106,7 @@ export function ActionQueueRowItem({ row }: { row: Row }) {
             <KeywordLink
               keyword={row.keyword}
               country={row.country !== '(global)' ? row.country : undefined}
-              className="font-semibold text-sm truncate flex-1"
+              className="font-semibold text-[15px] text-slate-900 truncate flex-1"
             />
             <div className="shrink-0">
               <StatusDropdown rowKey={rowKey} />
@@ -107,6 +114,7 @@ export function ActionQueueRowItem({ row }: { row: Row }) {
           </div>
           <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-500">
             <CategoryChip category={row.category} compact />
+            {paidStatus && <PaidStatusBadge status={paidStatus} size="xs" />}
             <span>
               <SurfaceIcon surface={row.surface} /> {row.country} · {row.window}
             </span>

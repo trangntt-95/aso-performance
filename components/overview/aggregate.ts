@@ -3,6 +3,7 @@ import type {
   AlertType,
   BidAction,
   Category,
+  HistoryDailyRow,
   KeywordRow,
   MarketIndexSummaryRow,
   SheetPayload,
@@ -39,6 +40,7 @@ export interface OverviewFilters {
   surface?: SurfaceFocus;
   country?: string | null;
   keyword?: string | null;
+  category?: string | null;
 }
 
 function applyFilters(rows: KeywordRow[], opts: OverviewFilters): KeywordRow[] {
@@ -54,6 +56,9 @@ function applyFilters(rows: KeywordRow[], opts: OverviewFilters): KeywordRow[] {
   if (opts.keyword) {
     const kw = opts.keyword.toLowerCase();
     out = out.filter((r) => r.searchTerm.toLowerCase() === kw);
+  }
+  if (opts.category) {
+    out = out.filter((r) => r.category === opts.category);
   }
   return out;
 }
@@ -186,8 +191,12 @@ export function channelSnapshotForWindow(
   opts: OverviewFilters = {},
 ): ChannelSnapshot | null {
   if (!data) return null;
-  // ChannelSnapshot needs both surfaces — strip the surface filter, keep country/keyword.
-  const rows = rowsForWindow(data, window, { country: opts.country, keyword: opts.keyword });
+  // ChannelSnapshot needs both surfaces — strip the surface filter, keep country/keyword/category.
+  const rows = rowsForWindow(data, window, {
+    country: opts.country,
+    keyword: opts.keyword,
+    category: opts.category,
+  });
   if (rows.length === 0) return null;
   const { org, paid } = splitBySurface(rows);
   return {
@@ -276,7 +285,11 @@ export function topCountriesFor(
 ): CountryRollup[] {
   // Country filter is intentionally dropped here: the chart needs all countries
   // to remain visible so the user can swap their focus.
-  const rows = countryRowsForWindow(data, window, { surface: opts.surface, keyword: opts.keyword });
+  const rows = countryRowsForWindow(data, window, {
+    surface: opts.surface,
+    keyword: opts.keyword,
+    category: opts.category,
+  });
   const map = new Map<string, CountryRollup>();
   rows.forEach((r) => {
     if (!r.country) return;
@@ -305,7 +318,9 @@ export function categoryShareFor(
   window: OverviewWindow,
   opts: OverviewFilters = {},
 ): CategoryShare[] {
-  const rows = rowsForWindow(data, window, opts);
+  // Drop the category filter here so the donut always shows every slice —
+  // the user must be able to switch focus to another category.
+  const rows = rowsForWindow(data, window, { ...opts, category: null });
   const map = new Map<string, CategoryShare>();
   let totalUsers = 0;
   rows.forEach((r) => {
@@ -367,9 +382,10 @@ export function topVolumeMovers(
     surface = 'all',
     country = null,
     keyword = null,
+    category = null,
   } = options;
 
-  const rows = countryRowsForWindow(data, window, { surface, country, keyword });
+  const rows = countryRowsForWindow(data, window, { surface, country, keyword, category });
 
   const actionIndex = new Map<string, ActionQueueRow>();
   data.actionQueue.forEach((a) => {
@@ -541,7 +557,8 @@ export function dailyTrend(
   };
 
   const dailyDates = new Set<number>();
-  for (const r of data.historyDaily ?? []) {
+  // dedupe overlapping backfill sources (l90 vs l30) to avoid double-counting.
+  for (const r of dedupeDailyRows(data.historyDaily ?? [])) {
     if (target && r.surface !== target) continue;
     if (kw && r.searchTerm.toLowerCase() !== kw) continue;
     const k = dateKey(r.snapshotDate);
@@ -585,10 +602,14 @@ export function dailyTrend(
       const yyyy = d.getUTCFullYear();
       const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
       const dd = String(d.getUTCDate()).padStart(2, '0');
-      const users = agg.hasDaily ? agg.usersDaily : agg.usersL7D;
-      const getApp = agg.hasDaily ? agg.getAppDaily : agg.getAppL7D;
-      const crNumer = agg.hasDaily ? agg.getAppDailyForCr : agg.getAppL7DForCr;
-      const crDenom = agg.hasDaily ? agg.usersDailyForCr : agg.usersL7DForCr;
+      // Rolling-7d basis for the WHOLE line (consistent, no mixing). Mixing
+      // per-day (≤26/05) with rolling-L7D (≥27/05) caused a fake ~7× spike at
+      // 27/05. Use L7D everywhere it exists; dates with only per-day backfill
+      // (usersL7D=0) get filtered out by the chart's users>0 guard.
+      const users = agg.usersL7D;
+      const getApp = agg.getAppL7D;
+      const crNumer = agg.getAppL7DForCr;
+      const crDenom = agg.usersL7DForCr;
       const cr = crDenom > 0 ? crNumer / crDenom : null;
       return {
         date: `${yyyy}-${mm}-${dd}`,
@@ -598,6 +619,408 @@ export function dailyTrend(
         cr,
       };
     });
+}
+
+// ---------------------------------------------------------------------------
+// Date mode — scope the page to a single calendar day (clicked in DailyTrendChart).
+// Source is per-day History_Daily only (no country, no category columns), so:
+//   - KPIs (Users / Install / CR), Top contribution + Category share are derivable.
+//   - Channel mix / Market Performance / Top countries / Volume movers are NOT
+//     (they need the rolling L-window or country dimensions) → hidden by the UI.
+// Category is recovered by joining keyword → category from the L-window tabs.
+// Per-keyword value mirrors dailyTrend: prefer the Daily columns, else L7D rolling.
+// ---------------------------------------------------------------------------
+
+/** keyword (lowercase) → category, recovered from the L-window tabs. */
+export function keywordCategoryMap(data: SheetPayload | undefined): Map<string, Category> {
+  const map = new Map<string, Category>();
+  if (!data) return map;
+  const tabs: KeywordRow[][] = [data.allL90, data.allL30, data.allL14, data.allL7, data.allL3];
+  for (const tab of tabs) {
+    for (const r of tab) {
+      const k = r.searchTerm.toLowerCase();
+      if (!map.has(k)) map.set(k, r.category);
+    }
+  }
+  return map;
+}
+
+/** ISO yyyy-mm-dd for a History_Daily snapshot value, matching DailyTrendPoint.date. */
+function isoFromSnapshot(raw: string | number): string | null {
+  const k = dateKey(raw);
+  if (k === null) return null;
+  const d = excelSerialToDate(k);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+interface DailyKwRow {
+  keyword: string;
+  surface: string;
+  users: number;
+  getApp: number | null;
+}
+
+/**
+ * History_Daily can hold MULTIPLE rows for the same (date, keyword, surface)
+ * because the backfill sources overlap (l90_backfill 21/02→26/05 vs
+ * l30_backfill 22/04→21/05). Summing them double-counts (e.g. May paid install
+ * 390 instead of 97). Keep ONE row per (date|keyword|surface), preferring the
+ * most complete (true per-day values, then install present).
+ */
+function dedupeDailyRows(rows: HistoryDailyRow[]): HistoryDailyRow[] {
+  const score = (x: HistoryDailyRow) =>
+    (x.usersDaily !== null ? 4 : 0) +
+    (x.getAppDaily !== null ? 2 : 0) +
+    (x.getAppL7D !== null ? 1 : 0);
+  const map = new Map<string, HistoryDailyRow>();
+  for (const r of rows) {
+    const iso = isoFromSnapshot(r.snapshotDate);
+    if (iso === null) continue;
+    const key = `${iso}|${r.searchTerm.toLowerCase()}|${r.surface}`;
+    const cur = map.get(key);
+    if (!cur || score(r) > score(cur)) map.set(key, r);
+  }
+  return Array.from(map.values());
+}
+
+function isoAddDays(iso: string, n: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return iso;
+  const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) + n * 86400000;
+  const d = new Date(ms);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function daysInRange(from: string, to: string): number {
+  const a = /^(\d{4})-(\d{2})-(\d{2})/.exec(from);
+  const b = /^(\d{4})-(\d{2})-(\d{2})/.exec(to);
+  if (!a || !b) return 1;
+  const ams = Date.UTC(Number(a[1]), Number(a[2]) - 1, Number(a[3]));
+  const bms = Date.UTC(Number(b[1]), Number(b[2]) - 1, Number(b[3]));
+  return Math.max(1, Math.floor((bms - ams) / 86400000) + 1); // inclusive
+}
+
+/**
+ * Per-keyword History_Daily rows within [from, to] (inclusive ISO compare).
+ * IMPORTANT — column choice depends on span:
+ *   - single day (from === to): prefer the true per-day columns, else the L7D
+ *     rolling snapshot (a one-day point sample is fine for either).
+ *   - multi-day range: ONLY the true per-day columns (usersDaily/getAppDaily).
+ *     Summing the rolling L7D columns across days would overcount ~7×, so rows
+ *     that lack a per-day value are skipped.
+ */
+function dailyRowsInRange(
+  data: SheetPayload | undefined,
+  from: string,
+  to: string,
+  opts: OverviewFilters = {},
+  catMap?: Map<string, Category>,
+): DailyKwRow[] {
+  if (!data) return [];
+  const singleDay = from === to;
+  const surface = opts.surface ?? 'all';
+  const target = surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
+  const kw = opts.keyword?.toLowerCase();
+  const out: DailyKwRow[] = [];
+  // dedupe first so overlapping backfill sources don't double-count.
+  for (const r of dedupeDailyRows(data.historyDaily ?? [])) {
+    if (target && r.surface !== target) continue;
+    if (kw && r.searchTerm.toLowerCase() !== kw) continue;
+    if (opts.category && catMap && catMap.get(r.searchTerm.toLowerCase()) !== opts.category) continue;
+    const iso = isoFromSnapshot(r.snapshotDate);
+    if (iso === null || iso < from || iso > to) continue;
+    let users: number;
+    let getApp: number | null;
+    if (r.usersDaily !== null) {
+      users = r.usersDaily;
+      getApp = r.getAppDaily;
+    } else if (singleDay) {
+      users = r.usersL7D;
+      getApp = r.getAppL7D;
+    } else {
+      continue; // multi-day: skip rolling-only rows (can't sum L7D)
+    }
+    out.push({ keyword: r.searchTerm, surface: r.surface, users, getApp });
+  }
+  return out;
+}
+
+/** ISO dates (asc) with per-day data under the current surface/keyword filter. */
+export function availableDailyDates(
+  data: SheetPayload | undefined,
+  opts: OverviewFilters = {},
+): string[] {
+  if (!data) return [];
+  const surface = opts.surface ?? 'all';
+  const target = surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
+  const kw = opts.keyword?.toLowerCase();
+  const set = new Set<string>();
+  for (const r of data.historyDaily ?? []) {
+    if (target && r.surface !== target) continue;
+    if (kw && r.searchTerm.toLowerCase() !== kw) continue;
+    const iso = isoFromSnapshot(r.snapshotDate);
+    if (iso) set.add(iso);
+  }
+  return Array.from(set).sort();
+}
+
+export interface DateKpi {
+  from: string;
+  to: string;
+  usersL: number;
+  usersDeltaPct: number | null; // vs prior equal-length period
+  getAppL: number | null;
+  getAppDeltaPct: number | null;
+  cr: number | null;
+}
+
+function sumDailyRows(rows: DailyKwRow[]) {
+  let users = 0;
+  let getApp = 0;
+  let crDenom = 0;
+  let hasGetApp = false;
+  for (const r of rows) {
+    users += r.users;
+    if (r.getApp !== null) {
+      getApp += r.getApp;
+      crDenom += r.users;
+      hasGetApp = true;
+    }
+  }
+  return { users, getApp: hasGetApp ? getApp : null, crDenom };
+}
+
+export function kpisForRange(
+  data: SheetPayload | undefined,
+  from: string,
+  to: string,
+  opts: OverviewFilters = {},
+): DateKpi {
+  const empty: DateKpi = {
+    from,
+    to,
+    usersL: 0,
+    usersDeltaPct: null,
+    getAppL: null,
+    getAppDeltaPct: null,
+    cr: null,
+  };
+  if (!data) return empty;
+  const catMap = opts.category ? keywordCategoryMap(data) : undefined;
+  const cur = sumDailyRows(dailyRowsInRange(data, from, to, opts, catMap));
+  // Prior = immediately-preceding equal-length period.
+  const span = daysInRange(from, to);
+  const prevTo = isoAddDays(from, -1);
+  const prevFrom = isoAddDays(from, -span);
+  const prev = sumDailyRows(dailyRowsInRange(data, prevFrom, prevTo, opts, catMap));
+  const cr = cur.crDenom > 0 && cur.getApp !== null ? cur.getApp / cur.crDenom : null;
+  return {
+    from,
+    to,
+    usersL: cur.users,
+    usersDeltaPct: prev.users > 0 ? (cur.users - prev.users) / prev.users : null,
+    getAppL: cur.getApp,
+    getAppDeltaPct:
+      prev.getApp && prev.getApp > 0 && cur.getApp !== null
+        ? (cur.getApp - prev.getApp) / prev.getApp
+        : null,
+    cr,
+  };
+}
+
+export function topContributorsForRange(
+  data: SheetPayload | undefined,
+  from: string,
+  to: string,
+  metric: 'users' | 'getApp',
+  limit = 50,
+  opts: OverviewFilters = {},
+): ContributorsResult {
+  if (!data) return { rows: [], total: 0, fullCount: 0 };
+  const catMap = keywordCategoryMap(data);
+  const rows = dailyRowsInRange(data, from, to, opts, catMap);
+  const byKw = new Map<string, { value: number; surface: SurfaceLabel; category: Category }>();
+  for (const r of rows) {
+    const v = metric === 'users' ? r.users : r.getApp ?? 0;
+    const cur =
+      byKw.get(r.keyword) ?? {
+        value: 0,
+        surface: (r.surface === 'search_ad' ? 'paid' : 'organic') as SurfaceLabel,
+        category: (catMap.get(r.keyword.toLowerCase()) ?? 'Unknown') as Category,
+      };
+    cur.value += v;
+    byKw.set(r.keyword, cur);
+  }
+  const all = Array.from(byKw.entries()).map(([keyword, v]) => ({ keyword, ...v }));
+  const total = all.reduce((s, r) => s + r.value, 0);
+  if (total <= 0) return { rows: [], total: 0, fullCount: all.length };
+  const ranked = all
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit)
+    .map((r) => ({
+      keyword: r.keyword,
+      category: r.category,
+      surface: r.surface,
+      value: r.value,
+      prior: 0,
+      deltaPct: null as number | null,
+      sharePct: (r.value / total) * 100,
+    }));
+  return { rows: ranked, total, fullCount: all.length };
+}
+
+export function categoryShareForRange(
+  data: SheetPayload | undefined,
+  from: string,
+  to: string,
+  opts: OverviewFilters = {},
+): CategoryShare[] {
+  if (!data) return [];
+  const catMap = keywordCategoryMap(data);
+  // Drop category filter so the donut keeps every slice (matches categoryShareFor).
+  const rows = dailyRowsInRange(data, from, to, { ...opts, category: null }, catMap);
+  const map = new Map<string, CategoryShare>();
+  let totalUsers = 0;
+  for (const r of rows) {
+    const cat = (catMap.get(r.keyword.toLowerCase()) ?? 'Unknown') as string;
+    const cur = map.get(cat) ?? { category: cat, users: 0, getApp: 0, share: 0, cr: 0 };
+    cur.users += r.users;
+    cur.getApp += r.getApp ?? 0;
+    totalUsers += r.users;
+    map.set(cat, cur);
+  }
+  return Array.from(map.values())
+    .map((c) => ({
+      ...c,
+      share: totalUsers > 0 ? c.users / totalUsers : 0,
+      cr: c.users > 0 ? c.getApp / c.users : 0,
+    }))
+    .sort((a, b) => b.users - a.users);
+}
+
+/**
+ * Channel mix (organic vs paid) for a date range. History_Daily HAS a surface
+ * column, so this CAN be date-scoped (unlike country/window-based charts).
+ * Prior = preceding equal-length period.
+ */
+export function channelSnapshotForRange(
+  data: SheetPayload | undefined,
+  from: string,
+  to: string,
+  opts: OverviewFilters = {},
+): ChannelSnapshot | null {
+  if (!data) return null;
+  // Need both surfaces → keep keyword/category, drop surface.
+  const base: OverviewFilters = { keyword: opts.keyword, category: opts.category };
+  const catMap = base.category ? keywordCategoryMap(data) : undefined;
+  const span = daysInRange(from, to);
+  const curRows = dailyRowsInRange(data, from, to, base, catMap);
+  const prevRows = dailyRowsInRange(data, isoAddDays(from, -span), isoAddDays(from, -1), base, catMap);
+  const split = (rows: DailyKwRow[]) => {
+    const org = { users: 0, getApp: 0 };
+    const paid = { users: 0, getApp: 0 };
+    for (const r of rows) {
+      const b = r.surface === 'search_ad' ? paid : org;
+      b.users += r.users;
+      b.getApp += r.getApp ?? 0;
+    }
+    return { org, paid };
+  };
+  const cur = split(curRows);
+  const prev = split(prevRows);
+  return {
+    organicUsers: cur.org.users,
+    organicUsersPrior: prev.org.users,
+    organicGetApp: cur.org.getApp,
+    organicGetAppPrior: prev.org.getApp,
+    organicCr: cur.org.users > 0 ? cur.org.getApp / cur.org.users : 0,
+    organicCrPrior: prev.org.users > 0 ? prev.org.getApp / prev.org.users : 0,
+    paidUsers: cur.paid.users,
+    paidUsersPrior: prev.paid.users,
+    paidGetApp: cur.paid.getApp,
+    paidGetAppPrior: prev.paid.getApp,
+    paidCr: cur.paid.users > 0 ? cur.paid.getApp / cur.paid.users : 0,
+    paidCrPrior: prev.paid.users > 0 ? prev.paid.getApp / prev.paid.users : 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Full (unsliced) accessors for export — every row the page has, all columns.
+// ---------------------------------------------------------------------------
+
+/** All keyword rows for the window after filters (global tab, or country tab if country set). */
+export function exportKeywordRows(
+  data: SheetPayload | undefined,
+  window: OverviewWindow,
+  opts: OverviewFilters = {},
+): KeywordRow[] {
+  return rowsForWindow(data, window, opts);
+}
+
+/** All keyword × country rows for the window after surface/keyword/category filters. */
+export function exportCountryRows(
+  data: SheetPayload | undefined,
+  window: OverviewWindow,
+  opts: OverviewFilters = {},
+): KeywordRow[] {
+  return countryRowsForWindow(data, window, opts);
+}
+
+export interface RangeKeywordRow {
+  keyword: string;
+  surface: SurfaceLabel;
+  category: Category;
+  users: number;
+  install: number | null;
+  cr: number | null;
+}
+
+/** Per-keyword totals over a date range (deduped), all keywords. */
+export function keywordTableForRange(
+  data: SheetPayload | undefined,
+  from: string,
+  to: string,
+  opts: OverviewFilters = {},
+): RangeKeywordRow[] {
+  if (!data) return [];
+  const catMap = keywordCategoryMap(data);
+  const rows = dailyRowsInRange(data, from, to, opts, catMap);
+  const m = new Map<
+    string,
+    { users: number; install: number; hasInstall: boolean; surface: SurfaceLabel; category: Category }
+  >();
+  for (const r of rows) {
+    const cur =
+      m.get(r.keyword) ?? {
+        users: 0,
+        install: 0,
+        hasInstall: false,
+        surface: (r.surface === 'search_ad' ? 'paid' : 'organic') as SurfaceLabel,
+        category: (catMap.get(r.keyword.toLowerCase()) ?? 'Unknown') as Category,
+      };
+    cur.users += r.users;
+    if (r.getApp !== null) {
+      cur.install += r.getApp;
+      cur.hasInstall = true;
+    }
+    m.set(r.keyword, cur);
+  }
+  return Array.from(m.entries())
+    .map(([keyword, v]) => ({
+      keyword,
+      surface: v.surface,
+      category: v.category,
+      users: v.users,
+      install: v.hasInstall ? v.install : null,
+      cr: v.hasInstall && v.users > 0 ? v.install / v.users : null,
+    }))
+    .sort((a, b) => b.users - a.users);
 }
 
 export function topP0Actions(actions: ActionQueueRow[], limit = 50): ActionQueueRow[] {

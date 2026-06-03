@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, AlertCircle, Megaphone, Target, Users } from 'lucide-react';
 import { expectedAdsInstalls, runrateAdsToMonthEnd } from '@/lib/config/ads-targets';
 import { AdsTargetTile } from './AdsTargetTile';
@@ -15,13 +15,20 @@ import {
   topVolumeMovers,
   topContributors,
   channelSnapshotForWindow,
+  channelSnapshotForRange,
   dailyTrend,
+  availableDailyDates,
+  kpisForRange,
+  topContributorsForRange,
+  categoryShareForRange,
   windowDays,
   type OverviewWindow,
   type SurfaceFocus,
 } from './aggregate';
 import { KpiTile } from './KpiTile';
 import { WindowSelector } from './WindowSelector';
+import { DownloadMenu } from '@/components/shared/DownloadMenu';
+import { buildOverviewSheets } from '@/lib/export/overviewExport';
 import { ChannelMixCards } from './ChannelMixCards';
 import { MarketTrajectoryChart } from './MarketTrajectoryChart';
 import { ChannelSplitChart } from './ChannelSplitChart';
@@ -34,6 +41,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatNumber, formatPercent, composeVerdict, verdictBadgeStyle } from '@/lib/utils/format';
 import { useCategoryDetailStore } from '@/lib/store/categoryDetailStore';
+import { useDashboardContext } from '@/lib/store/dashboardContextStore';
 import { cn } from '@/lib/utils';
 
 function SectionCard({
@@ -81,11 +89,48 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const [surfaceFocus, setSurfaceFocus] = useState<SurfaceFocus>('all');
   const [countryFocus, setCountryFocus] = useState<string | null>(null);
   const [keywordFocus, setKeywordFocus] = useState<string | null>(null);
+  const [categoryFocus, setCategoryFocus] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<{ from: string; to: string } | null>(null);
+  const [rangeFrom, setRangeFrom] = useState('');
+  const [rangeTo, setRangeTo] = useState('');
   const [splitMetric, setSplitMetric] = useState<'users' | 'getapp'>('users');
+  const inDateMode = !!dateRange;
+  const isSingleDay = !!dateRange && dateRange.from === dateRange.to;
+
+  // Apply from/to inputs → range (both set & ordered). Empty both = clear.
+  const applyRange = (f: string, t: string) => {
+    if (f && t && f <= t) setDateRange({ from: f, to: t });
+    else if (!f && !t) setDateRange(null);
+  };
+  const clearDateRange = () => {
+    setDateRange(null);
+    setRangeFrom('');
+    setRangeTo('');
+  };
+  // Clicking a day in the chart → single-day range (syncs the inputs too).
+  const pinSingleDay = (iso: string | null) => {
+    if (!iso) {
+      clearDateRange();
+      return;
+    }
+    setDateRange({ from: iso, to: iso });
+    setRangeFrom(iso);
+    setRangeTo(iso);
+  };
+  // Selecting a window exits date mode (inputs then prefill to that window's range).
+  const handleWindowChange = (w: OverviewWindow) => {
+    setWindow(w);
+    setDateRange(null);
+  };
 
   const filters = useMemo(
-    () => ({ surface: surfaceFocus, country: countryFocus, keyword: keywordFocus }),
-    [surfaceFocus, countryFocus, keywordFocus],
+    () => ({
+      surface: surfaceFocus,
+      country: countryFocus,
+      keyword: keywordFocus,
+      category: categoryFocus,
+    }),
+    [surfaceFocus, countryFocus, keywordFocus, categoryFocus],
   );
 
   const kpis = useMemo(() => computeKpis(data, window, filters), [data, window, filters]);
@@ -106,9 +151,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         limit: 8,
         country: filters.country,
         keyword: filters.keyword,
+        category: filters.category,
         surface: 'organic',
       }),
-    [data, window, filters.country, filters.keyword],
+    [data, window, filters.country, filters.keyword, filters.category],
   );
   const paidMovers = useMemo(
     () =>
@@ -116,9 +162,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         limit: 8,
         country: filters.country,
         keyword: filters.keyword,
+        category: filters.category,
         surface: 'paid',
       }),
-    [data, window, filters.country, filters.keyword],
+    [data, window, filters.country, filters.keyword, filters.category],
   );
   const topUsers = useMemo(
     () => topContributors(data, window, 'users', 50, filters),
@@ -132,7 +179,78 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     () => channelSnapshotForWindow(data, window, filters),
     [data, window, filters],
   );
+
+  // ── Date mode (per-day / per-range snapshot from History_Daily) ──
+  const availableDates = useMemo(() => availableDailyDates(data, filters), [data, filters]);
+  const minDate = availableDates[0];
+  const maxDate = availableDates[availableDates.length - 1];
+  const dateKpi = useMemo(
+    () => (dateRange ? kpisForRange(data, dateRange.from, dateRange.to, filters) : null),
+    [data, dateRange, filters],
+  );
+  const dateTopUsers = useMemo(
+    () => (dateRange ? topContributorsForRange(data, dateRange.from, dateRange.to, 'users', 50, filters) : null),
+    [data, dateRange, filters],
+  );
+  const dateTopGetApp = useMemo(
+    () => (dateRange ? topContributorsForRange(data, dateRange.from, dateRange.to, 'getApp', 50, filters) : null),
+    [data, dateRange, filters],
+  );
+  const dateCategoryShares = useMemo(
+    () => (dateRange ? categoryShareForRange(data, dateRange.from, dateRange.to, filters) : []),
+    [data, dateRange, filters],
+  );
+  const channelSnapshotDate = useMemo(
+    () => (dateRange ? channelSnapshotForRange(data, dateRange.from, dateRange.to, filters) : null),
+    [data, dateRange, filters],
+  );
+  // Channel mix uses date-scoped data in date mode (History_Daily has surface).
+  const channelMixSnapshot = inDateMode ? channelSnapshotDate : channelSnapshot;
+  // Note appended to window-based sections that can't be date-scoped.
+  const winNote = inDateMode ? ` · ⚠️ theo window ${window}, chưa lọc ngày` : '';
+  const dateLabel = dateRange ? (isSingleDay ? dateRange.from : `${dateRange.from} → ${dateRange.to}`) : '';
+  const rangeDays = dateRange
+    ? Math.round((Date.parse(dateRange.to) - Date.parse(dateRange.from)) / 86400000) + 1
+    : 0;
+
   const openCategoryDetail = useCategoryDetailStore((s) => s.openCategory);
+
+  // Expose the current view to the AI assistant (ChatWidget reads this store).
+  const setDashboardContext = useDashboardContext((s) => s.setContext);
+  const clearDashboardContext = useDashboardContext((s) => s.clearContext);
+  useEffect(() => {
+    setDashboardContext({
+      page: 'Overview',
+      window,
+      surface: surfaceFocus,
+      country: countryFocus ?? undefined,
+      keyword: keywordFocus ?? undefined,
+      category: categoryFocus ?? undefined,
+      date: dateRange ? dateLabel : undefined,
+    });
+    return () => clearDashboardContext();
+  }, [
+    setDashboardContext,
+    clearDashboardContext,
+    window,
+    surfaceFocus,
+    countryFocus,
+    keywordFocus,
+    categoryFocus,
+    dateRange,
+    dateLabel,
+  ]);
+
+  // Prefill the From→To inputs with the active window's actual report range.
+  // Display only — does NOT activate date mode until the user edits a field.
+  useEffect(() => {
+    if (inDateMode) return;
+    const wd = data?.windowDates?.[window];
+    if (wd) {
+      setRangeFrom(wd.from);
+      setRangeTo(wd.to);
+    }
+  }, [window, data?.windowDates, inDateMode]);
 
   const headlineWindow = data?.marketIndex.summary.find((s) => s.window === window);
   const composedVerdict = headlineWindow
@@ -169,6 +287,20 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     }
     return u > 0 ? g / u : null;
   }, [channelSnapshot, surfaceFocus]);
+
+  // KPI values switch source in date mode (per-day) vs window mode (rolling L).
+  const dispUsers = inDateMode ? dateKpi?.usersL ?? 0 : kpis.usersL;
+  const dispUsersDelta = inDateMode ? dateKpi?.usersDeltaPct ?? null : kpis.usersDeltaPct;
+  const dispGetApp = inDateMode ? dateKpi?.getAppL ?? 0 : kpis.getAppL;
+  const dispGetAppDelta = inDateMode ? dateKpi?.getAppDeltaPct ?? null : kpis.getAppDeltaPct;
+  const dispCr = inDateMode ? dateKpi?.cr ?? null : totalCr;
+  const dispCrDelta = inDateMode
+    ? null
+    : totalCr !== null && totalCrPrior !== null && totalCrPrior > 0
+    ? totalCr / totalCrPrior - 1
+    : null;
+  const kpiHelper = inDateMode ? 'vs kỳ trước cùng độ dài' : `vs prior ${days}d`;
+  const kpiSuffix = inDateMode ? dateLabel : window;
 
   if (error) {
     return (
@@ -236,13 +368,35 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                 <span className="truncate">{keywordFocus}</span> <span className="text-slate-500 shrink-0">✕</span>
               </button>
             )}
-            {(surfaceFocus !== 'all' || countryFocus || keywordFocus) && (
+            {categoryFocus && (
+              <button
+                type="button"
+                onClick={() => setCategoryFocus(null)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition"
+                title="Click to clear category filter"
+              >
+                {categoryFocus} <span className="text-slate-500">✕</span>
+              </button>
+            )}
+            {dateRange && (
+              <button
+                type="button"
+                onClick={clearDateRange}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-rose-100 text-rose-800 hover:bg-rose-200 transition"
+                title="Click to exit date mode"
+              >
+                📅 {dateLabel} <span className="text-slate-500">✕</span>
+              </button>
+            )}
+            {(surfaceFocus !== 'all' || countryFocus || keywordFocus || categoryFocus || dateRange) && (
               <button
                 type="button"
                 onClick={() => {
                   setSurfaceFocus('all');
                   setCountryFocus(null);
                   setKeywordFocus(null);
+                  setCategoryFocus(null);
+                  clearDateRange();
                 }}
                 className="text-[11px] text-slate-500 hover:text-slate-700 underline underline-offset-2"
               >
@@ -250,9 +404,72 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               </button>
             )}
           </div>
-          <WindowSelector value={window} onChange={setWindow} />
+          <div className="flex items-start gap-2">
+            {!embedded && (
+              <DownloadMenu
+                getSheets={() => buildOverviewSheets(data, { window, filters, dateRange })}
+                filename={`aso-overview-${inDateMode ? dateLabel : window}`}
+              />
+            )}
+            <div className="flex flex-col items-end gap-1.5">
+              <WindowSelector value={window} onChange={handleWindowChange} />
+            <div
+              className={cn(
+                'flex items-center gap-1 text-[11px] rounded-md border px-2 py-1',
+                inDateMode ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-white',
+              )}
+            >
+              <span className="text-slate-500">{inDateMode ? 'Lọc ngày:' : 'Ngày (theo report):'}</span>
+              <input
+                type="date"
+                value={rangeFrom}
+                min={minDate}
+                max={maxDate}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setRangeFrom(v);
+                  applyRange(v, rangeTo);
+                }}
+                className="rounded border border-slate-200 px-1 py-0.5 text-[11px] text-slate-700"
+                title={minDate ? `Có data từ ${minDate} đến ${maxDate}` : 'Chưa có data per-ngày'}
+              />
+              <span className="text-slate-400">→</span>
+              <input
+                type="date"
+                value={rangeTo}
+                min={rangeFrom || minDate}
+                max={maxDate}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setRangeTo(v);
+                  applyRange(rangeFrom, v);
+                }}
+                className="rounded border border-slate-200 px-1 py-0.5 text-[11px] text-slate-700"
+              />
+              {dateRange && (
+                <button
+                  type="button"
+                  onClick={clearDateRange}
+                  className="ml-0.5 text-slate-400 hover:text-slate-700"
+                  title="Thoát lọc ngày (về theo window)"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            </div>
+          </div>
         </div>
       </header>
+
+      {inDateMode && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900">
+          📅 <b>Date mode</b> — {isSingleDay ? 'ngày' : `khoảng ${rangeDays} ngày`} <b>{dateLabel}</b>{' '}
+          (per-day từ History_Daily). <b>Theo ngày:</b> KPIs · Channel mix · Top contribution · Category share.
+          <b> Vẫn theo window {window}</b> (data per-ngày không có country/window): Market Performance · Channel split · Top countries · Volume movers · Ads target — có badge nhắc.
+          {!isSingleDay && ' Khoảng nhiều ngày chỉ cộng cột per-ngày thật (usersDaily/getAppDaily); ngày chỉ có L7D rolling sẽ không được cộng.'}
+        </div>
+      )}
 
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {isLoading ? (
@@ -260,32 +477,28 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         ) : (
           <>
             <KpiTile
-              label={`Users · ${window}`}
-              value={formatNumber(kpis.usersL, { compact: true })}
-              deltaPct={kpis.usersDeltaPct}
-              helper={`vs prior ${days}d`}
+              label={`Users · ${kpiSuffix}`}
+              value={formatNumber(dispUsers, { compact: true })}
+              deltaPct={dispUsersDelta}
+              helper={kpiHelper}
               Icon={Users}
             />
             <KpiTile
-              label={`Install · ${window}`}
-              value={formatNumber(kpis.getAppL, { compact: true })}
-              deltaPct={kpis.getAppDeltaPct}
-              helper={`vs prior ${days}d`}
+              label={`Install · ${kpiSuffix}`}
+              value={dispGetApp !== null ? formatNumber(dispGetApp, { compact: true }) : '—'}
+              deltaPct={dispGetAppDelta}
+              helper={inDateMode ? 'per-day · vs kỳ trước' : kpiHelper}
               Icon={Target}
             />
             <KpiTile
-              label={`CR Total · ${window}`}
-              value={totalCr !== null ? formatPercent(totalCr) : '—'}
-              deltaPct={
-                totalCr !== null && totalCrPrior !== null && totalCrPrior > 0
-                  ? totalCr / totalCrPrior - 1
-                  : null
-              }
-              helper={`paid + organic · vs prior ${days}d`}
+              label={`CR Total · ${kpiSuffix}`}
+              value={dispCr !== null ? formatPercent(dispCr) : '—'}
+              deltaPct={dispCrDelta}
+              helper={inDateMode ? 'install / users (kỳ này)' : `paid + organic · vs prior ${days}d`}
               Icon={Megaphone}
             />
             <AdsTargetTile
-              label={`Ads target · ${window}`}
+              label={inDateMode ? `Ads target · ${window} (window)` : `Ads target · ${window}`}
               pct={surfaceFocus === 'organic' ? null : adsTargetPct}
               actual={surfaceFocus === 'organic' ? 0 : channelSnapshot?.paidGetApp ?? 0}
               expected={surfaceFocus === 'organic' ? null : adsTargetExpected}
@@ -311,7 +524,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       <section className="space-y-2">
         <div className="flex items-end justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">Channel mix · {window}</h2>
+            <h2 className="text-sm font-semibold text-slate-900">Channel mix · {kpiSuffix}</h2>
             <p className="text-[11px] text-slate-500">
               Click a card to filter the whole page by that surface.
             </p>
@@ -324,8 +537,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           </div>
         ) : (
           <ChannelMixCards
-            snapshot={channelSnapshot}
-            windowLabel={window}
+            snapshot={channelMixSnapshot}
+            windowLabel={kpiSuffix}
             activeFocus={surfaceFocus}
             onSelect={setSurfaceFocus}
           />
@@ -335,64 +548,64 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <SectionCard
           title="Market Performance · all windows"
-          hint="Click a window to focus the whole page."
+          hint={`Click a window to focus the whole page.${winNote}`}
           cta={embedded ? undefined : 'Drill into Market Index'}
           href={embedded ? undefined : '/market-index'}
         >
-          {isLoading ? (
-            <Skeleton className="h-56" />
-          ) : (
-            <MarketTrajectoryChart
-              data={trajectory}
-              metric="usersDelta"
-              activeWindow={window}
-              onWindowClick={(w) => {
-                if (['L3', 'L7', 'L14', 'L30', 'L90'].includes(w)) {
-                  setWindow(w as OverviewWindow);
-                }
-              }}
-            />
-          )}
-        </SectionCard>
-        <SectionCard
-          title="Channel split % · all windows"
-          hint={`Organic vs Paid share by ${splitMetric === 'users' ? 'Users' : 'Install'} across windows.`}
-        >
-          <div className="mb-2 flex justify-end">
-            <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
-              <button
-                type="button"
-                onClick={() => setSplitMetric('users')}
-                className={cn(
-                  'px-2.5 py-1 font-medium transition',
-                  splitMetric === 'users'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-50',
-                )}
-              >
-                Users
-              </button>
-              <button
-                type="button"
-                onClick={() => setSplitMetric('getapp')}
-                className={cn(
-                  'px-2.5 py-1 font-medium transition border-l border-slate-200',
-                  splitMetric === 'getapp'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-50',
-                )}
-              >
-                Install
-              </button>
+            {isLoading ? (
+              <Skeleton className="h-56" />
+            ) : (
+              <MarketTrajectoryChart
+                data={trajectory}
+                metric="usersDelta"
+                activeWindow={window}
+                onWindowClick={(w) => {
+                  if (['L3', 'L7', 'L14', 'L30', 'L90'].includes(w)) {
+                    setWindow(w as OverviewWindow);
+                  }
+                }}
+              />
+            )}
+          </SectionCard>
+          <SectionCard
+            title="Channel split % · all windows"
+            hint={`Organic vs Paid share by ${splitMetric === 'users' ? 'Users' : 'Install'} across windows.${winNote}`}
+          >
+            <div className="mb-2 flex justify-end">
+              <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setSplitMetric('users')}
+                  className={cn(
+                    'px-2.5 py-1 font-medium transition',
+                    splitMetric === 'users'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50',
+                  )}
+                >
+                  Users
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSplitMetric('getapp')}
+                  className={cn(
+                    'px-2.5 py-1 font-medium transition border-l border-slate-200',
+                    splitMetric === 'getapp'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50',
+                  )}
+                >
+                  Install
+                </button>
+              </div>
             </div>
-          </div>
-          {isLoading ? <Skeleton className="h-56" /> : <ChannelSplitChart data={split} metric={splitMetric} />}
-        </SectionCard>
-      </section>
+            {isLoading ? <Skeleton className="h-56" /> : <ChannelSplitChart data={split} metric={splitMetric} />}
+          </SectionCard>
+        </section>
 
       <SectionCard
-        title="Daily trend"
-        hint="Per-day Users / Install / CR (toggle). Chọn range L7 / L30 / L90 / L365 ở góc phải. Falls back to L7D rolling for days without daily data."
+        title="Daily trend (rolling 7 ngày)"
+        hint="Users / Install / CR — mỗi điểm là tổng/giá trị rolling 7 ngày (đồng nhất, hết spike). Click 1 ngày để lọc."
       >
         {isLoading ? (
           <Skeleton className="h-56" />
@@ -402,6 +615,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             lastNDays={days}
             countryFilter={countryFocus}
             keywordFilter={keywordFocus}
+            selectedFrom={dateRange?.from ?? null}
+            selectedTo={dateRange?.to ?? null}
+            onDateSelect={pinSingleDay}
           />
         )}
       </SectionCard>
@@ -409,7 +625,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <SectionCard
           title={`Top countries · ${window}`}
-          hint="Click a country to filter the whole page."
+          hint={`Click a country to filter the whole page.${winNote}`}
         >
           {isLoading ? (
             <Skeleton className="h-64" />
@@ -427,25 +643,45 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           )}
         </SectionCard>
         <SectionCard
-          title={`Category share · ${window}`}
-          hint="Toggle Users / Install at the top right. Click a slice for details."
+          title={`Category share · ${kpiSuffix}`}
+          hint={
+            inDateMode
+              ? 'Theo ngày đã ghim. Category suy ra từ keyword (data per-ngày không có cột category).'
+              : 'Toggle Users / Install at the top right. Click a slice to filter the whole page + open details.'
+          }
         >
           {isLoading ? (
             <Skeleton className="h-64" />
-          ) : categoryShares.length === 0 ? (
+          ) : (inDateMode ? dateCategoryShares : categoryShares).length === 0 ? (
             <div className="py-10 text-center text-sm text-slate-500">No category data.</div>
           ) : (
             <CategoryShareDonut
-              data={categoryShares.slice(0, 8)}
-              onCategoryClick={(c) => openCategoryDetail(c, window)}
+              data={(inDateMode ? dateCategoryShares : categoryShares).slice(0, 8)}
+              activeCategory={categoryFocus}
+              onCategoryClick={(c) => {
+                const next = categoryFocus === c ? null : c;
+                setCategoryFocus(next);
+                // In date mode the detail sheet (rolling-window scoped) would
+                // contradict the per-day view, so only set the filter.
+                if (next && !inDateMode) {
+                  openCategoryDetail(c, window, {
+                    country: countryFocus,
+                    surface: surfaceFocus,
+                  });
+                }
+              }}
             />
           )}
         </SectionCard>
       </section>
 
       <SectionCard
-        title={`Top contribution · ${window}`}
-        hint="Top keywords by absolute Users and Installs, with share %."
+        title={`Top contribution · ${kpiSuffix}`}
+        hint={
+          inDateMode
+            ? `Top keywords theo ${isSingleDay ? 'ngày' : 'khoảng'} đã chọn (per-day). Không có Δ.`
+            : 'Top keywords by absolute Users and Installs, with share %.'
+        }
       >
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -454,21 +690,22 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           </div>
         ) : (
           <TopContributors
-            users={topUsers.rows}
-            getApp={topGetApp.rows}
-            totalUsers={topUsers.total}
-            totalGetApp={topGetApp.total}
+            users={(inDateMode ? dateTopUsers : topUsers)?.rows ?? []}
+            getApp={(inDateMode ? dateTopGetApp : topGetApp)?.rows ?? []}
+            totalUsers={(inDateMode ? dateTopUsers : topUsers)?.total ?? 0}
+            totalGetApp={(inDateMode ? dateTopGetApp : topGetApp)?.total ?? 0}
             activeKeyword={keywordFocus}
             activeSurface={surfaceFocus}
             activeCountry={countryFocus}
             onRowClick={(k) => setKeywordFocus(keywordFocus === k ? null : k)}
+            onKeywordSelect={(k) => setKeywordFocus(k)}
           />
         )}
       </SectionCard>
 
       <SectionCard
         title={`Top volume movers · ${window}`}
-        hint="Keywords with the biggest |Δ users %|. VN + IN excluded."
+        hint={`Keywords with the biggest |Δ users %|. VN + IN excluded.${winNote}`}
       >
         {isLoading ? (
           <Skeleton className="h-72" />

@@ -18,6 +18,9 @@ export const TABS = [
   'History',
   'History_Daily',
   'AlertLog',
+  'KW_Added_Manual',
+  'Master KW Lookup',
+  'Negative KW list',
 ] as const;
 
 export type TabName = (typeof TABS)[number];

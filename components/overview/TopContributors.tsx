@@ -17,9 +17,10 @@ interface ColumnProps {
   activeSurface?: 'all' | 'organic' | 'paid';
   activeCountry?: string | null;
   onRowClick?: (keyword: string) => void;
+  onKeywordSelect?: (keyword: string) => void;
 }
 
-function Column({ title, unitLabel, Icon, rows, total, accent, activeKeyword, activeSurface, activeCountry, onRowClick }: ColumnProps) {
+function Column({ title, unitLabel, Icon, rows, total, accent, activeKeyword, activeSurface, activeCountry, onRowClick, onKeywordSelect }: ColumnProps) {
   const headerColor = accent === 'indigo' ? 'text-indigo-700' : 'text-emerald-700';
   const barColor = accent === 'indigo' ? 'bg-indigo-500' : 'bg-emerald-500';
   const barBg = accent === 'indigo' ? 'bg-indigo-100' : 'bg-emerald-100';
@@ -76,6 +77,7 @@ function Column({ title, unitLabel, Icon, rows, total, accent, activeKeyword, ac
                     keyword={r.keyword}
                     country={activeCountry ?? undefined}
                     surface={activeSurface ?? 'all'}
+                    onSelect={onKeywordSelect}
                     className="font-semibold text-sm"
                   />
                   <span
@@ -137,6 +139,7 @@ interface Props {
   activeSurface?: 'all' | 'organic' | 'paid';
   activeCountry?: string | null;
   onRowClick?: (keyword: string) => void;
+  onKeywordSelect?: (keyword: string) => void;
 }
 
 export function TopContributors({
@@ -148,6 +151,7 @@ export function TopContributors({
   activeSurface,
   activeCountry,
   onRowClick,
+  onKeywordSelect,
 }: Props) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -162,6 +166,7 @@ export function TopContributors({
         activeSurface={activeSurface}
         activeCountry={activeCountry}
         onRowClick={onRowClick}
+        onKeywordSelect={onKeywordSelect}
       />
       <Column
         title="Top Install"
@@ -174,6 +179,7 @@ export function TopContributors({
         activeSurface={activeSurface}
         activeCountry={activeCountry}
         onRowClick={onRowClick}
+        onKeywordSelect={onKeywordSelect}
       />
     </div>
   );

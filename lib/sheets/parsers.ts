@@ -10,8 +10,10 @@ import type {
   HistoryDailyRow,
   HistoryRow,
   KeywordRow,
+  KwAddedManualRow,
   MarketIndexData,
   MarketIndexSummaryRow,
+  MasterKwRow,
   Priority,
   SnapshotRow,
   Surface,
@@ -44,6 +46,29 @@ const isWindowKey = (v: unknown): v is Window =>
 const toSurfaceLabel = (raw: unknown): 'organic' | 'paid' => {
   const v = str(raw).toLowerCase();
   return v === 'paid' || v === 'search_ad' ? 'paid' : 'organic';
+};
+
+// Reclassify any non-English keyword as 'Language'. Apps Script classify rule
+// occasionally tags foreign-language terms (e.g. "größe", "trueprofit ทรโปรฟต")
+// as Feature/Brand/Profit/Others. Two reliable signals:
+// 1. Any non-ASCII char in the search term (covers Thai/Chinese/Turkish/accented
+//    Latin like ç, ñ, ö, ß, é etc.)
+// 2. Explicit `lang` column non-empty and ≠ 'en'.
+// We INTENTIONALLY do not use the `english` translation column because Apps
+// Script also fills it for English typos (e.g. "proft" → "prophet", "trueprfot"
+// → "trueprfoot") which would over-trigger. The 8 ASCII non-English misses
+// (steuern, finanze, finanzen, inventario, analitica, analiza, analiz, cashflow)
+// are caught downstream via the Master KW Lookup override in api/sheets/route.ts.
+const NON_ASCII_RE = /[^\x00-\x7F]/;
+const normalizeForeignToLanguage = (
+  category: Category,
+  searchTerm: string,
+  lang: string,
+): Category => {
+  if (NON_ASCII_RE.test(searchTerm)) return 'Language' as Category;
+  const l = lang.trim().toLowerCase();
+  if (l !== '' && l !== 'en') return 'Language' as Category;
+  return category;
 };
 
 const toSurface = (raw: unknown): Surface => {
@@ -87,43 +112,124 @@ export function parseActionQueue(rows: string[][]): ActionQueueRow[] {
 // Row 1 = title, Row 2 = headers, Row 3 = TOTAL (skip), Row 4+ = data.
 // ---------------------------------------------------------------------------
 
+// Keywords that differ only by letter case (App Store search is case-insensitive,
+// e.g. "profit" vs "Profit") are the same term — merge them into one row so the
+// whole app treats them as one (no duplicate list entries / filters). Rows that
+// have no case-twin are returned untouched so the sheet's precomputed deltas are
+// preserved exactly; only genuinely merged groups get recomputed deltas.
+function mergeCaseVariants(rows: KeywordRow[]): KeywordRow[] {
+  const groups = new Map<string, KeywordRow[]>();
+  for (const r of rows) {
+    const key = `${r.category}|${r.country ?? ''}|${r.surface}|${r.searchTerm.toLowerCase()}`;
+    const g = groups.get(key);
+    if (g) g.push(r);
+    else groups.set(key, [r]);
+  }
+
+  const out: KeywordRow[] = [];
+  for (const group of Array.from(groups.values())) {
+    if (group.length === 1) {
+      out.push(group[0]);
+      continue;
+    }
+    // Canonical label = the casing with the most users (dominant variant).
+    const canonical = [...group].sort((a, b) => b.usersL - a.usersL)[0];
+    const usersL = group.reduce((s, r) => s + r.usersL, 0);
+    const usersP = group.reduce((s, r) => s + r.usersP, 0);
+    const getAppL = group.reduce((s, r) => s + r.getAppL, 0);
+    const getAppP = group.reduce((s, r) => s + r.getAppP, 0);
+    // Position = users-weighted average (fall back to simple average if no users).
+    const wPos = (key: 'posL' | 'posP', wKey: 'usersL' | 'usersP') => {
+      const withPos = group.filter((r) => r[key] !== null);
+      if (withPos.length === 0) return null;
+      const wSum = withPos.reduce((s, r) => s + r[wKey], 0);
+      if (wSum > 0) return withPos.reduce((s, r) => s + (r[key] as number) * r[wKey], 0) / wSum;
+      return withPos.reduce((s, r) => s + (r[key] as number), 0) / withPos.length;
+    };
+    const posL = wPos('posL', 'usersL');
+    const posP = wPos('posP', 'usersP');
+    const crL = usersL > 0 ? getAppL / usersL : null;
+    const crP = usersP > 0 ? getAppP / usersP : null;
+    // Most severe alert wins (first non-OK), else OK.
+    const alert = group.find((r) => r.alert && r.alert !== 'OK')?.alert ?? 'OK';
+
+    out.push({
+      category: canonical.category,
+      searchTerm: canonical.searchTerm,
+      country: canonical.country,
+      surface: canonical.surface,
+      usersL,
+      usersP,
+      getAppL,
+      getAppP,
+      crL,
+      crP,
+      posL,
+      posP,
+      deltaPosPct: posP && posP !== 0 && posL !== null ? (posL - posP) / posP : null,
+      deltaUsersPct: usersP > 0 ? (usersL - usersP) / usersP : 0,
+      deltaCrPct: crP && crP !== 0 && crL !== null ? (crL - crP) / crP : null,
+      alert: alert as AlertType,
+      lang: canonical.lang,
+      english: canonical.english,
+    });
+  }
+  return out;
+}
+
 export function parseKeywordTab(rows: string[][], hasCountry: boolean): KeywordRow[] {
   if (!rows || rows.length < 4) return [];
-  return rows
+  const parsed = rows
     .slice(3)
     .map((row): KeywordRow | null => {
       if (!row || row.length === 0) return null;
       if (str(row[0]).toUpperCase() === 'TOTAL') return null;
 
       let i = 0;
-      const category = (str(row[i++]) || 'Unknown') as Category;
+      const rawCategory = (str(row[i++]) || 'Unknown') as Category;
       const searchTerm = str(row[i++]);
       if (!searchTerm) return null;
       const country = hasCountry ? str(row[i++]) || undefined : undefined;
       const surface = toSurface(row[i++]);
+      const usersL = num(row[i++]);
+      const usersP = num(row[i++]);
+      const getAppL = num(row[i++]);
+      const getAppP = num(row[i++]);
+      const crL = numOrNull(row[i++]);
+      const crP = numOrNull(row[i++]);
+      const posL = numOrNull(row[i++]);
+      const posP = numOrNull(row[i++]);
+      const deltaPosPct = numOrNull(row[i++]);
+      const deltaUsersPct = num(row[i++]);
+      const deltaCrPct = numOrNull(row[i++]);
+      const alert = (str(row[i++]) || 'OK') as AlertType;
+      const lang = str(row[i++]);
+      const english = str(row[i++]);
 
       return {
-        category,
+        category: normalizeForeignToLanguage(rawCategory, searchTerm, lang),
         searchTerm,
         country,
         surface,
-        usersL: num(row[i++]),
-        usersP: num(row[i++]),
-        getAppL: num(row[i++]),
-        getAppP: num(row[i++]),
-        crL: numOrNull(row[i++]),
-        crP: numOrNull(row[i++]),
-        posL: numOrNull(row[i++]),
-        posP: numOrNull(row[i++]),
-        deltaPosPct: numOrNull(row[i++]),
-        deltaUsersPct: num(row[i++]),
-        deltaCrPct: numOrNull(row[i++]),
-        alert: (str(row[i++]) || 'OK') as AlertType,
-        lang: str(row[i++]),
-        english: str(row[i++]),
+        usersL,
+        usersP,
+        getAppL,
+        getAppP,
+        crL,
+        crP,
+        posL,
+        posP,
+        deltaPosPct,
+        deltaUsersPct,
+        deltaCrPct,
+        alert,
+        lang,
+        english,
       };
     })
     .filter((r): r is KeywordRow => r !== null);
+
+  return mergeCaseVariants(parsed);
 }
 
 // ---------------------------------------------------------------------------
@@ -139,23 +245,30 @@ export function parseSnapshot(rows: string[][], hasCountry: boolean): SnapshotRo
       if (str(row[0]).toUpperCase() === 'TOTAL') return null;
 
       let i = 0;
-      const category = (str(row[i++]) || 'Unknown') as Category;
+      const rawCategory = (str(row[i++]) || 'Unknown') as Category;
       const searchTerm = str(row[i++]);
       if (!searchTerm) return null;
       const country = hasCountry ? str(row[i++]) || undefined : undefined;
       const surface = toSurface(row[i++]);
+      const users = num(row[i++]);
+      const getApp = num(row[i++]);
+      const cr = numOrNull(row[i++]);
+      const pos = numOrNull(row[i++]);
+      const sharePct = num(row[i++]);
+      const lang = str(row[i++]);
+      const english = str(row[i++]);
       return {
-        category,
+        category: normalizeForeignToLanguage(rawCategory, searchTerm, lang),
         searchTerm,
         country,
         surface,
-        users: num(row[i++]),
-        getApp: num(row[i++]),
-        cr: numOrNull(row[i++]),
-        pos: numOrNull(row[i++]),
-        sharePct: num(row[i++]),
-        lang: str(row[i++]),
-        english: str(row[i++]),
+        users,
+        getApp,
+        cr,
+        pos,
+        sharePct,
+        lang,
+        english,
       };
     })
     .filter((r): r is SnapshotRow => r !== null);
@@ -367,6 +480,96 @@ export function parseTier1Watch(rows: string[][]): Tier1WatchRow[] {
 // ---------------------------------------------------------------------------
 // History — append-only weekly snapshots.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Window date range — parsed from the All_Lx title row written by the Apps
+// Script, e.g. "ALL_L30 — L30D: 2026-05-04 → 2026-06-02 vs P30D: ...".
+// First date pair = the current (L) period the report actually covers.
+// ---------------------------------------------------------------------------
+
+export function parseWindowDateRange(rows: string[][]): { from: string; to: string } | null {
+  const title = rows?.[0]?.[0];
+  if (title === undefined || title === null) return null;
+  // First two ISO dates in the title = the current (L) period start → end.
+  const m = /(\d{4}-\d{2}-\d{2})\D+?(\d{4}-\d{2}-\d{2})/.exec(String(title));
+  return m ? { from: m[1], to: m[2] } : null;
+}
+
+// ---------------------------------------------------------------------------
+// KW_Added_Manual — manually tracked keywords newly added to paid campaigns.
+// Used as a fallback "in paid" signal for keywords that haven't yet surfaced
+// in Country_L365 (fresh adds, low impression count, etc.).
+// Header: Keyword | Camp | Ghi chú / ngày thêm
+// ---------------------------------------------------------------------------
+
+export function parseKwAddedManual(rows: string[][]): KwAddedManualRow[] {
+  if (!rows || rows.length < 2) return [];
+  return rows
+    .slice(1)
+    .map((row): KwAddedManualRow | null => {
+      const keyword = str(row?.[0]).trim();
+      if (!keyword) return null;
+      return {
+        keyword,
+        camp: str(row[1]).trim(),
+        note: str(row[2]).trim(),
+      };
+    })
+    .filter((r): r is KwAddedManualRow => r !== null);
+}
+
+// ---------------------------------------------------------------------------
+// Master KW Lookup — master list of every keyword bid in paid campaigns.
+// Row 0 = title, row 1 = usage note, row 2 = header, row 3+ = data.
+// Header: Category | Camp Name | KW | Match Types | Bid (max) | Impressions |
+//         Clicks | Installs | Classification
+// ---------------------------------------------------------------------------
+
+export function parseMasterKw(rows: string[][]): MasterKwRow[] {
+  if (!rows || rows.length < 4) return [];
+  // Locate the header row (column 0 == 'Category' and column 2 == 'KW'),
+  // then take everything after it. Defensive against Trang re-ordering top notes.
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    if (str(rows[i]?.[0]).trim() === 'Category' && str(rows[i]?.[2]).trim() === 'KW') {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return [];
+  return rows
+    .slice(headerIdx + 1)
+    .map((row): MasterKwRow | null => {
+      const keyword = str(row?.[2]).trim();
+      if (!keyword) return null;
+      return {
+        category: str(row[0]).trim(),
+        camp: str(row[1]).trim(),
+        keyword,
+        matchType: str(row[3]).trim(),
+        bidMax: str(row[4]).trim(),
+        impressions: num(row[5]),
+        clicks: num(row[6]),
+        installs: num(row[7]),
+        classification: str(row[8]).trim(),
+      };
+    })
+    .filter((r): r is MasterKwRow => r !== null);
+}
+
+// ---------------------------------------------------------------------------
+// Negative KW list — keywords explicitly added as negatives in paid campaigns.
+// Keyword lives in column B (index 1); column A / extra columns are ignored.
+// Lenient: read every row's col B, drop empties. A header word slipping through
+// is harmless (it won't match a real search term in the exact-match lookup).
+// ---------------------------------------------------------------------------
+
+export function parseNegativeKw(rows: string[][]): string[] {
+  if (!rows || rows.length === 0) return [];
+  return rows
+    .map((row) => str(row?.[1]).trim())
+    .filter((kw) => kw.length > 0);
+}
 
 // ---------------------------------------------------------------------------
 // AlertLog — append-only daily rank-drop alerts (written by Apps Script).

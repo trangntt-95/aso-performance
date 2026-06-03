@@ -60,8 +60,9 @@ function aggregateByCountry(
   surfaceFilter: 'all' | 'organic' | 'paid',
 ): CountryRow[] {
   if (!data || !keyword) return [];
+  const kwLower = keyword.toLowerCase();
   const rows = (data[COUNTRY_TAB[window]] as KeywordRow[]).filter(
-    (r) => r.searchTerm === keyword && r.country,
+    (r) => r.searchTerm.toLowerCase() === kwLower && r.country,
   );
   const map = new Map<string, CountryRow>();
   for (const r of rows) {
@@ -310,12 +311,16 @@ export function KeywordTrendSheet() {
     if (!keyword || !data) return null;
     const surfaceTarget =
       surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
-    const matchKw = (r: { searchTerm: string }) => r.searchTerm === keyword;
+    const kwLower = keyword.toLowerCase();
+    const matchKw = (r: { searchTerm: string }) => r.searchTerm.toLowerCase() === kwLower;
     const matchSurface = (r: { surface: string }) =>
       surfaceTarget ? r.surface === surfaceTarget : true;
     const matchCountry = (r: { country?: string }) => (country ? r.country === country : true);
 
     const history: HistoryRow[] = data.history.filter((h) => matchKw(h) && matchSurface(h));
+    // Install trend comes from History_Daily (getAppL7D). It has no country column,
+    // so this series is global per keyword — same as the users/pos trend above.
+    const historyDaily = (data.historyDaily ?? []).filter((h) => matchKw(h) && matchSurface(h));
 
     // When country filter is active, prefer Country_L_* (those have the country column).
     const pickL = (allTab: KeywordRow[], countryTab: KeywordRow[]) =>
@@ -328,7 +333,7 @@ export function KeywordTrendSheet() {
     const inL90 = pickL(data.allL90, data.countryL90);
 
     const actionRows: ActionQueueRow[] = data.actionQueue.filter((r) => {
-      if (r.keyword !== keyword) return false;
+      if (r.keyword.toLowerCase() !== kwLower) return false;
       if (country && r.country !== country) return false;
       if (surface !== 'all' && r.surface !== surface) return false;
       return true;
@@ -336,6 +341,7 @@ export function KeywordTrendSheet() {
 
     return {
       history,
+      historyDaily,
       l7: summarise(inL7),
       l30: summarise(inL30),
       l90: summarise(inL90),
@@ -389,6 +395,30 @@ export function KeywordTrendSheet() {
                 )}
               </div>
             )}
+
+            <section className="space-y-2">
+              <h3 className="text-[11px] uppercase tracking-wide text-slate-500">
+                Install trend (L7D, attributed)
+              </h3>
+              <TrendChart
+                history={trendData.history}
+                dailyHistory={trendData.historyDaily}
+                metric="getApp"
+              />
+              <div className="flex items-center justify-between gap-3 text-[11px] text-slate-600">
+                <div className="flex gap-3">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-block w-2.5 h-0.5 bg-emerald-600" />
+                    Organic
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-block w-2.5 h-0.5 bg-amber-700" />
+                    Paid
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-400">Install gán theo keyword (tool ASO) · từ ~20/05</span>
+              </div>
+            </section>
 
             <section className="space-y-2">
               <h3 className="text-[11px] uppercase tracking-wide text-slate-500">
