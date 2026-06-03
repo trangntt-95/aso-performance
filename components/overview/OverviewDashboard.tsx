@@ -463,11 +463,27 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       </header>
 
       {inDateMode && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900">
-          📅 <b>Date mode</b> — {isSingleDay ? 'ngày' : `khoảng ${rangeDays} ngày`} <b>{dateLabel}</b>{' '}
-          (per-day từ History_Daily). <b>Theo ngày:</b> KPIs · Channel mix · Top contribution · Category share.
-          <b> Vẫn theo window {window}</b> (data per-ngày không có country/window): Market Performance · Channel split · Top countries · Volume movers · Ads target — có badge nhắc.
-          {!isSingleDay && ' Khoảng nhiều ngày chỉ cộng cột per-ngày thật (usersDaily/getAppDaily); ngày chỉ có L7D rolling sẽ không được cộng.'}
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900 flex items-start gap-1.5">
+          <span>
+            📅 <b>Date mode</b> · {isSingleDay ? 'ngày' : `${rangeDays} ngày`} <b>{dateLabel}</b> — KPIs ·
+            Channel mix · Top KW · Category <b>theo ngày</b>. Country &amp; so-sánh-window vẫn là snapshot{' '}
+            <b>{window}</b> (xem badge).
+          </span>
+          <span
+            className="shrink-0 mt-px cursor-help inline-flex h-4 w-4 items-center justify-center rounded-full border border-rose-300 text-[10px] font-bold text-rose-500"
+            title={
+              `Vì sao chia 2 nhóm:\n` +
+              `History_Daily (nguồn per-ngày) KHÔNG có cột country và KHÔNG có so sánh giữa các window.\n\n` +
+              `• Theo ngày được: KPIs, Channel mix (có surface), Top contribution (có keyword), Category share.\n` +
+              `• Vẫn theo window ${window}: Market Performance, Channel split, Top countries, Volume movers, Ads target.` +
+              (!isSingleDay
+                ? `\n\nKhoảng nhiều ngày chỉ cộng cột per-ngày thật (usersDaily/getAppDaily). ` +
+                  `Ngày chỉ có L7D rolling bị bỏ (tránh đếm trùng ~7×) — backfill per-ngày hiện chỉ tới ~26/05.`
+                : '')
+            }
+          >
+            i
+          </span>
         </div>
       )}
 
