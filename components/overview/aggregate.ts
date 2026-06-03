@@ -595,6 +595,29 @@ export function dailyTrend(
     a.hasL7D = true;
   }
 
+  // Synthetic rolling-7d Users for dates older than the L7D snapshots (~07/05).
+  // usersDaily is real per-day users, so summing the trailing 7 calendar days
+  // reproduces the same rolling-7d basis as usersL7D (no fake ~7× spike) and
+  // extends the line back to the per-day backfill start (~late Feb). Install/CR
+  // are NOT synthesised: getAppDaily is GA4 paid ad-clicks, not attributed
+  // installs, so they stay L7D-only (shorter history) to avoid wrong numbers.
+  const usersDailyByDate = new Map<number, number>();
+  Array.from(byDate.entries()).forEach(([serial, agg]) => {
+    if (agg.hasDaily) usersDailyByDate.set(serial, agg.usersDaily);
+  });
+  const rolling7Users = (serial: number): number | null => {
+    let sum = 0;
+    let any = false;
+    for (let k = serial - 6; k <= serial; k++) {
+      const v = usersDailyByDate.get(k);
+      if (v !== undefined) {
+        sum += v;
+        any = true;
+      }
+    }
+    return any ? sum : null;
+  };
+
   return Array.from(byDate.entries())
     .sort((a, b) => a[0] - b[0])
     .map(([serial, agg]) => {
@@ -602,11 +625,9 @@ export function dailyTrend(
       const yyyy = d.getUTCFullYear();
       const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
       const dd = String(d.getUTCDate()).padStart(2, '0');
-      // Rolling-7d basis for the WHOLE line (consistent, no mixing). Mixing
-      // per-day (≤26/05) with rolling-L7D (≥27/05) caused a fake ~7× spike at
-      // 27/05. Use L7D everywhere it exists; dates with only per-day backfill
-      // (usersL7D=0) get filtered out by the chart's users>0 guard.
-      const users = agg.usersL7D;
+      // Prefer the real L7D snapshot; fall back to synthetic rolling-7d for the
+      // older backfill-only dates so L30/L90/L365 show full Users history.
+      const users = agg.usersL7D > 0 ? agg.usersL7D : rolling7Users(serial) ?? 0;
       const getApp = agg.getAppL7D;
       const crNumer = agg.getAppL7DForCr;
       const crDenom = agg.usersL7DForCr;

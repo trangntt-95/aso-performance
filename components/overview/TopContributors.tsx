@@ -1,6 +1,7 @@
 'use client';
 
-import { Users, Target } from 'lucide-react';
+import { useState } from 'react';
+import { Users, Target, Search } from 'lucide-react';
 import type { ContributorRow } from './aggregate';
 import { KeywordLink } from '@/components/shared/KeywordLink';
 import { formatDeltaPct, formatNumber, deltaTone } from '@/lib/utils/format';
@@ -153,13 +154,41 @@ export function TopContributors({
   onRowClick,
   onKeywordSelect,
 }: Props) {
+  const [q, setQ] = useState('');
+  const query = q.trim().toLowerCase();
+  const matchRows = (rows: ContributorRow[]) =>
+    query ? rows.filter((r) => r.keyword.toLowerCase().includes(query)) : rows;
+  const fUsers = matchRows(users);
+  const fGetApp = matchRows(getApp);
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div className="space-y-2">
+      <div className="relative max-w-xs">
+        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+        <input
+          type="text"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Tìm keyword trong bảng…"
+          className="w-full rounded-md border border-slate-200 pl-7 pr-7 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+        />
+        {q && (
+          <button
+            type="button"
+            onClick={() => setQ('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+            title="Xóa tìm kiếm"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <Column
         title="Top Users"
         unitLabel="users · share %"
         Icon={Users}
-        rows={users}
+        rows={fUsers}
         total={totalUsers}
         accent="indigo"
         activeKeyword={activeKeyword}
@@ -172,7 +201,7 @@ export function TopContributors({
         title="Top Install"
         unitLabel="installs · share %"
         Icon={Target}
-        rows={getApp}
+        rows={fGetApp}
         total={totalGetApp}
         accent="emerald"
         activeKeyword={activeKeyword}
@@ -181,6 +210,7 @@ export function TopContributors({
         onRowClick={onRowClick}
         onKeywordSelect={onKeywordSelect}
       />
+      </div>
     </div>
   );
 }

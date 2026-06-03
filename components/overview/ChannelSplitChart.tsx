@@ -23,37 +23,6 @@ interface Props {
 const ORG = '#059669';
 const PAID = '#b45309';
 
-// Stacked label: big bold % on top, small faint absolute number underneath, so
-// you can see whether a share/CR shift came from an organic vs paid abs change.
-function ValueLabel(props: {
-  x?: unknown;
-  y?: unknown;
-  value?: unknown;
-  index?: number;
-  color: string;
-  abs: number[];
-  decimals: number;
-  placement: 'top' | 'bottom';
-}) {
-  const { index, color, abs, decimals, placement } = props;
-  const x = Number(props.x);
-  const y = Number(props.y);
-  const value = Number(props.value);
-  if (!isFinite(x) || !isFinite(y) || index == null || !isFinite(value)) return null;
-  const pctY = placement === 'top' ? y - 15 : y + 15;
-  const absY = placement === 'top' ? y - 4 : y + 26;
-  return (
-    <g>
-      <text x={x} y={pctY} textAnchor="middle" fill={color} fontSize={11} fontWeight={600}>
-        {value.toFixed(decimals)}%
-      </text>
-      <text x={x} y={absY} textAnchor="middle" fill={color} fillOpacity={0.5} fontSize={9}>
-        {formatNumber(abs[index] ?? 0, { compact: true })}
-      </text>
-    </g>
-  );
-}
-
 interface EnrichedPoint extends ChannelSplitPoint {
   orgVal: number; // % share (users/getapp) or CR % (cr)
   paidVal: number;
@@ -103,8 +72,6 @@ export function ChannelSplitChart({ data, metric, height = 260 }: Props) {
   const orgName = isCr ? 'Organic CR' : 'Organic %';
   const paidName = isCr ? 'Paid CR' : 'Paid %';
   const decimals = isCr ? 1 : 0;
-  const orgAbs = enriched.map((e) => e._orgAbs);
-  const paidAbs = enriched.map((e) => e._paidAbs);
 
   return (
     <div style={{ height }}>
@@ -155,9 +122,11 @@ export function ChannelSplitChart({ data, metric, height = 260 }: Props) {
           >
             <LabelList
               dataKey="orgVal"
-              content={(p) => (
-                <ValueLabel {...p} color={ORG} abs={orgAbs} decimals={decimals} placement="top" />
-              )}
+              position="top"
+              fill={ORG}
+              fontSize={11}
+              fontWeight={600}
+              formatter={(v) => (typeof v === 'number' ? `${v.toFixed(decimals)}%` : '')}
             />
           </Line>
           <Line
@@ -171,9 +140,11 @@ export function ChannelSplitChart({ data, metric, height = 260 }: Props) {
           >
             <LabelList
               dataKey="paidVal"
-              content={(p) => (
-                <ValueLabel {...p} color={PAID} abs={paidAbs} decimals={decimals} placement="bottom" />
-              )}
+              position="bottom"
+              fill={PAID}
+              fontSize={11}
+              fontWeight={600}
+              formatter={(v) => (typeof v === 'number' ? `${v.toFixed(decimals)}%` : '')}
             />
           </Line>
         </LineChart>
