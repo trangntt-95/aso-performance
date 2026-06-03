@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, AlertCircle, Megaphone, Target, Users } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import { ArrowRight, AlertCircle, Check, Link2, Megaphone, Target, Users } from 'lucide-react';
 import { expectedAdsInstalls, runrateAdsToMonthEnd } from '@/lib/config/ads-targets';
 import { AdsTargetTile } from './AdsTargetTile';
 import { useSheetData } from '@/lib/hooks/useSheetData';
@@ -44,35 +45,65 @@ import { useCategoryDetailStore } from '@/lib/store/categoryDetailStore';
 import { useDashboardContext } from '@/lib/store/dashboardContextStore';
 import { cn } from '@/lib/utils';
 
+function CopyLinkButton({ onClick, copied }: { onClick: () => void; copied: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Copy link tới mục này (giữ filter hiện tại)"
+      className="shrink-0 text-slate-400 hover:text-indigo-600 transition"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Link2 className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
 function SectionCard({
   title,
   hint,
   cta,
   href,
+  anchorId,
+  highlighted,
+  onCopyLink,
+  copied,
   children,
 }: {
   title: string;
   hint?: string;
   cta?: string;
   href?: string;
+  anchorId?: string;
+  highlighted?: boolean;
+  onCopyLink?: () => void;
+  copied?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <Card className="border-slate-200 shadow-sm">
+    <Card
+      id={anchorId}
+      className={cn(
+        'border-slate-200 shadow-sm scroll-mt-24 transition-shadow',
+        highlighted && 'ring-2 ring-indigo-400 ring-offset-2',
+      )}
+    >
       <CardHeader className="pb-2 flex-row flex items-end justify-between gap-3 space-y-0">
         <div>
           <CardTitle className="text-sm font-semibold text-slate-900">{title}</CardTitle>
           {hint && <p className="text-[11px] text-slate-500 mt-0.5">{hint}</p>}
         </div>
-        {cta && href && (
-          <Link
-            href={href}
-            className="text-[11px] text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-0.5 shrink-0"
-          >
-            {cta}
-            <ArrowRight className="h-3 w-3" />
-          </Link>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {cta && href && (
+            <Link
+              href={href}
+              className="text-[11px] text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-0.5"
+            >
+              {cta}
+              <ArrowRight className="h-3 w-3" />
+            </Link>
+          )}
+          {onCopyLink && <CopyLinkButton onClick={onCopyLink} copied={!!copied} />}
+        </div>
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
@@ -85,15 +116,40 @@ interface OverviewProps {
 
 export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const { data, isLoading, error } = useSheetData();
-  const [window, setWindow] = useState<OverviewWindow>('L7');
-  const [surfaceFocus, setSurfaceFocus] = useState<SurfaceFocus>('all');
-  const [countryFocus, setCountryFocus] = useState<string | null>(null);
-  const [keywordFocus, setKeywordFocus] = useState<string | null>(null);
-  const [categoryFocus, setCategoryFocus] = useState<string | null>(null);
-  const [dateRange, setDateRange] = useState<{ from: string; to: string } | null>(null);
-  const [rangeFrom, setRangeFrom] = useState('');
-  const [rangeTo, setRangeTo] = useState('');
-  const [splitMetric, setSplitMetric] = useState<'users' | 'getapp'>('users');
+
+  // ── Deep-link URL state: hydrate initial state from ?query (embedded view ignores it) ──
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const initParam = (key: string) => (embedded ? null : searchParams.get(key));
+
+  const [window, setWindow] = useState<OverviewWindow>(() => {
+    const w = initParam('window');
+    return (['L3', 'L7', 'L14', 'L30', 'L90'] as const).includes(w as OverviewWindow)
+      ? (w as OverviewWindow)
+      : 'L7';
+  });
+  const [surfaceFocus, setSurfaceFocus] = useState<SurfaceFocus>(() => {
+    const s = initParam('surface');
+    return s === 'organic' || s === 'paid' ? s : 'all';
+  });
+  const [countryFocus, setCountryFocus] = useState<string | null>(() => initParam('country'));
+  const [keywordFocus, setKeywordFocus] = useState<string | null>(() => initParam('keyword'));
+  const [categoryFocus, setCategoryFocus] = useState<string | null>(() => initParam('category'));
+  const [dateRange, setDateRange] = useState<{ from: string; to: string } | null>(() => {
+    const from = initParam('from');
+    const to = initParam('to');
+    return from && to && from <= to ? { from, to } : null;
+  });
+  const [rangeFrom, setRangeFrom] = useState(() => initParam('from') ?? '');
+  const [rangeTo, setRangeTo] = useState(() => initParam('to') ?? '');
+  const [splitMetric, setSplitMetric] = useState<'users' | 'getapp'>(() =>
+    initParam('metric') === 'getapp' ? 'getapp' : 'users',
+  );
+  // Section to scroll to + briefly highlight (consumed once on mount).
+  const [focusTarget] = useState<string | null>(() => initParam('focus'));
+  const [highlightKey, setHighlightKey] = useState<string | null>(() => initParam('focus'));
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const inDateMode = !!dateRange;
   const isSingleDay = !!dateRange && dateRange.from === dateRange.to;
 
@@ -251,6 +307,55 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       setRangeTo(wd.to);
     }
   }, [window, data?.windowDates, inDateMode]);
+
+  // Build a shareable query string from the current view (optionally focusing a section).
+  const buildQuery = useCallback(
+    (focusKey?: string) => {
+      const p = new URLSearchParams();
+      if (window !== 'L7') p.set('window', window);
+      if (surfaceFocus !== 'all') p.set('surface', surfaceFocus);
+      if (countryFocus) p.set('country', countryFocus);
+      if (keywordFocus) p.set('keyword', keywordFocus);
+      if (categoryFocus) p.set('category', categoryFocus);
+      if (dateRange) {
+        p.set('from', dateRange.from);
+        p.set('to', dateRange.to);
+      }
+      if (splitMetric !== 'users') p.set('metric', splitMetric);
+      if (focusKey) p.set('focus', focusKey);
+      return p.toString();
+    },
+    [window, surfaceFocus, countryFocus, keywordFocus, categoryFocus, dateRange, splitMetric],
+  );
+
+  // Full URL-state sync: write the view back to the URL on every change (drops ?focus once consumed).
+  useEffect(() => {
+    if (embedded) return;
+    const qs = buildQuery();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [embedded, buildQuery, pathname, router]);
+
+  // Deep-link focus: scroll to + briefly ring the requested section once data is in.
+  useEffect(() => {
+    if (!focusTarget || isLoading) return;
+    const el = document.getElementById(`sec-${focusTarget}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightKey(focusTarget);
+    const t = setTimeout(() => setHighlightKey(null), 2600);
+    return () => clearTimeout(t);
+  }, [focusTarget, isLoading]);
+
+  const copyLink = useCallback(
+    (focusKey: string) => {
+      const origin = globalThis.location?.origin ?? '';
+      const qs = buildQuery(focusKey);
+      void navigator.clipboard?.writeText(`${origin}${pathname}${qs ? `?${qs}` : ''}`);
+      setCopiedKey(focusKey);
+      setTimeout(() => setCopiedKey((k) => (k === focusKey ? null : k)), 1500);
+    },
+    [buildQuery, pathname],
+  );
 
   const headlineWindow = data?.marketIndex.summary.find((s) => s.window === window);
   const composedVerdict = headlineWindow
@@ -487,7 +592,13 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         </div>
       )}
 
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <section
+        id="sec-kpis"
+        className={cn(
+          'grid grid-cols-2 lg:grid-cols-4 gap-3 scroll-mt-24 rounded-xl transition-shadow',
+          highlightKey === 'kpis' && 'ring-2 ring-indigo-400 ring-offset-2',
+        )}
+      >
         {isLoading ? (
           Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)
         ) : (
@@ -537,7 +648,13 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         )}
       </section>
 
-      <section className="space-y-2">
+      <section
+        id="sec-channel-mix"
+        className={cn(
+          'space-y-2 scroll-mt-24 rounded-xl transition-shadow',
+          highlightKey === 'channel-mix' && 'ring-2 ring-indigo-400 ring-offset-2',
+        )}
+      >
         <div className="flex items-end justify-between">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Channel mix · {kpiSuffix}</h2>
@@ -545,6 +662,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               Click a card to filter the whole page by that surface.
             </p>
           </div>
+          {!embedded && (
+            <CopyLinkButton onClick={() => copyLink('channel-mix')} copied={copiedKey === 'channel-mix'} />
+          )}
         </div>
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -567,6 +687,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           hint={`Click a window to focus the whole page.${winNote}`}
           cta={embedded ? undefined : 'Drill into Market Index'}
           href={embedded ? undefined : '/market-index'}
+          anchorId="sec-market-performance"
+          highlighted={highlightKey === 'market-performance'}
+          onCopyLink={embedded ? undefined : () => copyLink('market-performance')}
+          copied={copiedKey === 'market-performance'}
         >
             {isLoading ? (
               <Skeleton className="h-56" />
@@ -586,6 +710,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           <SectionCard
             title="Channel split % · all windows"
             hint={`Organic vs Paid share by ${splitMetric === 'users' ? 'Users' : 'Install'} across windows.${winNote}`}
+            anchorId="sec-channel-split"
+            highlighted={highlightKey === 'channel-split'}
+            onCopyLink={embedded ? undefined : () => copyLink('channel-split')}
+            copied={copiedKey === 'channel-split'}
           >
             <div className="mb-2 flex justify-end">
               <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px]">
@@ -622,6 +750,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       <SectionCard
         title="Daily trend (rolling 7 ngày)"
         hint="Users / Install / CR — mỗi điểm là tổng/giá trị rolling 7 ngày (đồng nhất, hết spike). Click 1 ngày để lọc."
+        anchorId="sec-daily-trend"
+        highlighted={highlightKey === 'daily-trend'}
+        onCopyLink={embedded ? undefined : () => copyLink('daily-trend')}
+        copied={copiedKey === 'daily-trend'}
       >
         {isLoading ? (
           <Skeleton className="h-56" />
@@ -642,6 +774,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         <SectionCard
           title={`Top countries · ${window}`}
           hint={`Click a country to filter the whole page.${winNote}`}
+          anchorId="sec-top-countries"
+          highlighted={highlightKey === 'top-countries'}
+          onCopyLink={embedded ? undefined : () => copyLink('top-countries')}
+          copied={copiedKey === 'top-countries'}
         >
           {isLoading ? (
             <Skeleton className="h-64" />
@@ -665,6 +801,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               ? 'Theo ngày đã ghim. Category suy ra từ keyword (data per-ngày không có cột category).'
               : 'Toggle Users / Install at the top right. Click a slice to filter the whole page + open details.'
           }
+          anchorId="sec-category-share"
+          highlighted={highlightKey === 'category-share'}
+          onCopyLink={embedded ? undefined : () => copyLink('category-share')}
+          copied={copiedKey === 'category-share'}
         >
           {isLoading ? (
             <Skeleton className="h-64" />
@@ -698,6 +838,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             ? `Top keywords theo ${isSingleDay ? 'ngày' : 'khoảng'} đã chọn (per-day). Không có Δ.`
             : 'Top keywords by absolute Users and Installs, with share %.'
         }
+        anchorId="sec-top-contribution"
+        highlighted={highlightKey === 'top-contribution'}
+        onCopyLink={embedded ? undefined : () => copyLink('top-contribution')}
+        copied={copiedKey === 'top-contribution'}
       >
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -722,6 +866,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       <SectionCard
         title={`Top volume movers · ${window}`}
         hint={`Keywords with the biggest |Δ users %|. VN + IN excluded.${winNote}`}
+        anchorId="sec-volume-movers"
+        highlighted={highlightKey === 'volume-movers'}
+        onCopyLink={embedded ? undefined : () => copyLink('volume-movers')}
+        copied={copiedKey === 'volume-movers'}
       >
         {isLoading ? (
           <Skeleton className="h-72" />
