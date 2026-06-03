@@ -17,32 +17,36 @@
  * does nothing the second time.
  */
 
-const TZ = 'Asia/Ho_Chi_Minh';
-const TARGET_TAB = 'History_Daily';
-const SOURCE_TAB = 'All_L7';
-const LEGACY_HISTORY_TAB = 'History';
-const HEADERS = ['date', 'searchTerm', 'surface', 'usersL7D', 'getAppL7D', 'crL7D', 'posL7D'];
+// NOTE: this file lives in the SAME Apps Script project as the main tracker
+// Code.gs, which already declares `TZ`/etc. Apps Script compiles every .gs file
+// into one global scope, so these consts are DS_-prefixed to avoid
+// "Identifier already declared" collisions. Do NOT rename back to bare names.
+const DS_TZ = 'Asia/Ho_Chi_Minh';
+const DS_TARGET_TAB = 'History_Daily';
+const DS_SOURCE_TAB = 'All_L7';
+const DS_LEGACY_HISTORY_TAB = 'History';
+const DS_HEADERS = ['date', 'searchTerm', 'surface', 'usersL7D', 'getAppL7D', 'crL7D', 'posL7D'];
 
 function getOrCreateTab_(ss) {
-  let dest = ss.getSheetByName(TARGET_TAB);
+  let dest = ss.getSheetByName(DS_TARGET_TAB);
   if (!dest) {
-    dest = ss.insertSheet(TARGET_TAB);
-    dest.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
+    dest = ss.insertSheet(DS_TARGET_TAB);
+    dest.getRange(1, 1, 1, DS_HEADERS.length).setValues([DS_HEADERS]);
     dest.setFrozenRows(1);
   }
   return dest;
 }
 
 function todayInTz_() {
-  return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  return Utilities.formatDate(new Date(), DS_TZ, 'yyyy-MM-dd');
 }
 
 function runDailySnapshot() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const today = todayInTz_();
 
-  const src = ss.getSheetByName(SOURCE_TAB);
-  if (!src) throw new Error('Missing tab: ' + SOURCE_TAB);
+  const src = ss.getSheetByName(DS_SOURCE_TAB);
+  if (!src) throw new Error('Missing tab: ' + DS_SOURCE_TAB);
   const rows = src.getDataRange().getValues();
 
   const dest = getOrCreateTab_(ss);
@@ -84,7 +88,7 @@ function runDailySnapshot() {
     return;
   }
 
-  dest.getRange(dest.getLastRow() + 1, 1, out.length, HEADERS.length).setValues(out);
+  dest.getRange(dest.getLastRow() + 1, 1, out.length, DS_HEADERS.length).setValues(out);
   Logger.log('Wrote ' + out.length + ' rows for ' + today);
 }
 
@@ -100,9 +104,9 @@ function installDailySnapshotTrigger() {
     .timeBased()
     .atHour(7)
     .everyDays(1)
-    .inTimezone(TZ)
+    .inTimezone(DS_TZ)
     .create();
-  Logger.log('Daily snapshot trigger installed (07:00 ' + TZ + ')');
+  Logger.log('Daily snapshot trigger installed (07:00 ' + DS_TZ + ')');
 }
 
 function backfillFromHistory() {
@@ -111,8 +115,8 @@ function backfillFromHistory() {
   // on day 1. GetApp and CR stay empty for past dates (no historical install
   // data is stored anywhere in the sheet).
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const src = ss.getSheetByName(LEGACY_HISTORY_TAB);
-  if (!src) throw new Error('Missing tab: ' + LEGACY_HISTORY_TAB);
+  const src = ss.getSheetByName(DS_LEGACY_HISTORY_TAB);
+  if (!src) throw new Error('Missing tab: ' + DS_LEGACY_HISTORY_TAB);
   const dest = getOrCreateTab_(ss);
 
   // Existing (date, kw, surface) keys to avoid double-writing.
@@ -139,10 +143,10 @@ function backfillFromHistory() {
     // Skip header-ish rows (non-numeric date that isn't an ISO string)
     let dateStr;
     if (rawDate instanceof Date) {
-      dateStr = Utilities.formatDate(rawDate, TZ, 'yyyy-MM-dd');
+      dateStr = Utilities.formatDate(rawDate, DS_TZ, 'yyyy-MM-dd');
     } else if (typeof rawDate === 'number' && isFinite(rawDate)) {
       const dt = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
-      dateStr = Utilities.formatDate(dt, TZ, 'yyyy-MM-dd');
+      dateStr = Utilities.formatDate(dt, DS_TZ, 'yyyy-MM-dd');
     } else {
       const s = String(rawDate);
       if (!/^\d{4}-\d{2}-\d{2}/.test(s)) continue;
@@ -166,7 +170,7 @@ function backfillFromHistory() {
     Logger.log('Nothing to backfill');
     return;
   }
-  dest.getRange(dest.getLastRow() + 1, 1, out.length, HEADERS.length).setValues(out);
+  dest.getRange(dest.getLastRow() + 1, 1, out.length, DS_HEADERS.length).setValues(out);
   Logger.log('Backfilled ' + out.length + ' rows from History');
 }
 
