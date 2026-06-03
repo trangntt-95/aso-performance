@@ -8,6 +8,7 @@ import {
   topCountriesFor,
   categoryShareFor,
   categoryShareForRange,
+  channelSplit,
   computeKpis,
   kpisForRange,
   dailyTrend,
@@ -36,6 +37,50 @@ function filtersText(f: OverviewFilters): string {
       .filter(Boolean)
       .join(' · ') || 'không'
   );
+}
+
+/** Channel split (Organic vs Paid) across all rolling windows — not date-scopeable. */
+function channelSplitSheet(data: SheetPayload | undefined, note?: string): ExportSheet {
+  const pts = channelSplit(data);
+  const header: Cell[] = note ? [note] : [];
+  return {
+    name: 'Channel Split',
+    rows: [
+      ...(header.length ? [header] : []),
+      ['Window', 'Organic Users', 'Paid Users', 'Organic Install', 'Paid Install', 'Organic %', 'Paid %'],
+      ...pts.map((p): Cell[] => {
+        const totU = p.organicUsers + p.paidUsers;
+        return [
+          p.window,
+          p.organicUsers,
+          p.paidUsers,
+          p.organicGetApp,
+          p.paidGetApp,
+          totU > 0 ? pct(p.organicUsers / totU) : '',
+          totU > 0 ? pct(p.paidUsers / totU) : '',
+        ];
+      }),
+    ],
+  };
+}
+
+/** Country rollup (every country) for a window. */
+function topCountriesSheet(
+  data: SheetPayload | undefined,
+  window: OverviewWindow,
+  filters: OverviewFilters,
+  note?: string,
+): ExportSheet {
+  const countries = topCountriesFor(data, window, 9999, filters);
+  const header: Cell[] = note ? [note] : [];
+  return {
+    name: 'Top Countries',
+    rows: [
+      ...(header.length ? [header] : []),
+      ['Country', 'Users', 'Install', 'CR', 'Alerts'],
+      ...countries.map((c): Cell[] => [c.country, c.users, c.getApp, pct(c.cr), c.alertCount]),
+    ],
+  };
 }
 
 /** Build the full set of Overview sheets (every row, all columns) for the current view. */
@@ -97,6 +142,12 @@ export function buildOverviewSheets(data: SheetPayload | undefined, view: Overvi
         ...cat.map((c): Cell[] => [c.category, c.users, c.getApp, pct(c.share), pct(c.cr)]),
       ],
     });
+
+    // Country + channel split CANNOT be date-scoped (History_Daily has no per-day
+    // country/window dimension). Include the rolling-window snapshot, clearly labelled.
+    const dateNote = `⚠ Snapshot cửa sổ ${window} — KHÔNG theo ngày (data per-day không có country/channel)`;
+    sheets.push(topCountriesSheet(data, window, filters, dateNote));
+    sheets.push(channelSplitSheet(data, dateNote));
     return sheets;
   }
 
@@ -204,14 +255,10 @@ export function buildOverviewSheets(data: SheetPayload | undefined, view: Overvi
   });
 
   // Country rollup (every country, not just top N).
-  const countries = topCountriesFor(data, window, 9999, filters);
-  sheets.push({
-    name: 'Top Countries',
-    rows: [
-      ['Country', 'Users', 'Install', 'CR', 'Alerts'],
-      ...countries.map((c): Cell[] => [c.country, c.users, c.getApp, pct(c.cr), c.alertCount]),
-    ],
-  });
+  sheets.push(topCountriesSheet(data, window, filters));
+
+  // Channel split (Organic vs Paid) across all windows.
+  sheets.push(channelSplitSheet(data));
 
   // Category share (all categories).
   const cats = categoryShareFor(data, window, filters);
