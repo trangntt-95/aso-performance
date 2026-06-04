@@ -595,6 +595,46 @@ export function dailyTrend(
     a.hasL7D = true;
   }
 
+  // TRUSTED per-day install: rows fetched from GA4 by runDailyPerDaySnapshot /
+  // backfillPerDay (source daily_perday / true_daily) carry REAL attributed
+  // install per kw×surface — unlike the old backfill's getAppDaily (ad-clicks).
+  // Rolling-7d over these reproduces getAppL7D (verified: matches within ~10%
+  // on the 26/05→02/06 overlap), letting Install/CR extend before 20/05.
+  const TRUSTED_PERDAY = new Set(['daily_perday', 'true_daily']);
+  const trustedSeen = new Set<string>();
+  const trustedByDate = new Map<number, { users: number; getApp: number }>();
+  for (const r of data.historyDaily ?? []) {
+    if (!TRUSTED_PERDAY.has(r.source)) continue;
+    if (target && r.surface !== target) continue;
+    if (kw && r.searchTerm.toLowerCase() !== kw) continue;
+    const k = dateKey(r.snapshotDate);
+    if (k === null) continue;
+    const key = `${k}|${r.searchTerm.toLowerCase()}|${r.surface}`;
+    if (trustedSeen.has(key)) continue; // daily_perday + true_daily dupes
+    trustedSeen.add(key);
+    let t = trustedByDate.get(k);
+    if (!t) {
+      t = { users: 0, getApp: 0 };
+      trustedByDate.set(k, t);
+    }
+    t.users += r.usersDaily ?? 0;
+    t.getApp += r.getAppDaily ?? 0;
+  }
+  const rollingTrusted = (serial: number): { users: number; getApp: number } | null => {
+    let users = 0;
+    let getApp = 0;
+    let any = false;
+    for (let s = serial - 6; s <= serial; s++) {
+      const t = trustedByDate.get(s);
+      if (t) {
+        users += t.users;
+        getApp += t.getApp;
+        any = true;
+      }
+    }
+    return any ? { users, getApp } : null;
+  };
+
   // Synthetic rolling-7d Users for dates older than the L7D snapshots (~07/05).
   // usersDaily is real per-day users, so summing the trailing 7 calendar days
   // reproduces the same rolling-7d basis as usersL7D (no fake ~7× spike) and
@@ -628,10 +668,18 @@ export function dailyTrend(
       // Prefer the real L7D snapshot; fall back to synthetic rolling-7d for the
       // older backfill-only dates so L30/L90/L365 show full Users history.
       const users = agg.usersL7D > 0 ? agg.usersL7D : rolling7Users(serial) ?? 0;
-      const getApp = agg.getAppL7D;
+      // Install/CR: real getAppL7D (exists from 20/05) first, else rolling-7d
+      // from trusted per-day install (extends back as far as backfillPerDay ran).
+      const trusted = agg.getAppL7D === null ? rollingTrusted(serial) : null;
+      const getApp = agg.getAppL7D ?? (trusted ? trusted.getApp : null);
       const crNumer = agg.getAppL7DForCr;
       const crDenom = agg.usersL7DForCr;
-      const cr = crDenom > 0 ? crNumer / crDenom : null;
+      const cr =
+        crDenom > 0
+          ? crNumer / crDenom
+          : trusted && trusted.users > 0
+          ? trusted.getApp / trusted.users
+          : null;
       return {
         date: `${yyyy}-${mm}-${dd}`,
         dateLabel: `${dd}/${mm}`,
@@ -699,8 +747,19 @@ function dedupeDailyRows(rows: HistoryDailyRow[]): HistoryDailyRow[] {
   // where a per-day row exists). MERGE field-wise instead: first non-null wins
   // per column (so duplicate per-day sources like daily_perday vs true_daily
   // don't double-count), and usersL7D takes the max (0 = missing).
+  // Source priority for the merge: GA4-fetched per-day rows (daily_perday /
+  // true_daily) carry REAL attributed install, while the old l90/l30 backfill's
+  // getAppDaily is paid ad-CLICKS. Sort trusted-first so first-non-null per
+  // column prefers the real numbers when both exist for a (date, kw, surface).
+  const rank = (r: HistoryDailyRow): number => {
+    const s = r.source || '';
+    if (s === 'daily_perday' || s === 'true_daily') return 0;
+    if (s === 'l7_snapshot') return 1;
+    if (s === 'l90_backfill' || s === 'l30_backfill') return 3;
+    return 2;
+  };
   const map = new Map<string, HistoryDailyRow>();
-  for (const r of rows) {
+  for (const r of [...rows].sort((a, b) => rank(a) - rank(b))) {
     const iso = isoFromSnapshot(r.snapshotDate);
     if (iso === null) continue;
     const key = `${iso}|${r.searchTerm.toLowerCase()}|${r.surface}`;
