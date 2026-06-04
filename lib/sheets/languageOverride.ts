@@ -1,4 +1,5 @@
 import type { KeywordRow, MasterKwRow, SnapshotRow } from './types';
+import { normKw } from './kwNorm';
 
 // Keywords classified EXCLUSIVELY as 'Language' in Master KW Lookup. Catches
 // ASCII non-English terms (steuern, finanze, inventario, analitica…) that the
@@ -8,7 +9,7 @@ import type { KeywordRow, MasterKwRow, SnapshotRow } from './types';
 export function languageOnlyKeywords(master: MasterKwRow[]): Set<string> {
   const cats = new Map<string, Set<string>>();
   for (const r of master) {
-    const k = r.keyword.toLowerCase();
+    const k = normKw(r.keyword);
     if (!cats.has(k)) cats.set(k, new Set());
     if (r.category) cats.get(k)!.add(r.category);
   }
@@ -25,7 +26,7 @@ export function overrideToLanguage<T extends KeywordRow | SnapshotRow>(
 ): T[] {
   if (langKws.size === 0) return rows;
   return rows.map((r) =>
-    r.category !== 'Language' && langKws.has(r.searchTerm.toLowerCase())
+    r.category !== 'Language' && langKws.has(normKw(r.searchTerm))
       ? { ...r, category: 'Language' as const }
       : r,
   );
