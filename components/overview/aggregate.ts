@@ -692,17 +692,31 @@ interface DailyKwRow {
  * most complete (true per-day values, then install present).
  */
 function dedupeDailyRows(rows: HistoryDailyRow[]): HistoryDailyRow[] {
-  const score = (x: HistoryDailyRow) =>
-    (x.usersDaily !== null ? 4 : 0) +
-    (x.getAppDaily !== null ? 2 : 0) +
-    (x.getAppL7D !== null ? 1 : 0);
+  // Rows for the same (date, kw, surface) can be COMPLEMENTARY, not just
+  // redundant: daily_perday/backfill rows carry the Daily columns while
+  // l7_snapshot/(empty)/legacy_history rows carry the L7D columns. Picking one
+  // "winner" row dropped the other side (e.g. Install L7D vanished on dates
+  // where a per-day row exists). MERGE field-wise instead: first non-null wins
+  // per column (so duplicate per-day sources like daily_perday vs true_daily
+  // don't double-count), and usersL7D takes the max (0 = missing).
   const map = new Map<string, HistoryDailyRow>();
   for (const r of rows) {
     const iso = isoFromSnapshot(r.snapshotDate);
     if (iso === null) continue;
     const key = `${iso}|${r.searchTerm.toLowerCase()}|${r.surface}`;
     const cur = map.get(key);
-    if (!cur || score(r) > score(cur)) map.set(key, r);
+    if (!cur) {
+      map.set(key, { ...r });
+      continue;
+    }
+    cur.usersDaily = cur.usersDaily ?? r.usersDaily;
+    cur.getAppDaily = cur.getAppDaily ?? r.getAppDaily;
+    cur.crDaily = cur.crDaily ?? r.crDaily;
+    cur.posDaily = cur.posDaily ?? r.posDaily;
+    cur.usersL7D = Math.max(cur.usersL7D, r.usersL7D);
+    cur.getAppL7D = cur.getAppL7D ?? r.getAppL7D;
+    cur.crL7D = cur.crL7D ?? r.crL7D;
+    cur.posL7D = cur.posL7D ?? r.posL7D;
   }
   return Array.from(map.values());
 }
