@@ -3,6 +3,7 @@ import type {
   AlertLogRow,
   AlertType,
   BidAction,
+  CampLinkRow,
   Category,
   DynamicBasketItem,
   ExecutiveSummary,
@@ -555,6 +556,46 @@ export function parseMasterKw(rows: string[][]): MasterKwRow[] {
       };
     })
     .filter((r): r is MasterKwRow => r !== null);
+}
+
+// ---------------------------------------------------------------------------
+// Paused_camp — keyword rows of campaigns that have been PAUSED (same schema as
+// Master KW Lookup, header on row 2). parseMasterKw's header detection handles
+// it as-is; alias kept for call-site clarity.
+// ---------------------------------------------------------------------------
+
+export const parsePausedCamp = parseMasterKw;
+
+// ---------------------------------------------------------------------------
+// Camp_Links — Camp Name → Campaign ID / URL / Geo targeting.
+// Row 1 = title, row 2 = header (Category | Camp Name | Campaign ID | URL | Geo),
+// row 3+ = data. Geo cell is messy (VN/EN names, "-IN, PK" exclusions, blanks).
+// ---------------------------------------------------------------------------
+
+export function parseCampLinks(rows: string[][]): CampLinkRow[] {
+  if (!rows || rows.length < 3) return [];
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    if (str(rows[i]?.[0]).trim() === 'Category' && str(rows[i]?.[2]).trim() === 'Campaign ID') {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return [];
+  return rows
+    .slice(headerIdx + 1)
+    .map((row): CampLinkRow | null => {
+      const camp = str(row?.[1]).trim();
+      if (!camp) return null;
+      return {
+        category: str(row[0]).trim(),
+        camp,
+        campaignId: str(row[2]).trim(),
+        url: str(row[3]).trim(),
+        geoRaw: str(row[4]).trim(),
+      };
+    })
+    .filter((r): r is CampLinkRow => r !== null);
 }
 
 // ---------------------------------------------------------------------------

@@ -235,6 +235,15 @@ export interface MasterKwRow {
   classification: string;
 }
 
+export interface CampLinkRow {
+  category: string;
+  camp: string;
+  campaignId: string;
+  url: string;
+  /** Raw Geo cell — mixed VN/EN country names, "-IN, PK" exclusions, "All countries/regions". */
+  geoRaw: string;
+}
+
 export interface AlertLogRow {
   snapshotDate: string | number;
   keyword: string;
@@ -288,6 +297,11 @@ export interface SheetPayload {
   alertLog: AlertLogRow[];
   kwAddedManual: KwAddedManualRow[];
   masterKwLookup: MasterKwRow[];
+  /** Keyword rows of PAUSED campaigns ('Paused_camp' tab, same schema as Master).
+   *  Camps listed here are no longer bidding — excluded from "In Paid". */
+  pausedKw: MasterKwRow[];
+  /** Camp → Campaign ID / URL / Geo targeting ('Camp_Links' tab). */
+  campLinks: CampLinkRow[];
   /** Keywords explicitly set as negatives (from 'Negative KW list' tab, col B). */
   negativeKw: string[];
   /** Actual date range each window (L3/L7/...) covers, parsed from tab titles. */

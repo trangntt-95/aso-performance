@@ -16,6 +16,28 @@ export function PaidStatusBadge({
   if (status.negative) {
     return null;
   }
+  // Previously bid, but every camp containing it is paused → treat as not bid,
+  // distinct badge so it's clear this isn't a brand-new keyword.
+  if (status.paused) {
+    const camps = status.pausedCamps ?? [];
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center rounded font-medium bg-orange-100 text-orange-900',
+          pad,
+          text,
+          className,
+        )}
+        title={
+          camps.length > 0
+            ? `Từng bid nhưng camp đã pause: ${camps.slice(0, 3).join(' · ')}${camps.length > 3 ? ` (+${camps.length - 3})` : ''}`
+            : 'Từng bid nhưng camp đã pause'
+        }
+      >
+        ⏸ Paused camp
+      </span>
+    );
+  }
   if (!status.inPaid) {
     return (
       <span
@@ -25,7 +47,7 @@ export function PaidStatusBadge({
           text,
           className,
         )}
-        title="Không tìm thấy trong Master KW Lookup, KW_Added_Manual và Negative KW list"
+        title="Không tìm thấy trong Master KW Lookup (camp active), KW_Added_Manual, Paused_camp và Negative KW list"
       >
         ❌ Not in Paid
       </span>

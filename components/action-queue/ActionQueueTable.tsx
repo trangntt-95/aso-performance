@@ -30,8 +30,8 @@ export function ActionQueueTable() {
   const allRows = useMemo(() => data?.actionQueue ?? [], [data]);
 
   const paidIndex = useMemo(
-    () => buildPaidStatusIndex(data?.masterKwLookup ?? [], data?.kwAddedManual ?? [], data?.negativeKw ?? []),
-    [data?.masterKwLookup, data?.kwAddedManual, data?.negativeKw],
+    () => buildPaidStatusIndex(data?.masterKwLookup ?? [], data?.kwAddedManual ?? [], data?.negativeKw ?? [], data?.pausedKw ?? []),
+    [data?.masterKwLookup, data?.kwAddedManual, data?.negativeKw, data?.pausedKw],
   );
 
   const filtered = useMemo(() => {
@@ -47,6 +47,8 @@ export function ActionQueueTable() {
           const ps = resolvePaidStatus(r.keyword, paidIndex);
           if (filters.paidStatus === 'in_paid' && ps.source !== 'master') return false;
           if (filters.paidStatus === 'manual' && ps.source !== 'manual') return false;
+          if (filters.paidStatus === 'paused' && ps.source !== 'paused') return false;
+          // not_in_paid INCLUDES paused (camp tắt = đang không bid) but excludes negatives.
           if (filters.paidStatus === 'not_in_paid' && (ps.inPaid || ps.negative)) return false;
         }
         if (q) {

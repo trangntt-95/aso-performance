@@ -21,6 +21,8 @@ export const TABS = [
   'KW_Added_Manual',
   'Master KW Lookup',
   'Negative KW list',
+  'Paused_camp',
+  'Camp_Links',
 ] as const;
 
 export type TabName = (typeof TABS)[number];

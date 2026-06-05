@@ -4,6 +4,7 @@ import { fetchAllTabs } from '@/lib/sheets/client';
 import {
   parseActionQueue,
   parseAlertLog,
+  parseCampLinks,
   parseHistory,
   parseHistoryDaily,
   parseKeywordTab,
@@ -11,6 +12,7 @@ import {
   parseMarketIndex,
   parseMasterKw,
   parseNegativeKw,
+  parsePausedCamp,
   parseSnapshot,
   parseWindowDateRange,
   parseTier1Watch,
@@ -93,6 +95,8 @@ async function fetchPayload(): Promise<SheetPayload> {
     alertLog: parseAlertLog(raw['AlertLog'] ?? []),
     kwAddedManual: parseKwAddedManual(raw['KW_Added_Manual'] ?? []),
     masterKwLookup,
+    pausedKw: parsePausedCamp(raw['Paused_camp'] ?? []),
+    campLinks: parseCampLinks(raw['Camp_Links'] ?? []),
     negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
     windowDates: (() => {
       const wd: Record<string, { from: string; to: string }> = {};

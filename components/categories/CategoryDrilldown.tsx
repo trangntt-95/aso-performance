@@ -19,6 +19,7 @@ import type {
   KeywordRow,
   KwAddedManualRow,
   MasterKwRow,
+  SnapshotRow,
   SurfaceLabel,
 } from '@/lib/sheets/types';
 import { buildPaidStatusIndex, resolvePaidStatus, type PaidStatus } from '@/lib/sheets/paidStatus';
@@ -29,6 +30,8 @@ interface KeywordSummary extends PaidStatus {
   l7: KeywordRow | null;
   l30: KeywordRow | null;
   l90: KeywordRow | null;
+  /** L365 snapshot — catches long-tail keywords with no traffic in the last 90d. */
+  l365: SnapshotRow | null;
   countries: string[];
 }
 
@@ -37,18 +40,21 @@ function buildSummaries(
   allL7: KeywordRow[],
   allL30: KeywordRow[],
   allL90: KeywordRow[],
+  allL365: SnapshotRow[],
   countryL7: KeywordRow[],
   masterKwLookup: MasterKwRow[],
   kwAddedManual: KwAddedManualRow[],
   negativeKw: string[],
+  pausedKw: MasterKwRow[],
 ): KeywordSummary[] {
   const inCategory = <T extends { category: string }>(rows: T[]) =>
     rows.filter((r) => r.category === category);
   const l7 = inCategory(allL7);
   const l30 = inCategory(allL30);
   const l90 = inCategory(allL90);
+  const l365 = inCategory(allL365);
 
-  const paidIndex = buildPaidStatusIndex(masterKwLookup, kwAddedManual, negativeKw);
+  const paidIndex = buildPaidStatusIndex(masterKwLookup, kwAddedManual, negativeKw, pausedKw);
 
   const keyMap = new Map<string, KeywordSummary>();
   const ensure = (term: string, surface: SurfaceLabel) => {
@@ -60,6 +66,7 @@ function buildSummaries(
         l7: null,
         l30: null,
         l90: null,
+        l365: null,
         countries: [],
         ...resolvePaidStatus(term, paidIndex),
       });
@@ -79,6 +86,10 @@ function buildSummaries(
     const surface = r.surface === 'search_ad' ? 'paid' : 'organic';
     ensure(r.searchTerm, surface).l90 = r;
   });
+  l365.forEach((r) => {
+    const surface = r.surface === 'search_ad' ? 'paid' : 'organic';
+    ensure(r.searchTerm, surface).l365 = r;
+  });
 
   const countriesByTerm = new Map<string, Set<string>>();
   inCategory(countryL7).forEach((r) => {
@@ -92,10 +103,26 @@ function buildSummaries(
   });
 
   return Array.from(keyMap.values()).sort((a, b) => {
-    const ua = a.l7?.usersL ?? a.l30?.usersL ?? 0;
-    const ub = b.l7?.usersL ?? b.l30?.usersL ?? 0;
+    const ua = a.l7?.usersL ?? a.l30?.usersL ?? a.l90?.usersL ?? a.l365?.users ?? 0;
+    const ub = b.l7?.usersL ?? b.l30?.usersL ?? b.l90?.usersL ?? b.l365?.users ?? 0;
     return ub - ua;
   });
+}
+
+function SnapshotCell({ row }: { row: SnapshotRow | null }) {
+  if (!row) {
+    return <td className="px-2 py-1.5 text-center text-slate-300">—</td>;
+  }
+  return (
+    <td className="px-2 py-1.5 text-[11px] align-top">
+      <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+        <span className="font-mono">U {formatNumber(row.users, { compact: true })}</span>
+        <span className="font-mono text-slate-500">I {formatNumber(row.getApp, { compact: true })}</span>
+        <span className="font-mono text-slate-500">CR {formatPercent(row.cr)}</span>
+        <span className="font-mono text-slate-500">P {formatPos(row.pos)}</span>
+      </div>
+    </td>
+  );
 }
 
 function MetricsCell({ row }: { row: KeywordRow | null }) {
@@ -124,7 +151,7 @@ function MetricsCell({ row }: { row: KeywordRow | null }) {
 }
 
 type SurfaceFilter = 'all' | 'organic' | 'paid';
-type PaidFilter = 'all' | 'in_paid' | 'manual' | 'not_in_paid';
+type PaidFilter = 'all' | 'in_paid' | 'manual' | 'paused' | 'not_in_paid';
 type MetricWindow = 'l7' | 'l30' | 'l90';
 
 export function CategoryDrilldown({ category }: { category: string }) {
@@ -146,10 +173,12 @@ export function CategoryDrilldown({ category }: { category: string }) {
       data.allL7,
       data.allL30,
       data.allL90,
+      data.allL365 ?? [],
       data.countryL7,
       data.masterKwLookup ?? [],
       data.kwAddedManual ?? [],
       data.negativeKw ?? [],
+      data.pausedKw ?? [],
     );
   }, [data, category]);
 
@@ -168,10 +197,12 @@ export function CategoryDrilldown({ category }: { category: string }) {
       if (surfaceFilter !== 'all' && r.surface !== surfaceFilter) return false;
       if (paidFilter === 'in_paid' && r.source !== 'master') return false;
       if (paidFilter === 'manual' && r.source !== 'manual') return false;
+      if (paidFilter === 'paused' && r.source !== 'paused') return false;
+      // not_in_paid INCLUDES paused (camp tắt = đang không bid) but excludes negatives.
       if (paidFilter === 'not_in_paid' && (r.inPaid || r.negative)) return false;
       if (countryFilter !== 'all' && !r.countries.includes(countryFilter)) return false;
       if (q) {
-        const hay = `${r.searchTerm} ${(r.l7?.english ?? r.l30?.english ?? r.l90?.english ?? '')}`.toLowerCase();
+        const hay = `${r.searchTerm} ${(r.l7?.english ?? r.l30?.english ?? r.l90?.english ?? r.l365?.english ?? '')}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       // Numeric thresholds — pulled from the chosen metric window (L7/L30/L90).
@@ -272,7 +303,8 @@ export function CategoryDrilldown({ category }: { category: string }) {
             <option value="all">Paid status: All</option>
             <option value="in_paid">📌 In Paid (Master)</option>
             <option value="manual">✍️ Added (manual)</option>
-            <option value="not_in_paid">❌ Not in Paid</option>
+            <option value="paused">⏸ Paused camp</option>
+            <option value="not_in_paid">❌ Not in Paid (gồm ⏸)</option>
           </select>
           {countries.length > 0 && (
             <select
@@ -363,13 +395,14 @@ export function CategoryDrilldown({ category }: { category: string }) {
                 <th className="px-2 py-2 text-left font-medium">L7</th>
                 <th className="px-2 py-2 text-left font-medium">L30</th>
                 <th className="px-2 py-2 text-left font-medium">L90</th>
+                <th className="px-2 py-2 text-left font-medium">L365</th>
                 <th className="px-2 py-2 text-left font-medium">Paid?</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((row) => {
                 const english =
-                  row.l7?.english ?? row.l30?.english ?? row.l90?.english ?? '';
+                  row.l7?.english ?? row.l30?.english ?? row.l90?.english ?? row.l365?.english ?? '';
                 // Show translation only when source kw is non-English: either
                 // non-ASCII script (Thai/Chinese/accented Latin) OR the kw lives
                 // in the Language category (catches ASCII non-EN like steuern).
@@ -409,6 +442,7 @@ export function CategoryDrilldown({ category }: { category: string }) {
                   <MetricsCell row={row.l7} />
                   <MetricsCell row={row.l30} />
                   <MetricsCell row={row.l90} />
+                  <SnapshotCell row={row.l365} />
                   <td className="px-2 py-1.5 align-top">
                     <PaidStatusBadge status={row} />
                   </td>

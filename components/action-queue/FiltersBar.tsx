@@ -7,7 +7,7 @@ import type { ActionQueueRow, Category, Priority, RowStatus, SurfaceLabel } from
 import { cn } from '@/lib/utils';
 import { useMemo } from 'react';
 
-export type PaidStatusFilter = 'all' | 'in_paid' | 'manual' | 'not_in_paid';
+export type PaidStatusFilter = 'all' | 'in_paid' | 'manual' | 'paused' | 'not_in_paid';
 
 export interface FilterState {
   search: string;
@@ -72,7 +72,8 @@ const PAID_STATUSES: Array<{ value: PaidStatusFilter; label: string }> = [
   { value: 'all', label: 'Paid: All' },
   { value: 'in_paid', label: '📌 In Paid' },
   { value: 'manual', label: '✍️ Added (manual)' },
-  { value: 'not_in_paid', label: '❌ Not in Paid' },
+  { value: 'paused', label: '⏸ Paused camp' },
+  { value: 'not_in_paid', label: '❌ Not in Paid (gồm ⏸)' },
 ];
 
 function Pill({
