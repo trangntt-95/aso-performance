@@ -213,6 +213,7 @@ export function PaidCoverageView() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [minUsers, setMinUsers] = useState<string>('');
+  const [minInstalls, setMinInstalls] = useState<string>('');
   const [win, setWin] = useState<Win>('l365');
 
   const rows = useMemo(() => (data ? buildRows(data) : []), [data]);
@@ -230,6 +231,7 @@ export function PaidCoverageView() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const minU = minUsers.trim() === '' ? null : Number(minUsers);
+    const minI = minInstalls.trim() === '' ? null : Number(minInstalls);
     return rows
       .filter((r) => {
         if (statusFilter === 'in_paid' && r.source !== 'master') return false;
@@ -248,6 +250,9 @@ export function PaidCoverageView() {
         if (minU !== null && Number.isFinite(minU)) {
           if ((r[win]?.users ?? 0) < minU) return false;
         }
+        if (minI !== null && Number.isFinite(minI)) {
+          if ((r[win]?.installs ?? 0) < minI) return false;
+        }
         if (q) {
           const hay = `${r.keyword} ${r.english}`.toLowerCase();
           if (!hay.includes(q)) return false;
@@ -255,20 +260,22 @@ export function PaidCoverageView() {
         return true;
       })
       .sort((a, b) => (b[win]?.users ?? 0) - (a[win]?.users ?? 0));
-  }, [rows, search, statusFilter, categoryFilter, countryFilter, minUsers, win]);
+  }, [rows, search, statusFilter, categoryFilter, countryFilter, minUsers, minInstalls, win]);
 
   const dirty =
     search !== '' ||
     statusFilter !== 'not_in_paid' ||
     categoryFilter !== 'all' ||
     countryFilter !== 'all' ||
-    minUsers !== '';
+    minUsers !== '' ||
+    minInstalls !== '';
   const resetAll = () => {
     setSearch('');
     setStatusFilter('not_in_paid');
     setCategoryFilter('all');
     setCountryFilter('all');
     setMinUsers('');
+    setMinInstalls('');
   };
 
   if (error) {
@@ -349,6 +356,16 @@ export function PaidCoverageView() {
               onChange={(e) => setMinUsers(e.target.value)}
               placeholder="0"
               className="h-6 w-14 text-[11px] px-1 border-0 focus-visible:ring-1"
+            />
+            <span className="text-[10px] text-slate-700 font-medium border-l border-slate-200 pl-1.5">I≥</span>
+            <Input
+              type="number"
+              min="0"
+              value={minInstalls}
+              onChange={(e) => setMinInstalls(e.target.value)}
+              placeholder="0"
+              className="h-6 w-14 text-[11px] px-1 border-0 focus-visible:ring-1"
+              title="Min Install trong window đang chọn"
             />
             <select
               value={win}
