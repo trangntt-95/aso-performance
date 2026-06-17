@@ -262,6 +262,13 @@ export function PaidCoverageView() {
       .sort((a, b) => (b[win]?.users ?? 0) - (a[win]?.users ?? 0));
   }, [rows, search, statusFilter, categoryFilter, countryFilter, minUsers, minInstalls, win]);
 
+  // "Pure" not-in-paid: loại bỏ cả ⏸ paused camp và 🚫 negative — danh sách kw
+  // thật sự chưa từng / không nên bid, dùng để copy vào camp mới.
+  const notInPaidPure = useMemo(
+    () => filtered.filter((r) => !r.paused && !r.negative).map((r) => r.keyword),
+    [filtered],
+  );
+
   const dirty =
     search !== '' ||
     statusFilter !== 'not_in_paid' ||
@@ -387,11 +394,18 @@ export function PaidCoverageView() {
               Reset
             </Button>
           )}
-          <CopyKeywordsButton
-            keywords={filtered.map((r) => r.keyword)}
-            label={statusFilter === 'not_in_paid' ? 'Copy Not-in-Paid kw' : 'Copy keywords'}
-            className="ml-auto"
-          />
+          <div className="ml-auto flex items-center gap-2">
+            <CopyKeywordsButton
+              keywords={filtered.map((r) => r.keyword)}
+              label={statusFilter === 'not_in_paid' ? 'Copy Not-in-Paid (gồm ⏸)' : 'Copy keywords'}
+            />
+            {statusFilter === 'not_in_paid' && (
+              <CopyKeywordsButton
+                keywords={notInPaidPure}
+                label="Copy (loại ⏸ + 🚫)"
+              />
+            )}
+          </div>
         </div>
       )}
 
