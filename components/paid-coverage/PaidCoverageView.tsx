@@ -347,31 +347,32 @@ export function PaidCoverageView() {
               </option>
             ))}
           </select>
-          <div className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5">
-            <span className="text-[10px] text-slate-700 font-medium">U≥</span>
+          <div className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-0.5">
+            <span className="text-[10px] text-slate-600 font-medium">Users ≥</span>
             <Input
               type="number"
               min="0"
               value={minUsers}
               onChange={(e) => setMinUsers(e.target.value)}
               placeholder="0"
-              className="h-6 w-14 text-[11px] px-1 border-0 focus-visible:ring-1"
+              className="h-6 w-12 text-[11px] px-1 border-0 focus-visible:ring-1"
+              title="Min Users trong window đang chọn"
             />
-            <span className="text-[10px] text-slate-700 font-medium border-l border-slate-200 pl-1.5">I≥</span>
+            <span className="text-[10px] text-slate-600 font-medium border-l border-slate-200 pl-2">Install ≥</span>
             <Input
               type="number"
               min="0"
               value={minInstalls}
               onChange={(e) => setMinInstalls(e.target.value)}
               placeholder="0"
-              className="h-6 w-14 text-[11px] px-1 border-0 focus-visible:ring-1"
+              className="h-6 w-12 text-[11px] px-1 border-0 focus-visible:ring-1"
               title="Min Install trong window đang chọn"
             />
             <select
               value={win}
               onChange={(e) => setWin(e.target.value as Win)}
               className="h-6 px-1 text-[10px] rounded bg-slate-50 text-slate-700 border-0 focus:outline-none"
-              title="Window dùng cho min users + sort"
+              title="Window áp dụng cho filter Users/Install + sort"
             >
               {(Object.keys(WIN_LABEL) as Win[]).map((w) => (
                 <option key={w} value={w}>
