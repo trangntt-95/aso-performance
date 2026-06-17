@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { categoryStyle } from '@/lib/utils/colors';
-import { formatNumber, parseSheetDate } from '@/lib/utils/format';
+import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 import type { BidCapRow } from '@/lib/sheets/types';
 
@@ -30,9 +30,12 @@ function catStyle(category: string) {
 function statusStyle(status: string): { bg: string; text: string } {
   const s = status.toUpperCase();
   if (s.includes('NO CAMP')) return { bg: 'bg-rose-100', text: 'text-rose-800' };
-  if (s.includes('IMP ONLY') || s.includes('NO CLICK')) return { bg: 'bg-amber-100', text: 'text-amber-800' };
+  if (s.includes('IMP ONLY') || s.includes('NO CLICK') || s.includes('NO CONV'))
+    return { bg: 'bg-amber-100', text: 'text-amber-800' };
+  if (s.includes('EARLY')) return { bg: 'bg-sky-100', text: 'text-sky-800' };
   if (s.includes('PAUSE')) return { bg: 'bg-slate-200', text: 'text-slate-600' };
-  if (s.includes('ACTIVE') || s.includes('OK') || s.includes('BIDDING')) return { bg: 'bg-emerald-100', text: 'text-emerald-800' };
+  if (s.includes('PROVEN') || s.includes('ACTIVE') || s.includes('OK') || s.includes('BIDDING'))
+    return { bg: 'bg-emerald-100', text: 'text-emerald-800' };
   return { bg: 'bg-slate-100', text: 'text-slate-600' };
 }
 
@@ -60,29 +63,22 @@ export function BidCapView() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [sort, setSort] = useState<SortKey>('bid_desc');
 
-  const { tiers, countries, categories, statuses, lastUpdated, dataWindow } = useMemo(() => {
+  const { tiers, countries, categories, statuses } = useMemo(() => {
     const t = new Set<string>();
     const c = new Set<string>();
     const cat = new Set<string>();
     const st = new Set<string>();
-    let updated: Date | null = null;
-    let win = '';
     rows.forEach((r) => {
       if (r.tier) t.add(r.tier);
       if (r.country) c.add(r.country);
       if (r.category) cat.add(r.category);
       if (r.status) st.add(r.status);
-      if (!win && r.dataWindow) win = r.dataWindow;
-      const d = parseSheetDate(r.lastUpdated);
-      if (d && (!updated || d > updated)) updated = d;
     });
     return {
       tiers: Array.from(t).sort(),
       countries: Array.from(c).sort(),
       categories: Array.from(cat).sort(),
       statuses: Array.from(st).sort(),
-      lastUpdated: updated as Date | null,
-      dataWindow: win,
     };
   }, [rows]);
 
@@ -150,9 +146,8 @@ export function BidCapView() {
       <div className="text-xs text-slate-500">
         Mức bid <strong>recommend</strong> cho từng <strong>Country × Category</strong> (tính sẵn trong sheet{' '}
         <code className="text-[10px]">Max bid cap</code>). <strong>Bid rec</strong> = mức nên set;{' '}
-        <strong>ceiling</strong> = trần tối đa theo CPI cap. Filter theo tier / country / category / status.
-        {dataWindow && <> · Data: {dataWindow}</>}
-        {lastUpdated && <> · Cập nhật {lastUpdated.toISOString().slice(0, 10)}</>}
+        <strong>ceiling</strong> = trần tối đa (Max Allowed); <strong>Est pos</strong> = vị trí dự kiến tại
+        mức bid rec. Filter theo tier / country / category / status.
       </div>
 
       {/* Filters */}
@@ -233,10 +228,10 @@ export function BidCapView() {
                 <th className="px-3 py-2 text-left font-medium min-w-[11rem]">Country</th>
                 <th className="px-2 py-2 text-left font-medium">Category</th>
                 <th className="px-2 py-2 text-left font-medium">Status</th>
-                <th className="px-2 py-2 text-right font-medium" title="Mức bid nên set">Bid rec</th>
-                <th className="px-2 py-2 text-right font-medium" title="Trần tối đa theo CPI cap">Ceiling</th>
-                <th className="px-2 py-2 text-right font-medium" title="CPI cap dùng để tính trần">CPI cap</th>
-                <th className="px-2 py-2 text-right font-medium" title="Conversion rate dùng để tính bid (+ nguồn)">CR used</th>
+                <th className="px-2 py-2 text-right font-medium" title="Mức bid nên set (Bid Rec ⭐)">Bid rec</th>
+                <th className="px-2 py-2 text-right font-medium" title="Trần tối đa cho phép (Max Allowed)">Ceiling</th>
+                <th className="px-2 py-2 text-right font-medium" title="Vị trí dự kiến tại mức bid rec">Est pos</th>
+                <th className="px-2 py-2 text-right font-medium" title="Conversion rate dùng để tính bid">CR used</th>
                 <th className="px-2 py-2 text-right font-medium" title="L30: Impressions / Clicks / Installs">L30 imp/clk/inst</th>
                 <th className="px-2 py-2 text-left font-medium min-w-[14rem]">Action</th>
               </tr>
@@ -264,18 +259,27 @@ export function BidCapView() {
                         {r.status || '—'}
                       </span>
                     </td>
-                    <td className="px-2 py-1.5 align-top text-right">
+                    <td className="px-2 py-1.5 align-top text-right whitespace-nowrap">
                       <span className="font-mono font-semibold text-sm text-indigo-700">{money(r.bidRecommended)}</span>
+                      {r.ceilBlocked && (
+                        <span
+                          className="ml-1 inline-flex items-center px-1 py-0.5 rounded text-[9px] font-medium bg-amber-100 text-amber-800 align-middle"
+                          title="Bid rec bị trần (Max Allowed) chặn"
+                        >
+                          capped
+                        </span>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 align-top text-right">
                       <span className="font-mono text-[11px] text-slate-500">{money(r.maxBidCeiling)}</span>
                     </td>
                     <td className="px-2 py-1.5 align-top text-right">
-                      <span className="font-mono text-[11px] text-slate-500">{money(r.cpiCapUsed)}</span>
+                      <span className="font-mono text-[11px] text-slate-500">
+                        {r.estPosAtRec === null ? '—' : r.estPosAtRec.toFixed(1)}
+                      </span>
                     </td>
                     <td className="px-2 py-1.5 align-top text-right whitespace-nowrap">
                       <span className="font-mono text-[11px] text-slate-700">{r.crUsed ? `${r.crUsed}%` : '—'}</span>
-                      {r.crSource && <span className="block text-[9px] text-slate-400">{r.crSource}</span>}
                     </td>
                     <td className="px-2 py-1.5 align-top text-right whitespace-nowrap font-mono text-[10px] text-slate-500">
                       {formatNumber(r.impL30, { compact: true })} / {formatNumber(r.clicksL30, { compact: true })} /{' '}
@@ -292,7 +296,8 @@ export function BidCapView() {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            Bid rec / Ceiling / CPI cap = USD · CR used = conversion rate dùng để tính bid (nguồn: actual / cat_avg) ·
+            Bid rec / Ceiling = USD · <span className="text-amber-700">capped</span> = bid rec chạm trần Max Allowed ·
+            Est pos = vị trí dự kiến tại bid rec · CR used = conversion rate dùng để tính bid ·
             L30 = Impressions / Clicks / Installs trong 30 ngày
           </div>
         </div>

@@ -244,7 +244,7 @@ export interface BidCapRow {
   country: string;
   countryCode: string;
   category: string;
-  /** Coverage status of this country×category: NO CAMP / IMP ONLY / ACTIVE / … */
+  /** Coverage status: PROVEN / EARLY SIGNAL / NO CAMP / IMP ONLY / … */
   status: string;
   nKw: number;
   impL30: number;
@@ -255,18 +255,20 @@ export interface BidCapRow {
   cpcActual: number;
   cpiActual: number;
   avgPosition: number | null;
+  /** % of impressions in top-3 ('% Top-3' col). */
   visibility: number | null;
+  /** p75 of bids ('Bid p75' col). */
   bidFloorTop3: number | null;
   crUsed: number;
-  /** Where cr_used came from: 'actual' (own data) vs 'cat_avg' (category fallback). */
-  crSource: string;
+  /** Ceiling = max bid allowed ('Max Allowed' col). */
   maxBidCeiling: number;
-  /** The headline number: bid to set. */
+  /** The headline number: bid to set ('Bid Rec ⭐' col). */
   bidRecommended: number;
+  /** Estimated avg position at the recommended bid ('Est Pos @ Rec' col). */
+  estPosAtRec: number | null;
+  /** True if the recommendation was capped by the ceiling ('Ceil Blk' col). */
+  ceilBlocked: boolean;
   actionRecommended: string;
-  lastUpdated: string | number;
-  dataWindow: string;
-  cpiCapUsed: number;
 }
 
 export interface CampLinkRow {

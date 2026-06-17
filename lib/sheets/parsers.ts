@@ -563,51 +563,63 @@ export function parseMasterKw(rows: string[][]): MasterKwRow[] {
 // Max bid cap — one recommended bid per Country × Category, computed by Apps
 // Script. Row 0 = header, row 1+ = data. Columns mapped by header NAME (not
 // fixed index) so Trang re-ordering columns in the sheet won't break parsing.
-// Header: tier | country | country_code | category | status | n_kw | imp_l30 |
-//   clicks_l30 | installs_l30 | spend_l30 | cr_actual | cpc_actual | cpi_actual |
-//   avg_position | visibility | bid_floor_top3 | cr_used | cr_source |
-//   max_bid_ceiling | bid_recommended | action_recommended | last_updated |
-//   data_window | cpi_cap_used
+// Each field is matched against several candidate names (exact, then prefix)
+// so cosmetic header tweaks ("CR used %" → "CR used") stay parseable.
+// Header (current): Tier | Country | Code | Category | Status | # KW | Imp |
+//   Clicks | Inst | Spend | CR act % | CPC act | CPI act | Avg Pos | % Top-3 |
+//   Bid p75 | CR used % | Max Allowed | Bid Rec ⭐ | Est Pos @ Rec | Ceil Blk |
+//   Action
 // ---------------------------------------------------------------------------
 
 export function parseBidCap(rows: string[][]): BidCapRow[] {
   if (!rows || rows.length < 2) return [];
+  const norm = (c: unknown): string => str(c).trim().toLowerCase();
   let headerIdx = -1;
   for (let i = 0; i < Math.min(rows.length, 5); i++) {
-    const r = (rows[i] ?? []).map((c) => str(c).trim().toLowerCase());
-    if (r.includes('country') && r.includes('category') && r.includes('bid_recommended')) {
+    const r = (rows[i] ?? []).map(norm);
+    const hasBidRec = r.some((h) => h.startsWith('bid rec') || h === 'bid_recommended');
+    if (r.includes('country') && r.includes('category') && (hasBidRec || r.includes('action'))) {
       headerIdx = i;
       break;
     }
   }
   if (headerIdx < 0) return [];
-  const header = (rows[headerIdx] ?? []).map((c) => str(c).trim().toLowerCase());
-  const col = (name: string): number => header.indexOf(name);
+  const header = (rows[headerIdx] ?? []).map(norm);
+  // Match a column by trying each candidate as an exact header, then as a prefix.
+  const find = (...cands: string[]): number => {
+    for (const c of cands) {
+      const i = header.indexOf(c);
+      if (i >= 0) return i;
+    }
+    for (const c of cands) {
+      const i = header.findIndex((h) => h.startsWith(c));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
   const ci = {
-    tier: col('tier'),
-    country: col('country'),
-    countryCode: col('country_code'),
-    category: col('category'),
-    status: col('status'),
-    nKw: col('n_kw'),
-    impL30: col('imp_l30'),
-    clicksL30: col('clicks_l30'),
-    installsL30: col('installs_l30'),
-    spendL30: col('spend_l30'),
-    crActual: col('cr_actual'),
-    cpcActual: col('cpc_actual'),
-    cpiActual: col('cpi_actual'),
-    avgPosition: col('avg_position'),
-    visibility: col('visibility'),
-    bidFloorTop3: col('bid_floor_top3'),
-    crUsed: col('cr_used'),
-    crSource: col('cr_source'),
-    maxBidCeiling: col('max_bid_ceiling'),
-    bidRecommended: col('bid_recommended'),
-    actionRecommended: col('action_recommended'),
-    lastUpdated: col('last_updated'),
-    dataWindow: col('data_window'),
-    cpiCapUsed: col('cpi_cap_used'),
+    tier: find('tier'),
+    country: find('country'),
+    countryCode: find('code', 'country_code'),
+    category: find('category'),
+    status: find('status'),
+    nKw: find('# kw', 'n_kw'),
+    impL30: find('imp', 'imp_l30'),
+    clicksL30: find('clicks', 'clicks_l30'),
+    installsL30: find('inst', 'installs_l30'),
+    spendL30: find('spend', 'spend_l30'),
+    crActual: find('cr act', 'cr_actual'),
+    cpcActual: find('cpc act', 'cpc_actual'),
+    cpiActual: find('cpi act', 'cpi_actual'),
+    avgPosition: find('avg pos', 'avg_position'),
+    visibility: find('% top-3', '% top3', 'top-3', 'visibility'),
+    bidFloorTop3: find('bid p75', 'bid_floor_top3', 'bid floor'),
+    crUsed: find('cr used', 'cr_used'),
+    maxBidCeiling: find('max allowed', 'max_bid_ceiling', 'max bid ceiling'),
+    bidRecommended: find('bid rec', 'bid_recommended'),
+    estPosAtRec: find('est pos', 'est_pos_at_rec'),
+    ceilBlocked: find('ceil blk', 'ceil blocked', 'ceiling blocked'),
+    actionRecommended: find('action', 'action_recommended'),
   };
   const at = (row: string[], idx: number): unknown => (idx >= 0 ? row[idx] : undefined);
   return rows
@@ -634,13 +646,11 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
         visibility: numOrNull(at(row, ci.visibility)),
         bidFloorTop3: numOrNull(at(row, ci.bidFloorTop3)),
         crUsed: num(at(row, ci.crUsed)),
-        crSource: str(at(row, ci.crSource)).trim(),
         maxBidCeiling: num(at(row, ci.maxBidCeiling)),
         bidRecommended: num(at(row, ci.bidRecommended)),
+        estPosAtRec: numOrNull(at(row, ci.estPosAtRec)),
+        ceilBlocked: /^true$/i.test(str(at(row, ci.ceilBlocked)).trim()),
         actionRecommended: str(at(row, ci.actionRecommended)).trim(),
-        lastUpdated: (at(row, ci.lastUpdated) as string | number) ?? '',
-        dataWindow: str(at(row, ci.dataWindow)).trim(),
-        cpiCapUsed: num(at(row, ci.cpiCapUsed)),
       };
     })
     .filter((r): r is BidCapRow => r !== null);
