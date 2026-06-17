@@ -3,6 +3,7 @@ export const TABS = [
   'Market_Index',
   'Tier1_Market_Watch',
   'Keyword_Opportunity_Lab',
+  'Max bid cap',
   'All_L3',
   'All_L7',
   'All_L14',

@@ -235,6 +235,40 @@ export interface MasterKwRow {
   classification: string;
 }
 
+/**
+ * One recommended bid per Country × Category, fully computed in the 'Max bid cap'
+ * sheet tab (Apps Script). The dashboard only reads + filters — no recompute.
+ */
+export interface BidCapRow {
+  tier: string;
+  country: string;
+  countryCode: string;
+  category: string;
+  /** Coverage status of this country×category: NO CAMP / IMP ONLY / ACTIVE / … */
+  status: string;
+  nKw: number;
+  impL30: number;
+  clicksL30: number;
+  installsL30: number;
+  spendL30: number;
+  crActual: number;
+  cpcActual: number;
+  cpiActual: number;
+  avgPosition: number | null;
+  visibility: number | null;
+  bidFloorTop3: number | null;
+  crUsed: number;
+  /** Where cr_used came from: 'actual' (own data) vs 'cat_avg' (category fallback). */
+  crSource: string;
+  maxBidCeiling: number;
+  /** The headline number: bid to set. */
+  bidRecommended: number;
+  actionRecommended: string;
+  lastUpdated: string | number;
+  dataWindow: string;
+  cpiCapUsed: number;
+}
+
 export interface CampLinkRow {
   category: string;
   camp: string;
@@ -302,6 +336,8 @@ export interface SheetPayload {
   pausedKw: MasterKwRow[];
   /** Camp → Campaign ID / URL / Geo targeting ('Camp_Links' tab). */
   campLinks: CampLinkRow[];
+  /** Recommended bid per Country × Category ('Max bid cap' tab). */
+  bidCap: BidCapRow[];
   /** Keywords explicitly set as negatives (from 'Negative KW list' tab, col B). */
   negativeKw: string[];
   /** Actual date range each window (L3/L7/...) covers, parsed from tab titles. */

@@ -3,6 +3,7 @@ import type {
   AlertLogRow,
   AlertType,
   BidAction,
+  BidCapRow,
   CampLinkRow,
   Category,
   DynamicBasketItem,
@@ -556,6 +557,93 @@ export function parseMasterKw(rows: string[][]): MasterKwRow[] {
       };
     })
     .filter((r): r is MasterKwRow => r !== null);
+}
+
+// ---------------------------------------------------------------------------
+// Max bid cap — one recommended bid per Country × Category, computed by Apps
+// Script. Row 0 = header, row 1+ = data. Columns mapped by header NAME (not
+// fixed index) so Trang re-ordering columns in the sheet won't break parsing.
+// Header: tier | country | country_code | category | status | n_kw | imp_l30 |
+//   clicks_l30 | installs_l30 | spend_l30 | cr_actual | cpc_actual | cpi_actual |
+//   avg_position | visibility | bid_floor_top3 | cr_used | cr_source |
+//   max_bid_ceiling | bid_recommended | action_recommended | last_updated |
+//   data_window | cpi_cap_used
+// ---------------------------------------------------------------------------
+
+export function parseBidCap(rows: string[][]): BidCapRow[] {
+  if (!rows || rows.length < 2) return [];
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const r = (rows[i] ?? []).map((c) => str(c).trim().toLowerCase());
+    if (r.includes('country') && r.includes('category') && r.includes('bid_recommended')) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return [];
+  const header = (rows[headerIdx] ?? []).map((c) => str(c).trim().toLowerCase());
+  const col = (name: string): number => header.indexOf(name);
+  const ci = {
+    tier: col('tier'),
+    country: col('country'),
+    countryCode: col('country_code'),
+    category: col('category'),
+    status: col('status'),
+    nKw: col('n_kw'),
+    impL30: col('imp_l30'),
+    clicksL30: col('clicks_l30'),
+    installsL30: col('installs_l30'),
+    spendL30: col('spend_l30'),
+    crActual: col('cr_actual'),
+    cpcActual: col('cpc_actual'),
+    cpiActual: col('cpi_actual'),
+    avgPosition: col('avg_position'),
+    visibility: col('visibility'),
+    bidFloorTop3: col('bid_floor_top3'),
+    crUsed: col('cr_used'),
+    crSource: col('cr_source'),
+    maxBidCeiling: col('max_bid_ceiling'),
+    bidRecommended: col('bid_recommended'),
+    actionRecommended: col('action_recommended'),
+    lastUpdated: col('last_updated'),
+    dataWindow: col('data_window'),
+    cpiCapUsed: col('cpi_cap_used'),
+  };
+  const at = (row: string[], idx: number): unknown => (idx >= 0 ? row[idx] : undefined);
+  return rows
+    .slice(headerIdx + 1)
+    .map((row): BidCapRow | null => {
+      const country = str(at(row, ci.country)).trim();
+      const category = str(at(row, ci.category)).trim();
+      if (!country || !category) return null;
+      return {
+        tier: str(at(row, ci.tier)).trim(),
+        country,
+        countryCode: str(at(row, ci.countryCode)).trim(),
+        category,
+        status: str(at(row, ci.status)).trim(),
+        nKw: num(at(row, ci.nKw)),
+        impL30: num(at(row, ci.impL30)),
+        clicksL30: num(at(row, ci.clicksL30)),
+        installsL30: num(at(row, ci.installsL30)),
+        spendL30: num(at(row, ci.spendL30)),
+        crActual: num(at(row, ci.crActual)),
+        cpcActual: num(at(row, ci.cpcActual)),
+        cpiActual: num(at(row, ci.cpiActual)),
+        avgPosition: numOrNull(at(row, ci.avgPosition)),
+        visibility: numOrNull(at(row, ci.visibility)),
+        bidFloorTop3: numOrNull(at(row, ci.bidFloorTop3)),
+        crUsed: num(at(row, ci.crUsed)),
+        crSource: str(at(row, ci.crSource)).trim(),
+        maxBidCeiling: num(at(row, ci.maxBidCeiling)),
+        bidRecommended: num(at(row, ci.bidRecommended)),
+        actionRecommended: str(at(row, ci.actionRecommended)).trim(),
+        lastUpdated: (at(row, ci.lastUpdated) as string | number) ?? '',
+        dataWindow: str(at(row, ci.dataWindow)).trim(),
+        cpiCapUsed: num(at(row, ci.cpiCapUsed)),
+      };
+    })
+    .filter((r): r is BidCapRow => r !== null);
 }
 
 // ---------------------------------------------------------------------------

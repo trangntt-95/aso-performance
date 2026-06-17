@@ -10,6 +10,7 @@ const TITLES: Record<string, string> = {
   '/tier1-watch': 'Tier 1 Market Watch',
   '/categories': 'Categories',
   '/paid-coverage': 'Paid Coverage',
+  '/bid-cap': 'Bid Recommendations',
   '/trends': 'Trends',
 };
 

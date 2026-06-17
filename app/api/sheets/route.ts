@@ -3,6 +3,7 @@ import { fetchAllTabs } from '@/lib/sheets/client';
 import {
   parseActionQueue,
   parseAlertLog,
+  parseBidCap,
   parseHistory,
   parseHistoryDaily,
   parseKeywordTab,
@@ -55,6 +56,7 @@ export async function GET() {
       masterKwLookup,
       pausedKw: parsePausedCamp(raw['Paused_camp'] ?? []),
       campLinks: parseCampLinks(raw['Camp_Links'] ?? []),
+      bidCap: parseBidCap(raw['Max bid cap'] ?? []),
       negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
       windowDates,
       fetchedAt: new Date().toISOString(),
