@@ -23,6 +23,18 @@ interface Props {
 const ORG = '#059669';
 const PAID = '#b45309';
 
+// "L90" -> 90; used to express absolute totals as a per-day rate.
+function windowDays(window: string): number {
+  const n = parseInt(window.replace(/[^0-9]/g, ''), 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function formatPerDay(total: number, days: number): string {
+  const perDay = total / days;
+  if (perDay >= 10) return formatNumber(Math.round(perDay));
+  return perDay.toFixed(1);
+}
+
 interface EnrichedPoint extends ChannelSplitPoint {
   orgVal: number; // % share (users/getapp) or CR % (cr)
   paidVal: number;
@@ -107,7 +119,8 @@ export function ChannelSplitChart({ data, metric, height = 260 }: Props) {
                 const base = isOrg ? p._orgBase : p._paidBase;
                 return [`${val.toFixed(1)}% · ${formatNumber(abs)} / ${formatNumber(base)}`, name];
               }
-              return [`${val.toFixed(1)}% · ${formatNumber(abs)}`, name];
+              const days = windowDays(p.window);
+              return [`${formatPerDay(abs, days)}/day`, name];
             }}
           />
           <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} iconType="circle" />
