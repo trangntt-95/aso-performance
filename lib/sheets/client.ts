@@ -2,8 +2,11 @@ import { google } from 'googleapis';
 import { TABS } from './tabs';
 
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
+// Read/write scope — only used by the bid-notes writer; needs the sheet shared
+// with the service account as Editor.
+const WRITE_SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
-function getAuth() {
+function getAuth(scopes: string[] = SCOPES) {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!email || !rawKey) {
@@ -15,7 +18,7 @@ function getAuth() {
   return new google.auth.JWT({
     email,
     key,
-    scopes: SCOPES,
+    scopes,
   });
 }
 
@@ -28,6 +31,12 @@ function getSpreadsheetId(): string {
 export function getSheetsClient() {
   return google.sheets({ version: 'v4', auth: getAuth() });
 }
+
+export function getWriteSheetsClient() {
+  return google.sheets({ version: 'v4', auth: getAuth(WRITE_SCOPES) });
+}
+
+export { getSpreadsheetId };
 
 export async function fetchTab(tabName: string): Promise<string[][]> {
   const sheets = getSheetsClient();

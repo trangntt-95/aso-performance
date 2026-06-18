@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Search, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { Input } from '@/components/ui/input';
@@ -10,22 +10,25 @@ import { categoryStyle } from '@/lib/utils/colors';
 import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 import type { BidCapRow } from '@/lib/sheets/types';
-import { useBidNoteStore, bidRowKeyOf } from '@/lib/store/bidNoteStore';
+import { useBidNoteStore } from '@/lib/store/bidNoteStore';
 
-// Editable, auto-saved (localStorage) note cell. Persists across reloads;
-// only cleared when the user empties it.
-function NoteCell({ rowKey }: { rowKey: string }) {
+// Editable note cell, auto-saved to the Bid_Notes sheet tab (server-side, shared
+// across users). Optimistic + debounced; shows a tiny "lưu…" while in flight.
+function NoteCell({ country, category }: { country: string; category: string }) {
+  const rowKey = `${country}||${category}`;
   const note = useBidNoteStore((s) => s.notes[rowKey] ?? '');
+  const saving = useBidNoteStore((s) => !!s.saving[rowKey]);
   const setNote = useBidNoteStore((s) => s.setNote);
   return (
     <td className="px-2 py-1.5 align-top">
       <textarea
         value={note}
-        onChange={(e) => setNote(rowKey, e.target.value)}
+        onChange={(e) => setNote(country, category, e.target.value)}
         placeholder="Ghi chú…"
         rows={2}
         className="w-40 min-w-[9rem] resize-y rounded border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500"
       />
+      {saving && <span className="text-[9px] text-slate-400">lưu…</span>}
     </td>
   );
 }
@@ -98,6 +101,12 @@ const SORT_COLS: Record<SortKey, { kind: 'num' | 'text'; get: (r: BidCapRow) => 
 export function BidCapView() {
   const { data, isLoading, error } = useSheetData();
   const rows: BidCapRow[] = useMemo(() => data?.bidCap ?? [], [data]);
+
+  // Load saved notes from the Bid_Notes sheet tab once on mount.
+  const loadNotes = useBidNoteStore((s) => s.load);
+  useEffect(() => {
+    loadNotes();
+  }, [loadNotes]);
 
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState('all');
@@ -377,7 +386,7 @@ export function BidCapView() {
                     <td className="px-2 py-1.5 align-top">
                       <span className={cn('text-[11px]', actionTone(r.actionRecommended))}>{r.actionRecommended || '—'}</span>
                     </td>
-                    <NoteCell rowKey={bidRowKeyOf(r)} />
+                    <NoteCell country={r.country} category={r.category} />
                   </tr>
                 );
               })}
@@ -386,7 +395,7 @@ export function BidCapView() {
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
             Bid rec / Ceiling = USD · <span className="text-amber-700">capped</span> = bid rec chạm trần Max Allowed ·
             Est pos = vị trí dự kiến tại bid rec · CR used = conversion rate dùng để tính bid ·
-            L30 = Impressions / Clicks / Installs trong 30 ngày · Note = ghi chú của bạn, tự lưu trên trình duyệt (chỉ mất khi bạn tự xoá)
+            L30 = Impressions / Clicks / Installs trong 30 ngày · Note = ghi chú, tự lưu vào Google Sheet (tab Bid_Notes) — share cho cả team, chỉ mất khi bạn tự xoá
           </div>
         </div>
       )}
