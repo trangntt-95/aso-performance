@@ -117,7 +117,15 @@ export function ChannelSplitChart({ data, metric, height = 260 }: Props) {
               const abs = isOrg ? p._orgAbs : p._paidAbs;
               if (isCr) {
                 const base = isOrg ? p._orgBase : p._paidBase;
-                return [`${val.toFixed(1)}% · ${formatNumber(abs)} / ${formatNumber(base)}`, name];
+                return [
+                  <span key="cr">
+                    {val.toFixed(1)}%{' '}
+                    <span style={{ color: '#94a3b8' }}>
+                      ({formatNumber(abs)} / {formatNumber(base)})
+                    </span>
+                  </span>,
+                  name,
+                ];
               }
               const days = windowDays(p.window);
               return [`${formatPerDay(abs, days)}/day`, name];
