@@ -5,9 +5,7 @@ import { RefreshButton } from './RefreshButton';
 
 const TITLES: Record<string, string> = {
   '/': 'Overview',
-  '/actions': 'Action Queue',
   '/market-index': 'Market Health',
-  '/tier1-watch': 'Tier 1 Market Watch',
   '/categories': 'Categories',
   '/paid-coverage': 'Paid Coverage',
   '/bid-cap': 'Bid Recommendations',

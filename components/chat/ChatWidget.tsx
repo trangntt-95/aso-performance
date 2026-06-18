@@ -13,9 +13,9 @@ import { cn } from '@/lib/utils';
 const PAGE_BY_PATH: Record<string, string> = {
   '/': 'Overview',
   '/market-index': 'Market Health',
-  '/tier1-watch': 'Tier 1 Watch',
   '/categories': 'Categories',
-  '/actions': 'Action Queue',
+  '/paid-coverage': 'Paid Coverage',
+  '/bid-cap': 'Bid Recommendations',
 };
 
 interface MessagePart {

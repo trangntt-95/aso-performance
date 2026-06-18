@@ -7,7 +7,7 @@ import { useSheetData } from '@/lib/hooks/useSheetData';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { categoryStyle } from '@/lib/utils/colors';
+import { categoryStyle, CATEGORY_ORDER } from '@/lib/utils/colors';
 import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
 import { KeywordLink } from '@/components/shared/KeywordLink';
 import { PaidStatusBadge } from '@/components/shared/PaidStatusBadge';
@@ -25,6 +25,7 @@ import type {
 import { buildPaidStatusIndex, resolvePaidStatus, type PaidStatus } from '@/lib/sheets/paidStatus';
 
 interface KeywordSummary extends PaidStatus {
+  category: string;
   searchTerm: string;
   surface: SurfaceLabel;
   l7: KeywordRow | null;
@@ -36,7 +37,7 @@ interface KeywordSummary extends PaidStatus {
 }
 
 function buildSummaries(
-  category: string,
+  category: string | null,
   allL7: KeywordRow[],
   allL30: KeywordRow[],
   allL90: KeywordRow[],
@@ -47,8 +48,9 @@ function buildSummaries(
   negativeKw: string[],
   pausedKw: MasterKwRow[],
 ): KeywordSummary[] {
+  // category === null → all categories (flat view); otherwise scope to one.
   const inCategory = <T extends { category: string }>(rows: T[]) =>
-    rows.filter((r) => r.category === category);
+    category === null ? rows : rows.filter((r) => r.category === category);
   const l7 = inCategory(allL7);
   const l30 = inCategory(allL30);
   const l90 = inCategory(allL90);
@@ -57,10 +59,11 @@ function buildSummaries(
   const paidIndex = buildPaidStatusIndex(masterKwLookup, kwAddedManual, negativeKw, pausedKw);
 
   const keyMap = new Map<string, KeywordSummary>();
-  const ensure = (term: string, surface: SurfaceLabel) => {
-    const key = `${term}||${surface}`;
+  const ensure = (term: string, surface: SurfaceLabel, cat: string) => {
+    const key = `${cat}||${term}||${surface}`;
     if (!keyMap.has(key)) {
       keyMap.set(key, {
+        category: cat,
         searchTerm: term,
         surface,
         l7: null,
@@ -76,30 +79,32 @@ function buildSummaries(
 
   l7.forEach((r) => {
     const surface = r.surface === 'search_ad' ? 'paid' : 'organic';
-    ensure(r.searchTerm, surface).l7 = r;
+    ensure(r.searchTerm, surface, r.category).l7 = r;
   });
   l30.forEach((r) => {
     const surface = r.surface === 'search_ad' ? 'paid' : 'organic';
-    ensure(r.searchTerm, surface).l30 = r;
+    ensure(r.searchTerm, surface, r.category).l30 = r;
   });
   l90.forEach((r) => {
     const surface = r.surface === 'search_ad' ? 'paid' : 'organic';
-    ensure(r.searchTerm, surface).l90 = r;
+    ensure(r.searchTerm, surface, r.category).l90 = r;
   });
   l365.forEach((r) => {
     const surface = r.surface === 'search_ad' ? 'paid' : 'organic';
-    ensure(r.searchTerm, surface).l365 = r;
+    ensure(r.searchTerm, surface, r.category).l365 = r;
   });
 
   const countriesByTerm = new Map<string, Set<string>>();
   inCategory(countryL7).forEach((r) => {
     if (!r.country) return;
-    if (!countriesByTerm.has(r.searchTerm)) countriesByTerm.set(r.searchTerm, new Set());
-    countriesByTerm.get(r.searchTerm)!.add(r.country);
+    const k = `${r.category}||${r.searchTerm}`;
+    if (!countriesByTerm.has(k)) countriesByTerm.set(k, new Set());
+    countriesByTerm.get(k)!.add(r.country);
   });
 
   keyMap.forEach((summary) => {
-    summary.countries = Array.from(countriesByTerm.get(summary.searchTerm) ?? new Set<string>()).sort();
+    const k = `${summary.category}||${summary.searchTerm}`;
+    summary.countries = Array.from(countriesByTerm.get(k) ?? new Set<string>()).sort();
   });
 
   return Array.from(keyMap.values()).sort((a, b) => {
@@ -154,10 +159,13 @@ type SurfaceFilter = 'all' | 'organic' | 'paid';
 type PaidFilter = 'all' | 'in_paid' | 'manual' | 'paused' | 'not_in_paid';
 type MetricWindow = 'l7' | 'l30' | 'l90';
 
-export function CategoryDrilldown({ category }: { category: string }) {
+export function CategoryDrilldown({ category }: { category?: string }) {
+  // No category prop → flat "all categories" view with a category filter.
+  const allMode = !category;
   const { data, isLoading, error } = useSheetData();
-  const s = categoryStyle(category as Category);
+  const s = allMode ? null : categoryStyle(category as Category);
   const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [surfaceFilter, setSurfaceFilter] = useState<SurfaceFilter>('all');
   const [paidFilter, setPaidFilter] = useState<PaidFilter>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
@@ -169,7 +177,7 @@ export function CategoryDrilldown({ category }: { category: string }) {
   const summaries = useMemo(() => {
     if (!data) return [];
     return buildSummaries(
-      category,
+      category ?? null,
       data.allL7,
       data.allL30,
       data.allL90,
@@ -188,12 +196,23 @@ export function CategoryDrilldown({ category }: { category: string }) {
     return Array.from(set).sort();
   }, [summaries]);
 
+  // Categories present in the data, ordered by CATEGORY_ORDER (flat view only).
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    summaries.forEach((r) => set.add(r.category));
+    const order = CATEGORY_ORDER as readonly string[];
+    const ordered = order.filter((c) => set.has(c));
+    const extras = Array.from(set).filter((c) => !order.includes(c)).sort();
+    return [...ordered, ...extras];
+  }, [summaries]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const minU = minUsers.trim() === '' ? null : Number(minUsers);
     const minG = minInstall.trim() === '' ? null : Number(minInstall);
     const maxP = maxPos.trim() === '' ? null : Number(maxPos);
     return summaries.filter((r) => {
+      if (allMode && categoryFilter !== 'all' && r.category !== categoryFilter) return false;
       if (surfaceFilter !== 'all' && r.surface !== surfaceFilter) return false;
       if (paidFilter === 'in_paid' && r.source !== 'master') return false;
       if (paidFilter === 'manual' && r.source !== 'manual') return false;
@@ -220,10 +239,11 @@ export function CategoryDrilldown({ category }: { category: string }) {
       }
       return true;
     });
-  }, [summaries, search, surfaceFilter, paidFilter, countryFilter, metricWindow, minUsers, minInstall, maxPos]);
+  }, [summaries, search, allMode, categoryFilter, surfaceFilter, paidFilter, countryFilter, metricWindow, minUsers, minInstall, maxPos]);
 
   const dirty =
     search !== '' ||
+    (allMode && categoryFilter !== 'all') ||
     surfaceFilter !== 'all' ||
     paidFilter !== 'all' ||
     countryFilter !== 'all' ||
@@ -232,6 +252,7 @@ export function CategoryDrilldown({ category }: { category: string }) {
     maxPos !== '';
   const resetAll = () => {
     setSearch('');
+    setCategoryFilter('all');
     setSurfaceFilter('all');
     setPaidFilter('all');
     setCountryFilter('all');
@@ -252,17 +273,23 @@ export function CategoryDrilldown({ category }: { category: string }) {
 
   return (
     <div className="space-y-3">
+      {!allMode && (
+        <div className="flex items-center gap-3">
+          <Link href="/categories" className="text-xs text-slate-500 inline-flex items-center gap-1 hover:underline">
+            <ArrowLeft className="h-3 w-3" />
+            Back to categories
+          </Link>
+        </div>
+      )}
       <div className="flex items-center gap-3">
-        <Link href="/categories" className="text-xs text-slate-500 inline-flex items-center gap-1 hover:underline">
-          <ArrowLeft className="h-3 w-3" />
-          Back to categories
-        </Link>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className={cn('inline-flex items-center gap-2 px-3 py-1 rounded-md text-sm font-semibold', s.bg, s.text)}>
-          <span>{s.emoji}</span>
-          {category}
-        </span>
+        {allMode ? (
+          <span className="text-sm font-semibold text-slate-900">All keywords</span>
+        ) : (
+          <span className={cn('inline-flex items-center gap-2 px-3 py-1 rounded-md text-sm font-semibold', s!.bg, s!.text)}>
+            <span>{s!.emoji}</span>
+            {category}
+          </span>
+        )}
         {!isLoading && (
           <span className="text-xs text-slate-500">
             {filtered.length}
@@ -284,6 +311,21 @@ export function CategoryDrilldown({ category }: { category: string }) {
               className="pl-7 h-7 text-xs"
             />
           </div>
+          {allMode && (
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              title="Category"
+            >
+              <option value="all">Category: All</option>
+              {categoryOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={surfaceFilter}
             onChange={(e) => setSurfaceFilter(e.target.value as SurfaceFilter)}
@@ -392,6 +434,7 @@ export function CategoryDrilldown({ category }: { category: string }) {
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="px-3 py-2 text-left font-medium min-w-[14rem]">Keyword</th>
+                {allMode && <th className="px-2 py-2 text-left font-medium">Category</th>}
                 <th className="px-2 py-2 text-left font-medium">L7</th>
                 <th className="px-2 py-2 text-left font-medium">L30</th>
                 <th className="px-2 py-2 text-left font-medium">L90</th>
@@ -409,7 +452,8 @@ export function CategoryDrilldown({ category }: { category: string }) {
                 // Skip when translation equals the kw (typo "fixes" like
                 // "trueprfot → trueprfoot" — same text, not a real translation).
                 const isNonEnglishKw =
-                  /[^\x00-\x7F]/.test(row.searchTerm) || category === 'Language';
+                  /[^\x00-\x7F]/.test(row.searchTerm) || row.category === 'Language';
+                const cs = categoryStyle(row.category as Category);
                 const showTranslation =
                   !!english &&
                   isNonEnglishKw &&
@@ -439,6 +483,20 @@ export function CategoryDrilldown({ category }: { category: string }) {
                       </div>
                     )}
                   </td>
+                  {allMode && (
+                    <td className="px-2 py-1.5 align-top">
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap',
+                          cs.bg,
+                          cs.text,
+                        )}
+                      >
+                        <span>{cs.emoji}</span>
+                        {row.category}
+                      </span>
+                    </td>
+                  )}
                   <MetricsCell row={row.l7} />
                   <MetricsCell row={row.l30} />
                   <MetricsCell row={row.l90} />
