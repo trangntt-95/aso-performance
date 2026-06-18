@@ -50,7 +50,31 @@ function actionTone(action: string): string {
   return 'text-slate-600';
 }
 
-type SortKey = 'bid_desc' | 'bid_asc' | 'country' | 'category';
+type SortKey =
+  | 'country'
+  | 'category'
+  | 'status'
+  | 'bid'
+  | 'ceiling'
+  | 'estpos'
+  | 'crused'
+  | 'installs'
+  | 'action';
+type SortDir = 'asc' | 'desc';
+
+// Per-column value accessor + type. 'num' columns default to desc on first
+// click (biggest first), 'text' columns to asc (A→Z).
+const SORT_COLS: Record<SortKey, { kind: 'num' | 'text'; get: (r: BidCapRow) => number | string | null }> = {
+  country: { kind: 'text', get: (r) => r.country },
+  category: { kind: 'text', get: (r) => r.category },
+  status: { kind: 'text', get: (r) => r.status },
+  bid: { kind: 'num', get: (r) => r.bidRecommended },
+  ceiling: { kind: 'num', get: (r) => r.maxBidCeiling },
+  estpos: { kind: 'num', get: (r) => r.estPosAtRec },
+  crused: { kind: 'num', get: (r) => r.crUsed },
+  installs: { kind: 'num', get: (r) => r.installsL30 },
+  action: { kind: 'text', get: (r) => r.actionRecommended },
+};
 
 export function BidCapView() {
   const { data, isLoading, error } = useSheetData();
@@ -61,7 +85,19 @@ export function BidCapView() {
   const [countryFilter, setCountryFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [sort, setSort] = useState<SortKey>('bid_desc');
+  const [sortKey, setSortKey] = useState<SortKey>('bid');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  // Click a column header: same column → toggle dir; new column → default dir
+  // (num desc, text asc).
+  const toggleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(SORT_COLS[key].kind === 'num' ? 'desc' : 'asc');
+    }
+  };
 
   const { tiers, countries, categories, statuses } = useMemo(() => {
     const t = new Set<string>();
@@ -95,24 +131,32 @@ export function BidCapView() {
       }
       return true;
     });
-    const byCountry = (a: BidCapRow, b: BidCapRow) =>
-      a.country.localeCompare(b.country) || b.bidRecommended - a.bidRecommended;
-    switch (sort) {
-      case 'bid_desc':
-        out.sort((a, b) => b.bidRecommended - a.bidRecommended);
-        break;
-      case 'bid_asc':
-        out.sort((a, b) => a.bidRecommended - b.bidRecommended);
-        break;
-      case 'country':
-        out.sort(byCountry);
-        break;
-      case 'category':
-        out.sort((a, b) => a.category.localeCompare(b.category) || b.bidRecommended - a.bidRecommended);
-        break;
-    }
+    const { kind, get } = SORT_COLS[sortKey];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const cmp = (a: BidCapRow, b: BidCapRow): number => {
+      const va = get(a);
+      const vb = get(b);
+      // Nulls/blanks always sink to the bottom regardless of direction.
+      const aEmpty = va === null || va === '';
+      const bEmpty = vb === null || vb === '';
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      const base =
+        kind === 'num'
+          ? (va as number) - (vb as number)
+          : String(va).localeCompare(String(vb));
+      return base * dir;
+    };
+    // Stable secondary sort: bid desc, then country A→Z, for deterministic ties.
+    out.sort(
+      (a, b) =>
+        cmp(a, b) ||
+        b.bidRecommended - a.bidRecommended ||
+        a.country.localeCompare(b.country),
+    );
     return out;
-  }, [rows, search, tierFilter, countryFilter, categoryFilter, statusFilter, sort]);
+  }, [rows, search, tierFilter, countryFilter, categoryFilter, statusFilter, sortKey, sortDir]);
 
   const dirty =
     search !== '' ||
@@ -188,12 +232,7 @@ export function BidCapView() {
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
-          <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className={selectCls} title="Sort">
-            <option value="bid_desc">Sort: Bid ↓</option>
-            <option value="bid_asc">Sort: Bid ↑</option>
-            <option value="country">Sort: Country A→Z</option>
-            <option value="category">Sort: Category</option>
-          </select>
+          <span className="text-[10px] text-slate-400 hidden sm:inline">Click cột để sort</span>
           {dirty && (
             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={resetAll}>
               <X className="h-3 w-3" />
@@ -225,15 +264,41 @@ export function BidCapView() {
           <table className="w-full text-xs">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <th className="px-3 py-2 text-left font-medium min-w-[11rem]">Country</th>
-                <th className="px-2 py-2 text-left font-medium">Category</th>
-                <th className="px-2 py-2 text-left font-medium">Status</th>
-                <th className="px-2 py-2 text-right font-medium" title="Mức bid nên set (Bid Rec ⭐)">Bid rec</th>
-                <th className="px-2 py-2 text-right font-medium" title="Trần tối đa cho phép (Max Allowed)">Ceiling</th>
-                <th className="px-2 py-2 text-right font-medium" title="Vị trí dự kiến tại mức bid rec">Est pos</th>
-                <th className="px-2 py-2 text-right font-medium" title="Conversion rate dùng để tính bid">CR used</th>
-                <th className="px-2 py-2 text-right font-medium" title="L30: Impressions / Clicks / Installs">L30 imp/clk/inst</th>
-                <th className="px-2 py-2 text-left font-medium min-w-[14rem]">Action</th>
+                {(
+                  [
+                    { k: 'country', label: 'Country', align: 'left', title: 'Sort theo country', extra: 'pl-3 min-w-[11rem]' },
+                    { k: 'category', label: 'Category', align: 'left', title: 'Sort theo category' },
+                    { k: 'status', label: 'Status', align: 'left', title: 'Sort theo status' },
+                    { k: 'bid', label: 'Bid rec', align: 'right', title: 'Mức bid nên set (Bid Rec ⭐)' },
+                    { k: 'ceiling', label: 'Ceiling', align: 'right', title: 'Trần tối đa cho phép (Max Allowed)' },
+                    { k: 'estpos', label: 'Est pos', align: 'right', title: 'Vị trí dự kiến tại mức bid rec' },
+                    { k: 'crused', label: 'CR used', align: 'right', title: 'Conversion rate dùng để tính bid' },
+                    { k: 'installs', label: 'L30 imp/clk/inst', align: 'right', title: 'L30: Imp / Clicks / Installs — sort theo Installs' },
+                    { k: 'action', label: 'Action', align: 'left', title: 'Sort theo action', extra: 'min-w-[14rem]' },
+                  ] as { k: SortKey; label: string; align: 'left' | 'right'; title: string; extra?: string }[]
+                ).map(({ k, label, align, title, extra }) => {
+                  const active = sortKey === k;
+                  return (
+                    <th
+                      key={k}
+                      onClick={() => toggleSort(k)}
+                      title={title}
+                      className={cn(
+                        'px-2 py-2 font-medium cursor-pointer select-none hover:text-slate-900',
+                        align === 'right' ? 'text-right' : 'text-left',
+                        active && 'text-indigo-700',
+                        extra,
+                      )}
+                    >
+                      <span className={cn('inline-flex items-center gap-0.5', align === 'right' && 'flex-row-reverse')}>
+                        {label}
+                        <span className="text-[9px] w-2 text-indigo-600">
+                          {active ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                        </span>
+                      </span>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
