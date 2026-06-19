@@ -379,9 +379,16 @@ export function parseMarketIndex(rows: string[][]): MarketIndexData {
         weightedL: num(r[7]),
         weightedP: num(r[8]),
         deltaWeightedPct: num(r[9]),
-        verdict: (str(r[10]) || '→ STABLE') as Verdict,
-        primaryCause: str(r[11]),
-        causeDetails: str(r[12]),
+        totalUsersL: num(r[10]),
+        totalUsersP: num(r[11]),
+        deltaTotalUsersPct: num(r[12]),
+        totalGetAppL: num(r[13]),
+        totalGetAppP: num(r[14]),
+        deltaTotalGetAppPct: num(r[15]),
+        verdict: (str(r[16]) || '→ STABLE') as Verdict,
+        divergence: str(r[17]),
+        primaryCause: str(r[18]),
+        causeDetails: str(r[19]),
       });
       i++;
       continue;

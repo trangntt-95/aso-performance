@@ -99,7 +99,18 @@ export interface MarketIndexSummaryRow {
   weightedL: number;
   weightedP: number;
   deltaWeightedPct: number;
+  // TOTAL whole-account columns added to Market_Index schema 2026-06 (cols
+  // 10–15). They sit BEFORE verdict/cause — before this the parser read
+  // verdict/primaryCause/causeDetails one block too far left (showed numbers).
+  totalUsersL: number;
+  totalUsersP: number;
+  deltaTotalUsersPct: number;
+  totalGetAppL: number;
+  totalGetAppP: number;
+  deltaTotalGetAppPct: number;
   verdict: Verdict;
+  /** Basket-vs-total divergence note, e.g. "⚠️ Tail growing…" / "✅ Consistent". */
+  divergence: string;
   primaryCause: string;
   causeDetails: string;
 }
