@@ -71,12 +71,14 @@ function parseNarrative(
   return { dataPoints, action, pattern };
 }
 
-/** Make the Apps Script wording friendlier: GetApp → Install, "pp" → "điểm %". */
+/** Make the Apps Script wording friendlier: GetApp → Install, "pp" → "điểm %",
+ *  and the confusing "ăn noise" jargon → "traffic không convert". */
 function humanize(s: string): string {
   return s
     .replace(/Get ?App/gi, 'Install')
     .replace(/Users tổng/g, 'Users')
-    .replace(/(\d(?:[.,]\d+)?)\s*pp\b/g, '$1 điểm %');
+    .replace(/(\d(?:[.,]\d+)?)\s*pp\b/g, '$1 điểm %')
+    .replace(/ăn noise/gi, 'hút traffic không convert');
 }
 
 function StepHeader({ icon, label }: { icon: React.ReactNode; label: string }) {

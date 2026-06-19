@@ -37,7 +37,7 @@ export function deriveNarrativeEvidence(
         detail: `${num(r.usersL)} users → ${num(r.getAppL)} install (CR ${formatPercent(r.crL)})`,
       }));
     if (items.length)
-      return { label: 'Keyword paid đang ăn noise (traffic nhưng gần như 0 install):', items };
+      return { label: 'Keyword paid có traffic nhưng không convert (gần như 0 install):', items };
   }
 
   // Bid / competitor outbid → paid keywords that lost the most users.
