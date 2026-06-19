@@ -10,7 +10,17 @@ import { ExecutiveSummaryCard } from './ExecutiveSummaryCard';
 import { WowComparison } from './WowComparison';
 import { DynamicBasketCard } from './DynamicBasketCard';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { Window } from '@/lib/sheets/types';
+import { deriveNarrativeEvidence } from '@/lib/market/narrativeEvidence';
+import type { KeywordRow, Window } from '@/lib/sheets/types';
+
+// Selected window → the matching All_* keyword rows for that window.
+const WINDOW_ROWS: Record<string, (d: { allL3: KeywordRow[]; allL7: KeywordRow[]; allL14: KeywordRow[]; allL30: KeywordRow[]; allL90: KeywordRow[] }) => KeywordRow[]> = {
+  L3: (d) => d.allL3,
+  L7: (d) => d.allL7,
+  L14: (d) => d.allL14,
+  L30: (d) => d.allL30,
+  L90: (d) => d.allL90,
+};
 
 export function MarketIndexCards() {
   const { data, isLoading, error } = useSheetData();
@@ -29,6 +39,15 @@ export function MarketIndexCards() {
     () => funnels.find((f) => f.window === selected),
     [funnels, selected],
   );
+
+  // Concrete keyword examples backing the narrative's cause/action.
+  const evidence = useMemo(() => {
+    if (!data || !selected || !selectedRow) return null;
+    const getRows = WINDOW_ROWS[selected];
+    if (!getRows) return null;
+    const cause = `${selectedRow.primaryCause} ${selectedRow.causeDetails}`;
+    return deriveNarrativeEvidence(getRows(data), cause);
+  }, [data, selected, selectedRow]);
 
   if (error) {
     return (
@@ -79,6 +98,7 @@ export function MarketIndexCards() {
             narrative={narratives[selected]}
             primaryCause={selectedRow.primaryCause}
             causeDetails={selectedRow.causeDetails}
+            evidence={evidence}
           />
         </div>
       )}

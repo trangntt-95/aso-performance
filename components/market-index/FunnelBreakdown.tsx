@@ -2,8 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { FunnelBreakdown as FunnelData } from '@/lib/sheets/types';
-import { formatNumber, formatPercent, formatPos, deltaTone } from '@/lib/utils/format';
-import { cn } from '@/lib/utils';
+import { formatNumber, formatPercent, formatPos } from '@/lib/utils/format';
 
 function cellDelta(latest: number, prior: number, threshold = 0.1): 'sig-up' | 'sig-down' | null {
   if (!Number.isFinite(latest) || !Number.isFinite(prior)) return null;
@@ -13,10 +12,40 @@ function cellDelta(latest: number, prior: number, threshold = 0.1): 'sig-up' | '
   return ratio > 0 ? 'sig-up' : 'sig-down';
 }
 
-function highlightCls(tone: 'sig-up' | 'sig-down' | null) {
-  if (tone === 'sig-up') return 'bg-emerald-50 text-emerald-900 font-medium';
-  if (tone === 'sig-down') return 'bg-red-50 text-red-900 font-medium';
-  return '';
+// Position is inverted — a lower number (rank closer to #1) is better.
+function posTone(latest: number | null, prior: number | null): 'sig-up' | 'sig-down' | null {
+  if (latest == null || prior == null || latest === prior) return null;
+  return latest < prior ? 'sig-up' : 'sig-down';
+}
+
+// One chronological cell: prior (muted) → latest (coloured by tone).
+function TimeCell({
+  prior,
+  latest,
+  tone,
+  fmt,
+  empty,
+}: {
+  prior: number | null;
+  latest: number | null;
+  tone: 'sig-up' | 'sig-down' | null;
+  fmt: (n: number | null) => string;
+  empty?: boolean;
+}) {
+  if (empty) return <td className="px-3 py-2 text-center text-slate-300">—</td>;
+  const latestCls =
+    tone === 'sig-up'
+      ? 'text-emerald-700 font-semibold'
+      : tone === 'sig-down'
+        ? 'text-red-700 font-semibold'
+        : 'text-slate-900 font-medium';
+  return (
+    <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
+      <span className="text-slate-400">{fmt(prior)}</span>
+      <span className="text-slate-300 mx-1">→</span>
+      <span className={latestCls}>{fmt(latest)}</span>
+    </td>
+  );
 }
 
 interface Props {
@@ -51,6 +80,8 @@ export function FunnelBreakdownCard({ funnel }: Props) {
     paid: cellDelta(paid.L.cr, paid.P.cr, 0.03),
   };
 
+  const numFmt = (n: number | null) => formatNumber(n ?? 0, { compact: true });
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -62,62 +93,48 @@ export function FunnelBreakdownCard({ funnel }: Props) {
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Metric</th>
-                <th className="px-3 py-2 text-right font-medium" colSpan={2}>Organic</th>
-                <th className="px-3 py-2 text-right font-medium" colSpan={2}>Paid</th>
-                <th className="px-3 py-2 text-right font-medium" colSpan={2}>Total</th>
+                <th className="px-3 py-2 text-right font-medium">Organic</th>
+                <th className="px-3 py-2 text-right font-medium">Paid</th>
+                <th className="px-3 py-2 text-right font-medium">Total</th>
               </tr>
               <tr className="text-[10px] text-slate-400">
                 <th />
-                <th className="px-2 py-1 text-right font-normal">L</th>
-                <th className="px-2 py-1 text-right font-normal">P</th>
-                <th className="px-2 py-1 text-right font-normal">L</th>
-                <th className="px-2 py-1 text-right font-normal">P</th>
-                <th className="px-2 py-1 text-right font-normal">L</th>
-                <th className="px-2 py-1 text-right font-normal">P</th>
+                <th className="px-3 pb-1 text-right font-normal" colSpan={3}>
+                  mỗi ô: kỳ trước → kỳ này
+                </th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-t">
                 <td className="px-3 py-2 font-medium">Users</td>
-                <td className={cn('px-2 py-2 text-right', highlightCls(usersTone.org))}>{formatNumber(organic.L.users, { compact: true })}</td>
-                <td className="px-2 py-2 text-right text-slate-400">{formatNumber(organic.P.users, { compact: true })}</td>
-                <td className={cn('px-2 py-2 text-right', highlightCls(usersTone.paid))}>{formatNumber(paid.L.users, { compact: true })}</td>
-                <td className="px-2 py-2 text-right text-slate-400">{formatNumber(paid.P.users, { compact: true })}</td>
-                <td className={cn('px-2 py-2 text-right font-medium', highlightCls(usersTone.total))}>{formatNumber(total.L.users, { compact: true })}</td>
-                <td className="px-2 py-2 text-right text-slate-400">{formatNumber(total.P.users, { compact: true })}</td>
+                <TimeCell prior={organic.P.users} latest={organic.L.users} tone={usersTone.org} fmt={numFmt} />
+                <TimeCell prior={paid.P.users} latest={paid.L.users} tone={usersTone.paid} fmt={numFmt} />
+                <TimeCell prior={total.P.users} latest={total.L.users} tone={usersTone.total} fmt={numFmt} />
               </tr>
               <tr className="border-t">
                 <td className="px-3 py-2 font-medium">Install</td>
-                <td className={cn('px-2 py-2 text-right', highlightCls(getAppTone.org))}>{formatNumber(organic.L.getapp, { compact: true })}</td>
-                <td className="px-2 py-2 text-right text-slate-400">{formatNumber(organic.P.getapp, { compact: true })}</td>
-                <td className={cn('px-2 py-2 text-right', highlightCls(getAppTone.paid))}>{formatNumber(paid.L.getapp, { compact: true })}</td>
-                <td className="px-2 py-2 text-right text-slate-400">{formatNumber(paid.P.getapp, { compact: true })}</td>
-                <td className={cn('px-2 py-2 text-right font-medium', highlightCls(getAppTone.total))}>{formatNumber(total.L.getapp, { compact: true })}</td>
-                <td className="px-2 py-2 text-right text-slate-400">{formatNumber(total.P.getapp, { compact: true })}</td>
+                <TimeCell prior={organic.P.getapp} latest={organic.L.getapp} tone={getAppTone.org} fmt={numFmt} />
+                <TimeCell prior={paid.P.getapp} latest={paid.L.getapp} tone={getAppTone.paid} fmt={numFmt} />
+                <TimeCell prior={total.P.getapp} latest={total.L.getapp} tone={getAppTone.total} fmt={numFmt} />
               </tr>
               <tr className="border-t">
                 <td className="px-3 py-2 font-medium">CR</td>
-                <td className={cn('px-2 py-2 text-right', highlightCls(crTone.org))}>{formatPercent(organic.L.cr)}</td>
-                <td className="px-2 py-2 text-right text-slate-400">{formatPercent(organic.P.cr)}</td>
-                <td className={cn('px-2 py-2 text-right', highlightCls(crTone.paid))}>{formatPercent(paid.L.cr)}</td>
-                <td className="px-2 py-2 text-right text-slate-400">{formatPercent(paid.P.cr)}</td>
-                <td className="px-2 py-2 text-right text-slate-300">—</td>
-                <td className="px-2 py-2 text-right text-slate-300">—</td>
+                <TimeCell prior={organic.P.cr} latest={organic.L.cr} tone={crTone.org} fmt={formatPercent} />
+                <TimeCell prior={paid.P.cr} latest={paid.L.cr} tone={crTone.paid} fmt={formatPercent} />
+                <TimeCell prior={null} latest={null} tone={null} fmt={numFmt} empty />
               </tr>
               <tr className="border-t">
                 <td className="px-3 py-2 font-medium">Avg Pos</td>
-                <td className={cn('px-2 py-2 text-right', deltaTone((organic.P.pos ?? 0) - (organic.L.pos ?? 0)) === 'pos' ? 'text-emerald-700 font-medium' : '')}>{formatPos(organic.L.pos)}</td>
-                <td className="px-2 py-2 text-right text-slate-400">{formatPos(organic.P.pos)}</td>
-                <td className={cn('px-2 py-2 text-right', deltaTone((paid.P.pos ?? 0) - (paid.L.pos ?? 0)) === 'pos' ? 'text-emerald-700 font-medium' : '')}>{formatPos(paid.L.pos)}</td>
-                <td className="px-2 py-2 text-right text-slate-400">{formatPos(paid.P.pos)}</td>
-                <td className="px-2 py-2 text-right text-slate-300">—</td>
-                <td className="px-2 py-2 text-right text-slate-300">—</td>
+                <TimeCell prior={organic.P.pos} latest={organic.L.pos} tone={posTone(organic.L.pos, organic.P.pos)} fmt={formatPos} />
+                <TimeCell prior={paid.P.pos} latest={paid.L.pos} tone={posTone(paid.L.pos, paid.P.pos)} fmt={formatPos} />
+                <TimeCell prior={null} latest={null} tone={null} fmt={numFmt} empty />
               </tr>
             </tbody>
           </table>
         </div>
         <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-          L = Latest window · P = Prior window · highlighted cells = ≥10% delta (3pp for CR)
+          Mỗi ô: <span className="text-slate-500">kỳ trước</span> → <span className="text-slate-700 font-medium">kỳ này</span> ·
+          số kỳ này tô màu khi đổi ≥10% (CR 3pp) · xanh = tốt lên, đỏ = xấu đi (Avg Pos: nhỏ hơn = tốt hơn)
         </div>
       </CardContent>
     </Card>

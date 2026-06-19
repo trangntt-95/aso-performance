@@ -2,13 +2,15 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { Window } from '@/lib/sheets/types';
-import { ScrollText, BarChart3, Lightbulb, Target } from 'lucide-react';
+import type { NarrativeEvidence } from '@/lib/market/narrativeEvidence';
+import { ScrollText, BarChart3, Lightbulb, Target, Search } from 'lucide-react';
 
 interface Props {
   window: Window;
   narrative?: string;
   primaryCause?: string;
   causeDetails?: string;
+  evidence?: NarrativeEvidence | null;
 }
 
 /**
@@ -86,7 +88,7 @@ function StepHeader({ icon, label }: { icon: React.ReactNode; label: string }) {
   );
 }
 
-export function NarrativePanel({ window: w, narrative, primaryCause, causeDetails }: Props) {
+export function NarrativePanel({ window: w, narrative, primaryCause, causeDetails, evidence }: Props) {
   const { dataPoints, action, pattern } = parseNarrative(narrative, causeDetails);
   const hasStructured = dataPoints.length > 0 || !!primaryCause || !!action;
 
@@ -135,22 +137,44 @@ export function NarrativePanel({ window: w, narrative, primaryCause, causeDetail
               </div>
             )}
 
-            {/* 3 — Action */}
-            {action && (
+            {/* 3 — Action (+ concrete keyword evidence) */}
+            {(action || evidence) && (
               <div className="space-y-1 bg-emerald-50 border border-emerald-100 rounded p-3">
                 <StepHeader icon={<Target className="h-3.5 w-3.5 text-emerald-600" />} label="Action" />
-                <ul className="space-y-1 text-[13px] text-emerald-950">
-                  <li className="flex gap-1.5">
-                    <span className="text-emerald-500">•</span>
-                    <span className="font-medium">{humanize(action)}</span>
-                  </li>
-                  {pattern && (
-                    <li className="ml-3 flex gap-1.5 text-emerald-800/80">
-                      <span className="text-emerald-400">◦</span>
-                      <span>{humanize(pattern)}</span>
+                {action && (
+                  <ul className="space-y-1 text-[13px] text-emerald-950">
+                    <li className="flex gap-1.5">
+                      <span className="text-emerald-500">•</span>
+                      <span className="font-medium">{humanize(action)}</span>
                     </li>
-                  )}
-                </ul>
+                    {pattern && (
+                      <li className="ml-3 flex gap-1.5 text-emerald-800/80">
+                        <span className="text-emerald-400">◦</span>
+                        <span>{humanize(pattern)}</span>
+                      </li>
+                    )}
+                  </ul>
+                )}
+                {evidence && (
+                  <div className="mt-2 rounded bg-white/70 border border-emerald-100 p-2">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800">
+                      <Search className="h-3 w-3" />
+                      Dẫn chứng (keyword thực tế)
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-emerald-900/80">{evidence.label}</div>
+                    <ul className="mt-1 space-y-0.5 text-[12px] text-slate-700">
+                      {evidence.items.map((it, i) => (
+                        <li key={i} className="flex gap-1.5">
+                          <span className="text-emerald-500">›</span>
+                          <span>
+                            <span className="font-medium text-slate-900">{it.term}</span>
+                            <span className="text-slate-500"> — {it.detail}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
 
