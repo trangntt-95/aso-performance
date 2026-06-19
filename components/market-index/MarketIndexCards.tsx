@@ -11,6 +11,7 @@ import { WowComparison } from './WowComparison';
 import { DynamicBasketCard } from './DynamicBasketCard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { deriveNarrativeEvidence } from '@/lib/market/narrativeEvidence';
+import { accountFunnel, accountTotals } from '@/lib/market/accountAggregates';
 import type { KeywordRow, Window } from '@/lib/sheets/types';
 
 // Selected window → the matching All_* keyword rows for that window.
@@ -27,17 +28,32 @@ export function MarketIndexCards() {
   const [selected, setSelected] = useState<Window | null>('L7');
 
   const market = data?.marketIndex;
-  const summary = useMemo(() => market?.summary ?? [], [market]);
-  const funnels = useMemo(() => market?.funnels ?? [], [market]);
   const narratives = market?.narratives ?? {};
+
+  // Window cards: keep the sheet's core (weighted) verdict + cause prose, but
+  // override Users/Install deltas with whole-account numbers (All_Lx) so they
+  // match Overview instead of the core-basket subset.
+  const summary = useMemo(() => {
+    const rows = market?.summary ?? [];
+    if (!data) return rows;
+    return rows.map((r) => {
+      const acc = accountTotals(data, r.window);
+      return { ...r, deltaUsersPct: acc.deltaUsersPct, deltaGetAppPct: acc.deltaGetAppPct };
+    });
+  }, [market, data]);
 
   const selectedRow = useMemo(
     () => summary.find((s) => s.window === selected),
     [summary, selected],
   );
+  // Funnel + narrative data line recomputed from All_Lx (all keywords).
   const selectedFunnel = useMemo(
-    () => funnels.find((f) => f.window === selected),
-    [funnels, selected],
+    () => (data && selected ? accountFunnel(data, selected) : undefined),
+    [data, selected],
+  );
+  const selectedTotals = useMemo(
+    () => (data && selected ? accountTotals(data, selected) : null),
+    [data, selected],
   );
 
   // Concrete keyword examples backing the narrative's cause/action.
@@ -99,6 +115,7 @@ export function MarketIndexCards() {
             primaryCause={selectedRow.primaryCause}
             causeDetails={selectedRow.causeDetails}
             evidence={evidence}
+            dataOverride={selectedTotals}
           />
         </div>
       )}

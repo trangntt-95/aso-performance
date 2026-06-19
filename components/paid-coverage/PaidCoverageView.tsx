@@ -59,7 +59,7 @@ interface CoverageRow extends PaidStatus {
   coverage: CountryCoverage | null;
 }
 
-type StatusFilter = 'all' | 'not_in_paid' | 'paused' | 'in_paid' | 'manual' | 'negative' | 'geo_gap';
+type StatusFilter = 'all' | 'not_in_paid' | 'not_in_paid_strict' | 'paused' | 'in_paid' | 'manual' | 'negative' | 'geo_gap';
 type Win = 'l7' | 'l30' | 'l90' | 'l365';
 
 const WIN_LABEL: Record<Win, string> = { l7: 'L7', l30: 'L30', l90: 'L90', l365: 'L365' };
@@ -240,6 +240,8 @@ export function PaidCoverageView() {
         if (statusFilter === 'negative' && !r.negative) return false;
         // not_in_paid INCLUDES paused (camp tắt = đang không bid) but excludes negatives.
         if (statusFilter === 'not_in_paid' && (r.inPaid || r.negative)) return false;
+        // strict variant: also EXCLUDES paused camp (chưa từng được bid thật sự).
+        if (statusFilter === 'not_in_paid_strict' && (r.inPaid || r.negative || r.paused)) return false;
         if (statusFilter === 'geo_gap') {
           if (!r.coverage || r.coverage.gaps.length === 0) return false;
           if (countryFilter !== 'all' && !r.coverage.gaps.includes(countryFilter)) return false;
@@ -321,6 +323,7 @@ export function PaidCoverageView() {
             title="Paid status"
           >
             <option value="not_in_paid">❌ Not in Paid (gồm ⏸)</option>
+            <option value="not_in_paid_strict">❌ Not in Paid (KHÔNG gồm ⏸)</option>
             <option value="paused">⏸ Paused camp</option>
             <option value="in_paid">📌 In Paid (Master)</option>
             <option value="manual">✍️ Added (manual)</option>

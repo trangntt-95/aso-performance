@@ -3,6 +3,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { Window } from '@/lib/sheets/types';
 import type { NarrativeEvidence } from '@/lib/market/narrativeEvidence';
+import type { AccountTotals } from '@/lib/market/accountAggregates';
+import { formatNumber, formatDeltaPct } from '@/lib/utils/format';
 import { ScrollText, BarChart3, Lightbulb, Target, Search } from 'lucide-react';
 
 interface Props {
@@ -11,6 +13,9 @@ interface Props {
   primaryCause?: string;
   causeDetails?: string;
   evidence?: NarrativeEvidence | null;
+  /** Whole-account totals (All_Lx) — when set, the data line uses these instead
+   *  of the core-basket numbers parsed from the sheet narrative. */
+  dataOverride?: AccountTotals | null;
 }
 
 /**
@@ -90,9 +95,18 @@ function StepHeader({ icon, label }: { icon: React.ReactNode; label: string }) {
   );
 }
 
-export function NarrativePanel({ window: w, narrative, primaryCause, causeDetails, evidence }: Props) {
+export function NarrativePanel({ window: w, narrative, primaryCause, causeDetails, evidence, dataOverride }: Props) {
   const { dataPoints, action, pattern } = parseNarrative(narrative, causeDetails);
-  const hasStructured = dataPoints.length > 0 || !!primaryCause || !!action;
+  const n = (v: number) => formatNumber(v, { compact: true });
+  // Prefer whole-account totals (match Overview); fall back to the parsed
+  // basket numbers when no override is supplied.
+  const shownPoints: string[] = dataOverride
+    ? [
+        `Users ${n(dataOverride.usersP)}→${n(dataOverride.usersL)} (${formatDeltaPct(dataOverride.deltaUsersPct)})`,
+        `Install ${n(dataOverride.getAppP)}→${n(dataOverride.getAppL)} (${formatDeltaPct(dataOverride.deltaGetAppPct)})`,
+      ]
+    : dataPoints.map(humanize);
+  const hasStructured = shownPoints.length > 0 || !!primaryCause || !!action;
 
   return (
     <Card>
@@ -105,15 +119,15 @@ export function NarrativePanel({ window: w, narrative, primaryCause, causeDetail
       <CardContent className="space-y-4 text-sm leading-relaxed">
         {hasStructured ? (
           <>
-            {/* 1 — Phân tích data */}
-            {dataPoints.length > 0 && (
+            {/* 1 — Phân tích data (toàn account, khớp Overview) */}
+            {shownPoints.length > 0 && (
               <div className="space-y-1">
                 <StepHeader icon={<BarChart3 className="h-3.5 w-3.5 text-sky-600" />} label="Phân tích data" />
                 <ul className="space-y-0.5 text-[13px] text-slate-700">
-                  {dataPoints.map((d, i) => (
+                  {shownPoints.map((d, i) => (
                     <li key={i} className="flex gap-1.5">
                       <span className="text-slate-400">•</span>
-                      <span className="font-mono">{humanize(d)}</span>
+                      <span className="font-mono">{d}</span>
                     </li>
                   ))}
                 </ul>
