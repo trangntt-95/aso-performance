@@ -19,6 +19,7 @@ import {
   parseTier1Watch,
 } from '@/lib/sheets/parsers';
 import { languageOnlyKeywords, overrideToLanguage } from '@/lib/sheets/languageOverride';
+import { overrideCategoryExact } from '@/lib/sheets/categoryOverride';
 import type { SheetPayload } from '@/lib/sheets/types';
 import { makeDashboardTools } from '@/lib/ai/dashboard-tools';
 
@@ -79,18 +80,18 @@ async function fetchPayload(): Promise<SheetPayload> {
     actionQueue: parseActionQueue(raw['Action_Queue'] ?? []),
     marketIndex: parseMarketIndex(raw['Market_Index'] ?? []),
     tier1Watch: parseTier1Watch(raw['Tier1_Market_Watch'] ?? []),
-    allL3: overrideToLanguage(parseKeywordTab(raw['All_L3'] ?? [], false), langKws),
-    allL7: overrideToLanguage(parseKeywordTab(raw['All_L7'] ?? [], false), langKws),
-    allL14: overrideToLanguage(parseKeywordTab(raw['All_L14'] ?? [], false), langKws),
-    allL30: overrideToLanguage(parseKeywordTab(raw['All_L30'] ?? [], false), langKws),
-    allL90: overrideToLanguage(parseKeywordTab(raw['All_L90'] ?? [], false), langKws),
-    countryL3: overrideToLanguage(parseKeywordTab(raw['Country_L3'] ?? [], true), langKws),
-    countryL7: overrideToLanguage(parseKeywordTab(raw['Country_L7'] ?? [], true), langKws),
-    countryL14: overrideToLanguage(parseKeywordTab(raw['Country_L14'] ?? [], true), langKws),
-    countryL30: overrideToLanguage(parseKeywordTab(raw['Country_L30'] ?? [], true), langKws),
-    countryL90: overrideToLanguage(parseKeywordTab(raw['Country_L90'] ?? [], true), langKws),
-    allL365: overrideToLanguage(parseSnapshot(raw['All_L365'] ?? [], false), langKws),
-    countryL365: overrideToLanguage(parseSnapshot(raw['Country_L365'] ?? [], true), langKws),
+    allL3: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['All_L3'] ?? [], false), langKws)),
+    allL7: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['All_L7'] ?? [], false), langKws)),
+    allL14: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['All_L14'] ?? [], false), langKws)),
+    allL30: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['All_L30'] ?? [], false), langKws)),
+    allL90: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['All_L90'] ?? [], false), langKws)),
+    countryL3: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['Country_L3'] ?? [], true), langKws)),
+    countryL7: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['Country_L7'] ?? [], true), langKws)),
+    countryL14: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['Country_L14'] ?? [], true), langKws)),
+    countryL30: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['Country_L30'] ?? [], true), langKws)),
+    countryL90: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['Country_L90'] ?? [], true), langKws)),
+    allL365: overrideCategoryExact(overrideToLanguage(parseSnapshot(raw['All_L365'] ?? [], false), langKws)),
+    countryL365: overrideCategoryExact(overrideToLanguage(parseSnapshot(raw['Country_L365'] ?? [], true), langKws)),
     history: parseHistory(raw['History'] ?? []),
     historyDaily: parseHistoryDaily(raw['History_Daily'] ?? []),
     alertLog: parseAlertLog(raw['AlertLog'] ?? []),
