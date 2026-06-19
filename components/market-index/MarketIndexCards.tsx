@@ -56,6 +56,23 @@ export function MarketIndexCards() {
     [data, selected],
   );
 
+  // WoW card (L7 vs P7): override Users/Install with whole-account totals
+  // (All_L7) so it matches Overview instead of the sheet's GA account total.
+  const wow = useMemo(() => {
+    const raw = market?.wow ?? [];
+    if (!data || raw.length === 0) return raw;
+    const acc = accountTotals(data, 'L7');
+    return raw.map((m) => {
+      if (/install/i.test(m.metric)) {
+        return { ...m, thisPeriod: acc.getAppL, lastPeriod: acc.getAppP, deltaValue: acc.getAppL - acc.getAppP, deltaPct: acc.deltaGetAppPct };
+      }
+      if (/user/i.test(m.metric)) {
+        return { ...m, thisPeriod: acc.usersL, lastPeriod: acc.usersP, deltaValue: acc.usersL - acc.usersP, deltaPct: acc.deltaUsersPct };
+      }
+      return m;
+    });
+  }, [market, data]);
+
   // Concrete keyword examples backing the narrative's cause/action.
   const evidence = useMemo(() => {
     if (!data || !selected || !selectedRow) return null;
@@ -83,7 +100,7 @@ export function MarketIndexCards() {
         market?.executiveSummary && <ExecutiveSummaryCard data={market.executiveSummary} />
       )}
 
-      {!isLoading && market?.wow && market.wow.length > 0 && <WowComparison data={market.wow} />}
+      {!isLoading && wow.length > 0 && <WowComparison data={wow} />}
 
       <section className="space-y-2">
         <div>

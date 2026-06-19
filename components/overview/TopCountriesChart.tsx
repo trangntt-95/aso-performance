@@ -37,7 +37,10 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
   const [metric, setMetric] = useState<Metric>('users');
   const clickable = Boolean(onCountryClick);
   const isCr = metric === 'cr';
-  const sortedData = [...data].sort((a, b) => b[metric] - a[metric]);
+  // Rank-numbered label so the order is obvious on the Y axis (1., 2., 3., …).
+  const sortedData = [...data]
+    .sort((a, b) => b[metric] - a[metric])
+    .map((d, i) => ({ ...d, rankLabel: `${i + 1}. ${d.country}` }));
   const axisFmt = (n: number) => (isCr ? formatPercent(n) : tickFmt(n));
 
   return (
@@ -90,12 +93,12 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
             />
             <YAxis
               type="category"
-              dataKey="country"
+              dataKey="rankLabel"
               tick={{ fontSize: 11, fill: '#475569' }}
               stroke="#cbd5e1"
               tickLine={false}
               axisLine={false}
-              width={160}
+              width={172}
               interval={0}
             />
             <Tooltip
