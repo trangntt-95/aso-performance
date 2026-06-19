@@ -17,6 +17,68 @@ import type { Category } from '@/lib/sheets/types';
 const selectCls =
   'h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500';
 
+type SortKey =
+  | 'keyword'
+  | 'category'
+  | 'organicUsers'
+  | 'organicPos'
+  | 'paidUsers'
+  | 'paidPos'
+  | 'paidShare'
+  | 'score';
+type SortDir = 'asc' | 'desc';
+
+// Per-column value + type. 'num' defaults to desc on first click, 'text' to asc.
+const SORT_COLS: Record<
+  SortKey,
+  { kind: 'num' | 'text'; get: (r: import('@/lib/market/underbid').UnderbidRow) => number | string | null }
+> = {
+  keyword: { kind: 'text', get: (r) => r.term },
+  category: { kind: 'text', get: (r) => r.category },
+  organicUsers: { kind: 'num', get: (r) => r.organicUsers },
+  organicPos: { kind: 'num', get: (r) => r.organicPos },
+  paidUsers: { kind: 'num', get: (r) => r.paidUsers },
+  paidPos: { kind: 'num', get: (r) => r.paidPos },
+  paidShare: { kind: 'num', get: (r) => r.paidShare },
+  score: { kind: 'num', get: (r) => r.score },
+};
+
+function SortHead({
+  label,
+  col,
+  sortKey,
+  sortDir,
+  onSort,
+  align = 'left',
+  extra,
+}: {
+  label: string;
+  col: SortKey;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (k: SortKey) => void;
+  align?: 'left' | 'right';
+  extra?: string;
+}) {
+  const active = sortKey === col;
+  return (
+    <th
+      onClick={() => onSort(col)}
+      className={cn(
+        'px-2 py-2 font-medium cursor-pointer select-none hover:text-slate-900',
+        align === 'right' ? 'text-right' : 'text-left',
+        active && 'text-indigo-700',
+        extra,
+      )}
+    >
+      <span className={cn('inline-flex items-center gap-0.5', align === 'right' && 'flex-row-reverse')}>
+        {label}
+        <span className="text-[9px] w-2 text-indigo-600">{active ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+      </span>
+    </th>
+  );
+}
+
 export function UnderbidView() {
   const { data, isLoading, error } = useSheetData();
 
@@ -27,6 +89,17 @@ export function UnderbidView() {
   // Post-filters.
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [sortKey, setSortKey] = useState<SortKey>('score');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const toggleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(SORT_COLS[key].kind === 'num' ? 'desc' : 'asc');
+    }
+  };
 
   const rows = useMemo(() => {
     if (!data) return [];
@@ -57,12 +130,28 @@ export function UnderbidView() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
+    const out = rows.filter((r) => {
       if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
       if (q && !r.term.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [rows, search, categoryFilter]);
+    const { kind, get } = SORT_COLS[sortKey];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    out.sort((a, b) => {
+      const va = get(a);
+      const vb = get(b);
+      // Nulls/blanks always sink to the bottom regardless of direction.
+      const aEmpty = va === null || va === '';
+      const bEmpty = vb === null || vb === '';
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      const base =
+        kind === 'num' ? (va as number) - (vb as number) : String(va).localeCompare(String(vb));
+      return base * dir || b.score - a.score;
+    });
+    return out;
+  }, [rows, search, categoryFilter, sortKey, sortDir]);
 
   const dirty = search !== '' || categoryFilter !== 'all';
 
@@ -148,11 +237,13 @@ export function UnderbidView() {
           <table className="w-full text-xs">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <th className="px-3 py-2 text-left font-medium min-w-[13rem]">Keyword</th>
-                <th className="px-2 py-2 text-left font-medium">Category</th>
-                <th className="px-2 py-2 text-right font-medium">Organic (users · pos)</th>
-                <th className="px-2 py-2 text-right font-medium">Paid (users · pos)</th>
-                <th className="px-2 py-2 text-right font-medium">Paid share</th>
+                <SortHead label="Keyword" col="keyword" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} extra="px-3 min-w-[13rem]" />
+                <SortHead label="Category" col="category" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortHead label="Org users" col="organicUsers" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortHead label="Org pos" col="organicPos" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortHead label="Paid users" col="paidUsers" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortHead label="Paid pos" col="paidPos" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortHead label="Paid share" col="paidShare" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <th className="px-2 py-2 text-left font-medium min-w-[12rem]">Camp (đang bid)</th>
               </tr>
             </thead>
@@ -172,13 +263,17 @@ export function UnderbidView() {
                     </td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px]">
                       {formatNumber(r.organicUsers, { compact: true })}
-                      <span className="text-slate-400"> · P {formatPos(r.organicPos)}</span>
+                    </td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-500">
+                      {formatPos(r.organicPos)}
                     </td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px]">
                       <span className={r.paidUsers === 0 ? 'text-rose-600 font-medium' : ''}>
                         {formatNumber(r.paidUsers, { compact: true })}
                       </span>
-                      <span className="text-slate-400"> · P {formatPos(r.paidPos)}</span>
+                    </td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-500">
+                      {formatPos(r.paidPos)}
                     </td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       <span className="font-mono text-[11px] font-semibold text-amber-700">{formatPercent(r.paidShare)}</span>
@@ -218,7 +313,7 @@ export function UnderbidView() {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            L365 · Organic/Paid = users (P = avg position) · Paid share = paid ÷ (organic + paid) · sắp xếp theo nhu cầu organic mà paid đang bỏ lỡ
+            L365 · pos = avg position · Paid share = paid ÷ (organic + paid) · <b>click cột để sort</b> · mặc định sắp theo nhu cầu organic mà paid đang bỏ lỡ
           </div>
         </div>
       )}
