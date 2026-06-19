@@ -8,6 +8,7 @@ const TITLES: Record<string, string> = {
   '/market-index': 'Market Health',
   '/categories': 'Categories',
   '/paid-coverage': 'Paid Coverage',
+  '/underbid': 'Underbid Keywords',
   '/bid-cap': 'Bid Recommendations',
   '/trends': 'Trends',
 };

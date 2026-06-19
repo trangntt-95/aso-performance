@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, Layers, LayoutDashboard, Crosshair, DollarSign } from 'lucide-react';
+import { BarChart3, Layers, LayoutDashboard, Crosshair, DollarSign, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 
@@ -18,6 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/market-index', label: 'Market Health', Icon: BarChart3, shortLabel: 'Market' },
   { href: '/categories', label: 'Categories', Icon: Layers, shortLabel: 'Cats' },
   { href: '/paid-coverage', label: 'Paid Coverage', Icon: Crosshair, shortLabel: 'Paid' },
+  { href: '/underbid', label: 'Underbid Keywords', Icon: TrendingUp, shortLabel: 'Underbid' },
   { href: '/bid-cap', label: 'Bid Recommendations', Icon: DollarSign, shortLabel: 'Bids' },
 ];
 
@@ -68,7 +69,7 @@ export function MobileTabBar() {
   const pathname = usePathname();
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white">
-      <div className="grid grid-cols-5">
+      <div className="grid grid-cols-6">
         {NAV_ITEMS.map(({ href, label, shortLabel, Icon }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
           return (
