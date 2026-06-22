@@ -367,6 +367,8 @@ export interface SheetPayload {
   bidCap: BidCapRow[];
   /** Per-campaign aggregate paid spend ('Shopify_daily' tab) — for overbid detection. */
   shopifyCamps: ShopifyCampRow[];
+  /** Date range the Shopify_daily totals cover (from cell A2), e.g. "01/03/2026 → 14/06/2026". */
+  shopifyDateRange: string;
   /** Keywords explicitly set as negatives (from 'Negative KW list' tab, col B). */
   negativeKw: string[];
   /** Actual date range each window (L3/L7/...) covers, parsed from tab titles. */

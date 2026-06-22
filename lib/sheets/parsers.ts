@@ -695,6 +695,23 @@ export function parseShopifyCamps(rows: string[][]): ShopifyCampRow[] {
     .filter((r): r is ShopifyCampRow => r !== null);
 }
 
+// The date range the Shopify_daily totals cover lives in cell A2 (the header
+// row, col 0), e.g. "2026-03-01 2026-06-14". Returns a tidied "dd/mm/yyyy →
+// dd/mm/yyyy", or the raw trimmed text if it can't find two ISO dates, or ''.
+export function parseShopifyDateRange(rows: string[][]): string {
+  if (!rows || rows.length < 2) return '';
+  const headerIdx = rows.findIndex((r) => (r ?? []).some((c) => /impression/i.test(str(c))));
+  const cell = str(rows[headerIdx >= 0 ? headerIdx : 1]?.[0]).trim();
+  if (!cell) return '';
+  const dates = cell.match(/\d{4}-\d{2}-\d{2}/g);
+  if (!dates || dates.length === 0) return cell;
+  const fmt = (iso: string) => {
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  };
+  return dates.length >= 2 ? `${fmt(dates[0])} → ${fmt(dates[1])}` : fmt(dates[0]);
+}
+
 // ---------------------------------------------------------------------------
 // Paused_camp — keyword rows of campaigns that have been PAUSED (same schema as
 // Master KW Lookup, header on row 2). parseMasterKw's header detection handles

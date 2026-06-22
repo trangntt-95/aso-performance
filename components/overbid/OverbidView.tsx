@@ -147,10 +147,15 @@ export function OverbidView() {
         <Flame className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
         <div>
           <b>Camp bị overbid</b> — camp trong <code className="text-[10px]">Shopify_daily</code> có{' '}
-          <b>CPC thực tế (Spend/Clicks)</b> vượt mức <b>Bid Rec ⭐</b> hoặc <b>CPI</b> vượt CPI mục tiêu của{' '}
-          Country × Category tương ứng (tab <code className="text-[10px]">Max bid cap</code>). → nên <b>hạ bid</b>.
-          Camp đa quốc gia khớp theo country (lấy bid rec cao nhất trong các nước target); không tách được country
-          thì so với <b>band của cả category</b> (đánh dấu <i>band</i> — kém chính xác hơn).
+          <b>CPC thực tế (Spend/Clicks)</b> vượt <b>bid cho phép</b> hoặc <b>CPI</b> vượt CPI cho phép (tab{' '}
+          <code className="text-[10px]">Max bid cap</code>). → nên <b>hạ bid</b>. Nước target lấy từ cột{' '}
+          <b>Geo</b> trong <code className="text-[10px]">Camp_Links</code> (🎯, so với trung bình các nước đó); camp
+          không điền Geo coi là <b>general</b> → so với <b>trung bình cả category</b> (🌐).
+          {data?.shopifyDateRange && (
+            <span className="mt-1 block font-medium text-rose-800">
+              📅 Dữ liệu áp dụng: {data.shopifyDateRange}
+            </span>
+          )}
         </div>
       </div>
 
@@ -169,8 +174,8 @@ export function OverbidView() {
           </select>
           <select value={matchFilter} onChange={(e) => setMatchFilter(e.target.value)} className={selectCls} title="Độ khớp">
             <option value="all">Match: All</option>
-            <option value="country">Country (chính xác)</option>
-            <option value="category">Category band</option>
+            <option value="country">🎯 Có Geo (theo nước)</option>
+            <option value="category">🌐 General (avg category)</option>
           </select>
           <div className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5">
             <span className="text-[10px] text-slate-500 uppercase tracking-wide">Ngưỡng</span>
@@ -219,8 +224,8 @@ export function OverbidView() {
               <tr>
                 <SortHead label="Camp" col="camp" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} extra="px-3 min-w-[15rem]" />
                 <SortHead label="Category" col="category" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                <SortHead label="CPC / rec" col="cpc" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="CPC thực tế / Bid Rec ⭐" />
-                <SortHead label="CPI / target" col="cpi" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="CPI thực tế / CPI mục tiêu" />
+                <SortHead label="CPC / cho phép" col="cpc" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="CPC thực tế / bid cho phép (avg Bid Rec)" />
+                <SortHead label="CPI / cho phép" col="cpi" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="CPI thực tế / CPI cho phép (avg)" />
                 <SortHead label="Clicks" col="clicks" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Inst" col="installs" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Spend" col="spend" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -244,9 +249,9 @@ export function OverbidView() {
                       )}
                       <div className="text-[10px] text-slate-400">
                         {r.matchLevel === 'country' ? (
-                          <span title="Khớp đúng country target">🎯 {r.countryLabel}</span>
+                          <span title="Nước target lấy từ Geo trong Camp_Links — so với trung bình các nước đó">🎯 {r.countryLabel}</span>
                         ) : (
-                          <span title="Không tách được country — so với band của cả category" className="text-amber-600">~ {r.countryLabel}</span>
+                          <span title="Camp không điền Geo → general, so với trung bình cả category" className="text-amber-600">🌐 {r.countryLabel}</span>
                         )}
                       </div>
                     </td>
@@ -283,8 +288,8 @@ export function OverbidView() {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            CPC = Spend/Clicks (proxy cho bid đang trả) · CPI = Spend/Installs · rec/target từ Max bid cap (Country×Category) ·
-            🎯 = khớp đúng country, <span className="text-amber-600">~</span> = so với band cả category ·
+            CPC = Spend/Clicks (proxy cho bid đang trả) · CPI = Spend/Installs · bid/CPI cho phép = trung bình từ Max bid cap ·
+            🎯 = nước target từ Geo (Camp_Links), <span className="text-amber-600">🌐</span> = general (avg cả category) ·
             <b> click cột để sort</b> · mặc định sắp theo spend lãng phí (overage × spend)
           </div>
         </div>

@@ -15,6 +15,7 @@ import {
   parseNegativeKw,
   parsePausedCamp,
   parseShopifyCamps,
+  parseShopifyDateRange,
   parseSnapshot,
   parseWindowDateRange,
   parseTier1Watch,
@@ -102,6 +103,7 @@ async function fetchPayload(): Promise<SheetPayload> {
     campLinks: parseCampLinks(raw['Camp_Links'] ?? []),
     bidCap: parseBidCap(raw['Max bid cap'] ?? []),
     shopifyCamps: parseShopifyCamps(raw['Shopify_daily'] ?? []),
+    shopifyDateRange: parseShopifyDateRange(raw['Shopify_daily'] ?? []),
     negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
     windowDates: (() => {
       const wd: Record<string, { from: string; to: string }> = {};
