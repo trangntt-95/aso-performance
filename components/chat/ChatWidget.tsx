@@ -15,6 +15,8 @@ const PAGE_BY_PATH: Record<string, string> = {
   '/market-index': 'Market Health',
   '/categories': 'Categories',
   '/paid-coverage': 'Paid Coverage',
+  '/underbid': 'Underbid Keywords',
+  '/overbid-camps': 'Overbid Camps',
   '/bid-cap': 'Bid Recommendations',
 };
 

@@ -282,6 +282,20 @@ export interface BidCapRow {
   actionRecommended: string;
 }
 
+/**
+ * One campaign's aggregate paid spend from the 'Shopify_daily' tab. Columns:
+ * Camp name | Impressions | Clicks | Installs | Spend — totals over the date
+ * range named in the header row (e.g. 2026-03-01 → 2026-06-14). No bid column;
+ * effective CPC = Spend/Clicks is the proxy for the bid being paid.
+ */
+export interface ShopifyCampRow {
+  camp: string;
+  impressions: number;
+  clicks: number;
+  installs: number;
+  spend: number;
+}
+
 export interface CampLinkRow {
   category: string;
   camp: string;
@@ -351,6 +365,8 @@ export interface SheetPayload {
   campLinks: CampLinkRow[];
   /** Recommended bid per Country × Category ('Max bid cap' tab). */
   bidCap: BidCapRow[];
+  /** Per-campaign aggregate paid spend ('Shopify_daily' tab) — for overbid detection. */
+  shopifyCamps: ShopifyCampRow[];
   /** Keywords explicitly set as negatives (from 'Negative KW list' tab, col B). */
   negativeKw: string[];
   /** Actual date range each window (L3/L7/...) covers, parsed from tab titles. */

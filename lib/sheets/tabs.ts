@@ -24,6 +24,7 @@ export const TABS = [
   'Negative KW list',
   'Paused_camp',
   'Camp_Links',
+  'Shopify_daily',
 ] as const;
 
 export type TabName = (typeof TABS)[number];

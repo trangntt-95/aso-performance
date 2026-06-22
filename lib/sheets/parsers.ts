@@ -17,6 +17,7 @@ import type {
   MarketIndexSummaryRow,
   MasterKwRow,
   Priority,
+  ShopifyCampRow,
   SnapshotRow,
   Surface,
   Tier1WatchRow,
@@ -611,13 +612,15 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
     category: find('category'),
     status: find('status'),
     nKw: find('# kw', 'n_kw'),
-    impL30: find('imp', 'imp_l30'),
-    clicksL30: find('clicks', 'clicks_l30'),
-    installsL30: find('inst', 'installs_l30'),
-    spendL30: find('spend', 'spend_l30'),
-    crActual: find('cr act', 'cr_actual'),
-    cpcActual: find('cpc act', 'cpc_actual'),
-    cpiActual: find('cpi act', 'cpi_actual'),
+    // Newer 'Max bid cap' schema uses per-month columns (Imp/mo, Clicks/mo,
+    // Inst/mo, Spend/mo) — list those first so 'Inst/mo' wins over 'Inst L90'.
+    impL30: find('imp/mo', 'imp_l30', 'imp'),
+    clicksL30: find('clicks/mo', 'clicks_l30', 'clicks'),
+    installsL30: find('inst/mo', 'installs_l30', 'inst'),
+    spendL30: find('spend/mo', 'spend_l30', 'spend'),
+    crActual: find('cr act', 'cr_actual', 'cr %', 'cr'),
+    cpcActual: find('cpc act', 'cpc_actual', 'cpc'),
+    cpiActual: find('cpi act', 'cpi_actual', 'cpi'),
     avgPosition: find('avg pos', 'avg_position'),
     visibility: find('% top-3', '% top3', 'top-3', 'visibility'),
     bidFloorTop3: find('bid p75', 'bid_floor_top3', 'bid floor'),
@@ -661,6 +664,35 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
       };
     })
     .filter((r): r is BidCapRow => r !== null);
+}
+
+// ---------------------------------------------------------------------------
+// Shopify_daily — one row per campaign with aggregate Impressions / Clicks /
+// Installs / Spend over the date range named in the header. Layout (verified
+// live 2026-06-22): row 0 blank, row 1 = header (col0 = date range, then
+// Impressions | Clicks | Installs | Spend), row 2+ = camp rows (col0 = name).
+// We locate the header by the 'Impressions' label so cosmetic row shifts above
+// it don't break parsing.
+// ---------------------------------------------------------------------------
+
+export function parseShopifyCamps(rows: string[][]): ShopifyCampRow[] {
+  if (!rows || rows.length < 2) return [];
+  let headerIdx = rows.findIndex((r) => (r ?? []).some((c) => /impression/i.test(str(c))));
+  if (headerIdx < 0) headerIdx = 0; // no recognizable header — assume data starts at row 1
+  return rows
+    .slice(headerIdx + 1)
+    .map((row): ShopifyCampRow | null => {
+      const camp = str(row?.[0]).trim();
+      if (!camp) return null;
+      return {
+        camp,
+        impressions: num(row?.[1]),
+        clicks: num(row?.[2]),
+        installs: num(row?.[3]),
+        spend: num(row?.[4]),
+      };
+    })
+    .filter((r): r is ShopifyCampRow => r !== null);
 }
 
 // ---------------------------------------------------------------------------

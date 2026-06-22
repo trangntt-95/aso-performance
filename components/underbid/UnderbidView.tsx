@@ -1,8 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Search, X, ExternalLink, AlertTriangle } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
+import { NoteCell } from '@/components/shared/NoteCell';
+import { useNotesStore } from '@/lib/store/notesStore';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -81,6 +83,12 @@ function SortHead({
 
 export function UnderbidView() {
   const { data, isLoading, error } = useSheetData();
+
+  // Load saved notes from the App_Notes sheet tab once on mount.
+  const loadNotes = useNotesStore((s) => s.load);
+  useEffect(() => {
+    loadNotes();
+  }, [loadNotes]);
 
   // Detection thresholds (tunable).
   const [minOrganic, setMinOrganic] = useState('5');
@@ -245,6 +253,7 @@ export function UnderbidView() {
                 <SortHead label="Paid pos" col="paidPos" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Paid share" col="paidShare" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <th className="px-2 py-2 text-left font-medium min-w-[12rem]">Camp (đang bid)</th>
+                <th className="px-2 py-2 text-left font-medium min-w-[9rem]" title="Ghi chú của bạn (tự lưu)">Note</th>
               </tr>
             </thead>
             <tbody>
@@ -307,6 +316,7 @@ export function UnderbidView() {
                         )}
                       </div>
                     </td>
+                    <NoteCell scope="underbid" noteId={r.term} />
                   </tr>
                 );
               })}

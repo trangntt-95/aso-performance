@@ -9,6 +9,7 @@ const TITLES: Record<string, string> = {
   '/categories': 'Categories',
   '/paid-coverage': 'Paid Coverage',
   '/underbid': 'Underbid Keywords',
+  '/overbid-camps': 'Overbid Camps',
   '/bid-cap': 'Bid Recommendations',
   '/trends': 'Trends',
 };
