@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, AlertCircle, Search, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
@@ -114,42 +114,68 @@ function buildSummaries(
   });
 }
 
-function SnapshotCell({ row }: { row: SnapshotRow | null }) {
+// Which metrics each window cell shows. Toggled at the top of the table so the
+// dense L7/L30/L90/L365 grid can be trimmed to just what you're looking at.
+type MetricKey = 'users' | 'install' | 'cr' | 'pos';
+const METRIC_OPTIONS: { key: MetricKey; label: string }[] = [
+  { key: 'users', label: 'Users' },
+  { key: 'install', label: 'Install' },
+  { key: 'cr', label: 'CR' },
+  { key: 'pos', label: 'Position' },
+];
+
+// One metric line: fixed-width label + value, vertically stacked so columns
+// line up and scan cleanly across windows.
+function MetricLine({ label, children, strong }: { label: string; children: ReactNode; strong?: boolean }) {
+  return (
+    <div className="flex items-baseline gap-1">
+      <span className="text-[9px] text-slate-400 w-4 shrink-0">{label}</span>
+      <span className={strong ? 'text-slate-900 font-medium' : 'text-slate-600'}>{children}</span>
+    </div>
+  );
+}
+
+function SnapshotCell({ row, metrics }: { row: SnapshotRow | null; metrics: Set<MetricKey> }) {
   if (!row) {
     return <td className="px-2 py-1.5 text-center text-slate-300">—</td>;
   }
   return (
     <td className="px-2 py-1.5 text-[11px] align-top">
-      <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-        <span className="font-mono">U {formatNumber(row.users, { compact: true })}</span>
-        <span className="font-mono text-slate-500">I {formatNumber(row.getApp, { compact: true })}</span>
-        <span className="font-mono text-slate-500">CR {formatPercent(row.cr)}</span>
-        <span className="font-mono text-slate-500">P {formatPos(row.pos)}</span>
+      <div className="flex flex-col gap-0.5 font-mono tabular-nums">
+        {metrics.has('users') && <MetricLine label="U" strong>{formatNumber(row.users, { compact: true })}</MetricLine>}
+        {metrics.has('install') && <MetricLine label="I">{formatNumber(row.getApp, { compact: true })}</MetricLine>}
+        {metrics.has('cr') && <MetricLine label="CR">{formatPercent(row.cr)}</MetricLine>}
+        {metrics.has('pos') && <MetricLine label="P">{formatPos(row.pos)}</MetricLine>}
       </div>
     </td>
   );
 }
 
-function MetricsCell({ row }: { row: KeywordRow | null }) {
+function MetricsCell({ row, metrics }: { row: KeywordRow | null; metrics: Set<MetricKey> }) {
   if (!row) {
     return <td className="px-2 py-1.5 text-center text-slate-300">—</td>;
   }
   const tone = deltaTone(row.deltaUsersPct);
   return (
     <td className="px-2 py-1.5 text-[11px] align-top">
-      <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-        <span className="font-mono">U {formatNumber(row.usersL, { compact: true })}</span>
-        <span
-          className={cn(
-            'font-mono',
-            tone === 'pos' ? 'text-emerald-700' : tone === 'neg' ? 'text-red-700' : 'text-slate-500',
-          )}
-        >
-          {formatDeltaPct(row.deltaUsersPct)}
-        </span>
-        <span className="font-mono text-slate-500">I {formatNumber(row.getAppL, { compact: true })}</span>
-        <span className="font-mono text-slate-500">CR {formatPercent(row.crL)}</span>
-        <span className="font-mono text-slate-500">P {formatPos(row.posL)}</span>
+      <div className="flex flex-col gap-0.5 font-mono tabular-nums">
+        {metrics.has('users') && (
+          <div className="flex items-baseline gap-1">
+            <span className="text-[9px] text-slate-400 w-4 shrink-0">U</span>
+            <span className="text-slate-900 font-medium">{formatNumber(row.usersL, { compact: true })}</span>
+            <span
+              className={cn(
+                'text-[10px]',
+                tone === 'pos' ? 'text-emerald-700' : tone === 'neg' ? 'text-red-700' : 'text-slate-400',
+              )}
+            >
+              {formatDeltaPct(row.deltaUsersPct)}
+            </span>
+          </div>
+        )}
+        {metrics.has('install') && <MetricLine label="I">{formatNumber(row.getAppL, { compact: true })}</MetricLine>}
+        {metrics.has('cr') && <MetricLine label="CR">{formatPercent(row.crL)}</MetricLine>}
+        {metrics.has('pos') && <MetricLine label="P">{formatPos(row.posL)}</MetricLine>}
       </div>
     </td>
   );
@@ -170,6 +196,20 @@ export function CategoryDrilldown({ category }: { category?: string }) {
   const [paidFilter, setPaidFilter] = useState<PaidFilter>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [metricWindow, setMetricWindow] = useState<MetricWindow>('l7');
+  const [metrics, setMetrics] = useState<Set<MetricKey>>(
+    () => new Set<MetricKey>(['users', 'install', 'cr', 'pos']),
+  );
+  // Toggle a metric on/off — never let the last one go (table would be empty).
+  const toggleMetric = (k: MetricKey) =>
+    setMetrics((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) {
+        if (next.size > 1) next.delete(k);
+      } else {
+        next.add(k);
+      }
+      return next;
+    });
   const [minUsers, setMinUsers] = useState<string>('');
   const [minInstall, setMinInstall] = useState<string>('');
   const [maxPos, setMaxPos] = useState<string>('');
@@ -277,7 +317,7 @@ export function CategoryDrilldown({ category }: { category?: string }) {
         <div className="flex items-center gap-3">
           <Link href="/categories" className="text-xs text-slate-500 inline-flex items-center gap-1 hover:underline">
             <ArrowLeft className="h-3 w-3" />
-            Back to categories
+            Back to dictionary
           </Link>
         </div>
       )}
@@ -418,6 +458,32 @@ export function CategoryDrilldown({ category }: { category?: string }) {
         </div>
       )}
 
+      {/* Metric toggle — pick which of Users / Install / CR / Position show in each window cell. */}
+      {!isLoading && summaries.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className="text-slate-500 mr-0.5">Hiện metrics:</span>
+          {METRIC_OPTIONS.map(({ key, label }) => {
+            const on = metrics.has(key);
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => toggleMetric(key)}
+                aria-pressed={on}
+                className={cn(
+                  'px-2 py-0.5 rounded-full border font-medium transition',
+                  on
+                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                    : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300',
+                )}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -433,13 +499,13 @@ export function CategoryDrilldown({ category }: { category?: string }) {
           <table className="w-full text-xs">
             <thead className="bg-slate-50 text-slate-600 sticky top-0 z-10 shadow-sm [&_th]:bg-slate-50">
               <tr>
+                {allMode && <th className="px-3 py-2 text-left font-medium min-w-[7rem]">Category</th>}
                 <th className="px-3 py-2 text-left font-medium min-w-[14rem]">Keyword</th>
-                {allMode && <th className="px-2 py-2 text-left font-medium">Category</th>}
                 <th className="px-2 py-2 text-left font-medium">L7</th>
                 <th className="px-2 py-2 text-left font-medium">L30</th>
                 <th className="px-2 py-2 text-left font-medium">L90</th>
                 <th className="px-2 py-2 text-left font-medium">L365</th>
-                <th className="px-2 py-2 text-left font-medium">Paid?</th>
+                <th className="px-2 py-2 text-left font-medium">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -460,6 +526,20 @@ export function CategoryDrilldown({ category }: { category?: string }) {
                   english.trim().toLowerCase() !== row.searchTerm.trim().toLowerCase();
                 return (
                 <tr key={`${row.searchTerm}-${row.surface}`} className="border-t hover:bg-slate-50">
+                  {allMode && (
+                    <td className="px-3 py-1.5 align-top">
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap',
+                          cs.bg,
+                          cs.text,
+                        )}
+                      >
+                        <span>{cs.emoji}</span>
+                        {row.category}
+                      </span>
+                    </td>
+                  )}
                   <td className="px-3 py-1.5 align-top">
                     <div className="flex items-center gap-2 min-w-0">
                       <SurfaceIcon surface={row.surface} />
@@ -483,24 +563,10 @@ export function CategoryDrilldown({ category }: { category?: string }) {
                       </div>
                     )}
                   </td>
-                  {allMode && (
-                    <td className="px-2 py-1.5 align-top">
-                      <span
-                        className={cn(
-                          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap',
-                          cs.bg,
-                          cs.text,
-                        )}
-                      >
-                        <span>{cs.emoji}</span>
-                        {row.category}
-                      </span>
-                    </td>
-                  )}
-                  <MetricsCell row={row.l7} />
-                  <MetricsCell row={row.l30} />
-                  <MetricsCell row={row.l90} />
-                  <SnapshotCell row={row.l365} />
+                  <MetricsCell row={row.l7} metrics={metrics} />
+                  <MetricsCell row={row.l30} metrics={metrics} />
+                  <MetricsCell row={row.l90} metrics={metrics} />
+                  <SnapshotCell row={row.l365} metrics={metrics} />
                   <td className="px-2 py-1.5 align-top">
                     <PaidStatusBadge status={row} />
                   </td>

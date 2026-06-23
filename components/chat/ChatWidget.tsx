@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 const PAGE_BY_PATH: Record<string, string> = {
   '/': 'Overview',
   '/market-index': 'Market Health',
-  '/categories': 'Categories',
+  '/categories': 'Dictionary',
   '/paid-coverage': 'Paid Coverage',
   '/underbid': 'Underbid Keywords',
   '/overbid-camps': 'Overbid Camps',

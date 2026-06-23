@@ -6,7 +6,7 @@ import { RefreshButton } from './RefreshButton';
 const TITLES: Record<string, string> = {
   '/': 'Overview',
   '/market-index': 'Market Health',
-  '/categories': 'Categories',
+  '/categories': 'Dictionary',
   '/paid-coverage': 'Paid Coverage',
   '/underbid': 'Underbid Keywords',
   '/overbid-camps': 'Overbid Camps',
