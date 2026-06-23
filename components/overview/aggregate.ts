@@ -7,12 +7,15 @@ import type {
   KeywordRow,
   MarketIndexSummaryRow,
   SheetPayload,
+  SnapshotRow,
   SurfaceLabel,
 } from '@/lib/sheets/types';
 
-export type OverviewWindow = 'L3' | 'L7' | 'L14' | 'L30' | 'L90';
+// L365 = the last-365-day snapshot (All_L365/Country_L365). It's snapshot-only
+// (no prior period in the sheet) so it shows totals/share with NO WoW delta.
+export type OverviewWindow = 'L3' | 'L7' | 'L14' | 'L30' | 'L90' | 'L365';
 
-export const OVERVIEW_WINDOWS: OverviewWindow[] = ['L3', 'L7', 'L14', 'L30', 'L90'];
+export const OVERVIEW_WINDOWS: OverviewWindow[] = ['L3', 'L7', 'L14', 'L30', 'L90', 'L365'];
 
 const KEYWORD_TAB_BY_WINDOW: Record<OverviewWindow, keyof SheetPayload> = {
   L3: 'allL3',
@@ -20,6 +23,7 @@ const KEYWORD_TAB_BY_WINDOW: Record<OverviewWindow, keyof SheetPayload> = {
   L14: 'allL14',
   L30: 'allL30',
   L90: 'allL90',
+  L365: 'allL365', // SnapshotRow[] — adapted to KeywordRow via snapshotsAsKeywordRows
 };
 
 const COUNTRY_TAB_BY_WINDOW: Record<OverviewWindow, keyof SheetPayload> = {
@@ -28,10 +32,44 @@ const COUNTRY_TAB_BY_WINDOW: Record<OverviewWindow, keyof SheetPayload> = {
   L14: 'countryL14',
   L30: 'countryL30',
   L90: 'countryL90',
+  L365: 'countryL365', // SnapshotRow[]
 };
 
 export function windowDays(w: OverviewWindow): number {
   return Number(w.slice(1));
+}
+
+// L365 tabs are parsed as SnapshotRow[] (no prior columns). Adapt them to the
+// KeywordRow shape every aggregator expects, with prior = 0 and no deltas, so
+// L365 KPIs/charts show absolute totals only (no WoW). Cached per source array.
+const snapKwCache = new WeakMap<object, KeywordRow[]>();
+function snapshotsAsKeywordRows(snaps: SnapshotRow[]): KeywordRow[] {
+  const cached = snapKwCache.get(snaps);
+  if (cached) return cached;
+  const out = snaps.map(
+    (s): KeywordRow => ({
+      category: s.category,
+      searchTerm: s.searchTerm,
+      country: s.country,
+      surface: s.surface,
+      usersL: s.users,
+      usersP: 0,
+      getAppL: s.getApp,
+      getAppP: 0,
+      crL: s.cr,
+      crP: null,
+      posL: s.pos,
+      posP: null,
+      deltaPosPct: null,
+      deltaUsersPct: 0,
+      deltaCrPct: null,
+      alert: 'OK',
+      lang: s.lang,
+      english: s.english,
+    }),
+  );
+  snapKwCache.set(snaps, out);
+  return out;
 }
 
 export type SurfaceFocus = 'all' | 'organic' | 'paid';
@@ -69,6 +107,10 @@ function rowsForWindow(
   opts: OverviewFilters = {},
 ): KeywordRow[] {
   if (!data) return [];
+  if (window === 'L365') {
+    const snaps = (opts.country ? data.countryL365 : data.allL365) as SnapshotRow[];
+    return applyFilters(snapshotsAsKeywordRows(snaps ?? []), opts);
+  }
   // Country filter requires the Country_L tabs (which carry the country column).
   const tab = opts.country ? COUNTRY_TAB_BY_WINDOW[window] : KEYWORD_TAB_BY_WINDOW[window];
   return applyFilters(data[tab] as KeywordRow[], opts);
@@ -80,6 +122,9 @@ function countryRowsForWindow(
   opts: OverviewFilters = {},
 ): KeywordRow[] {
   if (!data) return [];
+  if (window === 'L365') {
+    return applyFilters(snapshotsAsKeywordRows((data.countryL365 ?? []) as SnapshotRow[]), opts);
+  }
   return applyFilters(data[COUNTRY_TAB_BY_WINDOW[window]] as KeywordRow[], opts);
 }
 

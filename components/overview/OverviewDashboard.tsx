@@ -125,7 +125,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
   const [window, setWindow] = useState<OverviewWindow>(() => {
     const w = initParam('window');
-    return (['L3', 'L7', 'L14', 'L30', 'L90'] as const).includes(w as OverviewWindow)
+    return (['L3', 'L7', 'L14', 'L30', 'L90', 'L365'] as const).includes(w as OverviewWindow)
       ? (w as OverviewWindow)
       : 'L7';
   });
@@ -673,7 +673,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                 metric="usersDelta"
                 activeWindow={window}
                 onWindowClick={(w) => {
-                  if (['L3', 'L7', 'L14', 'L30', 'L90'].includes(w)) {
+                  if (['L3', 'L7', 'L14', 'L30', 'L90', 'L365'].includes(w)) {
                     setWindow(w as OverviewWindow);
                   }
                 }}
@@ -807,8 +807,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                 const next = categoryFocus === c ? null : c;
                 setCategoryFocus(next);
                 // In date mode the detail sheet (rolling-window scoped) would
-                // contradict the per-day view, so only set the filter.
-                if (next && !inDateMode) {
+                // contradict the per-day view, so only set the filter. The
+                // category detail sheet doesn't support L365 (snapshot-only) →
+                // also just set the filter there.
+                if (next && !inDateMode && window !== 'L365') {
                   openCategoryDetail(c, window, {
                     country: countryFocus,
                     surface: surfaceFocus,

@@ -47,6 +47,11 @@ export function expectedAdsInstalls(windowDays: number, asOf: Date = new Date())
     return total;
   }
 
+  // Windows longer than a quarter (e.g. L365) have no annual target defined →
+  // no ads target (the AdsTargetTile then shows no ring). Guard BEFORE the
+  // pro-rate fallback so 365 isn't mistakenly prorated from the current month.
+  if (windowDays > 90) return null;
+
   // L3, L7, L14 → daily rate × N từ current month
   if (currentMonthly === undefined) return null;
   const days = daysInMonth(asOf.getFullYear(), asOf.getMonth());

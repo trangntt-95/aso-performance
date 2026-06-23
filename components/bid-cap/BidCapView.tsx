@@ -11,6 +11,11 @@ import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 import type { BidCapRow } from '@/lib/sheets/types';
 import { useBidNoteStore } from '@/lib/store/bidNoteStore';
+import { currentBidByCategory, deriveBidAction } from '@/lib/market/currentBid';
+
+// BidCapRow + the current set bid (median from Master KW Lookup) and an action
+// derived from current-vs-recommended when the sheet doesn't supply one.
+type BidCapRowX = BidCapRow & { bidNow: number | null; action: string };
 
 // Editable note cell, auto-saved to the Bid_Notes sheet tab (server-side, shared
 // across users). Optimistic + debounced; shows a tiny "lưu…" while in flight.
@@ -77,8 +82,7 @@ type SortKey =
   | 'category'
   | 'status'
   | 'bid'
-  | 'ceiling'
-  | 'estpos'
+  | 'bidnow'
   | 'crused'
   | 'installs'
   | 'action';
@@ -86,21 +90,31 @@ type SortDir = 'asc' | 'desc';
 
 // Per-column value accessor + type. 'num' columns default to desc on first
 // click (biggest first), 'text' columns to asc (A→Z).
-const SORT_COLS: Record<SortKey, { kind: 'num' | 'text'; get: (r: BidCapRow) => number | string | null }> = {
+const SORT_COLS: Record<SortKey, { kind: 'num' | 'text'; get: (r: BidCapRowX) => number | string | null }> = {
   country: { kind: 'text', get: (r) => r.country },
   category: { kind: 'text', get: (r) => r.category },
   status: { kind: 'text', get: (r) => r.status },
   bid: { kind: 'num', get: (r) => r.bidRecommended },
-  ceiling: { kind: 'num', get: (r) => r.maxBidCeiling },
-  estpos: { kind: 'num', get: (r) => r.estPosAtRec },
+  bidnow: { kind: 'num', get: (r) => r.bidNow },
   crused: { kind: 'num', get: (r) => r.crUsed },
   installs: { kind: 'num', get: (r) => r.installsL30 },
-  action: { kind: 'text', get: (r) => r.actionRecommended },
+  action: { kind: 'text', get: (r) => r.action },
 };
 
 export function BidCapView() {
   const { data, isLoading, error } = useSheetData();
-  const rows: BidCapRow[] = useMemo(() => data?.bidCap ?? [], [data]);
+  const rows: BidCapRowX[] = useMemo(() => {
+    const cur = currentBidByCategory(data?.masterKwLookup ?? [], data?.pausedKw ?? []);
+    return (data?.bidCap ?? []).map((r) => {
+      const bidNow = cur.get(r.category)?.median ?? null;
+      return {
+        ...r,
+        bidNow,
+        // Prefer a sheet-supplied action; else derive from current vs recommended.
+        action: r.actionRecommended || deriveBidAction(bidNow, r.bidRecommended),
+      };
+    });
+  }, [data]);
 
   // Load saved notes from the Bid_Notes sheet tab once on mount.
   const loadNotes = useBidNoteStore((s) => s.load);
@@ -161,7 +175,7 @@ export function BidCapView() {
     });
     const { kind, get } = SORT_COLS[sortKey];
     const dir = sortDir === 'asc' ? 1 : -1;
-    const cmp = (a: BidCapRow, b: BidCapRow): number => {
+    const cmp = (a: BidCapRowX, b: BidCapRowX): number => {
       const va = get(a);
       const vb = get(b);
       // Nulls/blanks always sink to the bottom regardless of direction.
@@ -218,8 +232,9 @@ export function BidCapView() {
       <div className="text-xs text-slate-500">
         Mức bid <strong>recommend</strong> cho từng <strong>Country × Category</strong> (tính sẵn trong sheet{' '}
         <code className="text-[10px]">Max bid cap</code>). <strong>Bid rec</strong> = mức nên set;{' '}
-        <strong>ceiling</strong> = trần tối đa (Max Allowed); <strong>Est pos</strong> = vị trí dự kiến tại
-        mức bid rec. Filter theo tier / country / category / status.
+        <strong>Bid hiện tại</strong> = median bid thực đang set (từ Master KW Lookup, theo category);{' '}
+        <strong>Action</strong> = so bid hiện tại với bid rec → <span className="text-emerald-700">RAISE</span> /{' '}
+        <span className="text-rose-600">REDUCE</span> / HOLD. Filter theo tier / country / category / status.
       </div>
 
       {/* Filters */}
@@ -298,8 +313,7 @@ export function BidCapView() {
                     { k: 'category', label: 'Category', align: 'left', title: 'Sort theo category' },
                     { k: 'status', label: 'Status', align: 'left', title: 'Sort theo status' },
                     { k: 'bid', label: 'Bid rec', align: 'right', title: 'Mức bid nên set (Bid Rec ⭐)' },
-                    { k: 'ceiling', label: 'Ceiling', align: 'right', title: 'Trần tối đa cho phép (Max Allowed)' },
-                    { k: 'estpos', label: 'Est pos', align: 'right', title: 'Vị trí dự kiến tại mức bid rec' },
+                    { k: 'bidnow', label: 'Bid hiện tại', align: 'right', title: 'Median bid thực đang set (Master KW Lookup, theo category — không có data theo country)' },
                     { k: 'crused', label: 'CR used', align: 'right', title: 'Conversion rate dùng để tính bid' },
                     { k: 'installs', label: 'L30 imp/clk/inst', align: 'right', title: 'L30: Imp / Clicks / Installs — sort theo Installs' },
                     { k: 'action', label: 'Action', align: 'left', title: 'Sort theo action', extra: 'min-w-[14rem]' },
@@ -357,22 +371,24 @@ export function BidCapView() {
                     </td>
                     <td className="px-2 py-1.5 align-top text-right whitespace-nowrap">
                       <span className="font-mono font-semibold text-sm text-indigo-700">{money(r.bidRecommended)}</span>
-                      {r.ceilBlocked && (
+                    </td>
+                    <td className="px-2 py-1.5 align-top text-right whitespace-nowrap">
+                      {r.bidNow === null ? (
+                        <span className="font-mono text-[11px] text-slate-400">—</span>
+                      ) : (
                         <span
-                          className="ml-1 inline-flex items-center px-1 py-0.5 rounded text-[9px] font-medium bg-amber-100 text-amber-800 align-middle"
-                          title="Bid rec bị trần (Max Allowed) chặn"
+                          className={cn(
+                            'font-mono text-[11px] font-medium',
+                            r.bidNow < r.bidRecommended * 0.85
+                              ? 'text-emerald-700'
+                              : r.bidNow > r.bidRecommended * 1.15
+                                ? 'text-rose-600'
+                                : 'text-slate-700',
+                          )}
                         >
-                          capped
+                          {money(r.bidNow)}
                         </span>
                       )}
-                    </td>
-                    <td className="px-2 py-1.5 align-top text-right">
-                      <span className="font-mono text-[11px] text-slate-500">{money(r.maxBidCeiling)}</span>
-                    </td>
-                    <td className="px-2 py-1.5 align-top text-right">
-                      <span className="font-mono text-[11px] text-slate-500">
-                        {r.estPosAtRec === null ? '—' : r.estPosAtRec.toFixed(1)}
-                      </span>
                     </td>
                     <td className="px-2 py-1.5 align-top text-right whitespace-nowrap">
                       <span className="font-mono text-[11px] text-slate-700">{r.crUsed ? `${r.crUsed}%` : '—'}</span>
@@ -384,7 +400,7 @@ export function BidCapView() {
                       </span>
                     </td>
                     <td className="px-2 py-1.5 align-top">
-                      <span className={cn('text-[11px]', actionTone(r.actionRecommended))}>{r.actionRecommended || '—'}</span>
+                      <span className={cn('text-[11px] font-medium', actionTone(r.action))}>{r.action || '—'}</span>
                     </td>
                     <NoteCell country={r.country} category={r.category} />
                   </tr>
@@ -393,9 +409,9 @@ export function BidCapView() {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            Bid rec / Ceiling = USD · <span className="text-amber-700">capped</span> = bid rec chạm trần Max Allowed ·
-            Est pos = vị trí dự kiến tại bid rec · CR used = conversion rate dùng để tính bid ·
-            L30 = Impressions / Clicks / Installs trong 30 ngày · Note = ghi chú, tự lưu vào Google Sheet (tab Bid_Notes) — share cho cả team, chỉ mất khi bạn tự xoá
+            Bid rec / Bid hiện tại = USD · Bid hiện tại <span className="text-emerald-700">xanh</span> = đang thấp hơn rec (nên tăng),{' '}
+            <span className="text-rose-600">đỏ</span> = cao hơn rec (nên giảm) · Bid hiện tại là median theo category (Master KW Lookup không có data theo country) ·
+            CR used = CR dùng để tính bid · L30 = Imp / Clicks / Installs 30 ngày · Note = tự lưu vào Google Sheet (tab Bid_Notes), share cho cả team
           </div>
         </div>
       )}
