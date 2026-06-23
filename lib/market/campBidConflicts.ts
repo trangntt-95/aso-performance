@@ -27,9 +27,10 @@ export interface CampBidConflict {
   spreadPct: number;
 }
 
-// Only alert when the spread is meaningful (cheap rounding noise ignored).
-const SPREAD_THRESHOLD = 0.05; // 5%
-const MIN_ABS_GAP = 0.25; // $
+// Only alert when the bid gap is material. Per Trang: a spread of $0.60 or less
+// between countries is acceptable (one bid is fine) → alert only when the
+// max−min gap is STRICTLY ABOVE $0.60.
+const MAX_ACCEPTABLE_GAP = 0.6; // $
 
 export function findCampBidConflicts(
   campLinks: CampLinkRow[],
@@ -69,7 +70,7 @@ export function findCampBidConflicts(
     const max = Math.max(...bids);
     if (min <= 0) continue;
     const spreadPct = (max - min) / min;
-    if (spreadPct < SPREAD_THRESHOLD || max - min < MIN_ABS_GAP) continue;
+    if (max - min <= MAX_ACCEPTABLE_GAP) continue;
 
     perCountry.sort((a, b) => b.bid - a.bid);
     out.push({

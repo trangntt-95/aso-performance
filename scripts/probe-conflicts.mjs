@@ -44,7 +44,7 @@ for (const r of data) {
   nWith2++;
   const bids = per.map((x) => x.b); const mn = Math.min(...bids), mx = Math.max(...bids);
   const spread = (mx - mn) / mn;
-  if (spread < 0.05 || mx - mn < 0.25) { near.push(`below-thresh ${Math.round(spread*100)}%: [${cat}] ${camp} | ${per.map(p=>`${p.c} $${p.b.toFixed(2)}`).join(' · ')}`); continue; }
+  if (mx - mn <= 0.6) { near.push(`below-thresh ${Math.round(spread*100)}%: [${cat}] ${camp} | ${per.map(p=>`${p.c} $${p.b.toFixed(2)}`).join(' · ')}`); continue; }
   out.push({ camp, cat, spread, mn, mx, per });
 }
 console.log(`include-mode multi-country camps: ${nInclude}, with >=2 resolved-bid countries: ${nWith2}`);
