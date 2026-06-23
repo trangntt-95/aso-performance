@@ -24,6 +24,7 @@ import { useSheetData } from '@/lib/hooks/useSheetData';
 import { useCategoryDetailStore } from '@/lib/store/categoryDetailStore';
 import { KeywordLink } from '@/components/shared/KeywordLink';
 import { categoryStyle } from '@/lib/utils/colors';
+import { shouldShowTranslation } from '@/lib/utils/translation';
 import { formatNumber, formatPercent, formatPos, formatDeltaPct, deltaTone } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 import type { Category, KeywordRow, SheetPayload } from '@/lib/sheets/types';
@@ -550,7 +551,7 @@ export function CategoryDetailSheet() {
                                   surface={surface}
                                   className="font-medium text-slate-800 truncate inline-block max-w-full"
                                 />
-                                {category === 'Language' && r.english && (
+                                {shouldShowTranslation(r.searchTerm, r.english, category) && (
                                   <div className="text-[10px] text-slate-500 italic truncate" title={r.english}>
                                     → {r.english}
                                   </div>

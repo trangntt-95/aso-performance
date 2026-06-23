@@ -15,6 +15,7 @@ import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
 import { useStatusStore } from '@/lib/store/statusStore';
 import type { ActionQueueRow, HistoryRow, KeywordRow, SheetPayload } from '@/lib/sheets/types';
 import { formatDeltaPct, formatNumber, formatPercent, formatPos, deltaTone } from '@/lib/utils/format';
+import { shouldShowTranslation } from '@/lib/utils/translation';
 import { cn } from '@/lib/utils';
 import { Leaf, DollarSign, ArrowUpDown, ArrowDown, ArrowUp, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -387,7 +388,7 @@ export function KeywordTrendSheet() {
                 {trendData.meta.category && (
                   <span><span className="font-semibold">Category:</span> {trendData.meta.category}</span>
                 )}
-                {trendData.meta.english && trendData.meta.english !== keyword && (
+                {shouldShowTranslation(keyword, trendData.meta.english, trendData.meta.category) && (
                   <span><span className="font-semibold">EN:</span> {trendData.meta.english}</span>
                 )}
                 {trendData.meta.lang && (

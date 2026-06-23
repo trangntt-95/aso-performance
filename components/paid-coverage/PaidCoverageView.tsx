@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { categoryStyle } from '@/lib/utils/colors';
+import { shouldShowTranslation } from '@/lib/utils/translation';
 import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
 import { KeywordLink } from '@/components/shared/KeywordLink';
 import { PaidStatusBadge } from '@/components/shared/PaidStatusBadge';
@@ -449,11 +450,7 @@ export function PaidCoverageView() {
             <tbody>
               {filtered.map((row) => {
                 const s = categoryStyle(row.category);
-                const isNonEnglishKw = /[^\x00-\x7F]/.test(row.keyword) || row.category === 'Language';
-                const showTranslation =
-                  !!row.english &&
-                  isNonEnglishKw &&
-                  row.english.trim().toLowerCase() !== row.keyword.trim().toLowerCase();
+                const showTranslation = shouldShowTranslation(row.keyword, row.english, row.category);
                 return (
                   <tr key={row.keyword} className="border-t hover:bg-slate-50">
                     <td className="px-3 py-1.5 align-top">

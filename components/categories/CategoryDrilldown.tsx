@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { categoryStyle, CATEGORY_ORDER } from '@/lib/utils/colors';
+import { shouldShowTranslation, pickEnglish } from '@/lib/utils/translation';
 import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
 import { KeywordLink } from '@/components/shared/KeywordLink';
 import { PaidStatusBadge } from '@/components/shared/PaidStatusBadge';
@@ -510,20 +511,16 @@ export function CategoryDrilldown({ category }: { category?: string }) {
             </thead>
             <tbody>
               {filtered.map((row) => {
-                const english =
-                  row.l7?.english ?? row.l30?.english ?? row.l90?.english ?? row.l365?.english ?? '';
-                // Show translation only when source kw is non-English: either
-                // non-ASCII script (Thai/Chinese/accented Latin) OR the kw lives
-                // in the Language category (catches ASCII non-EN like steuern).
-                // Skip when translation equals the kw (typo "fixes" like
-                // "trueprfot → trueprfoot" — same text, not a real translation).
-                const isNonEnglishKw =
-                  /[^\x00-\x7F]/.test(row.searchTerm) || row.category === 'Language';
+                // First NON-EMPTY english across windows (|| not ??: an empty
+                // string on L7 must fall through to L30/L90/L365).
+                const english = pickEnglish(
+                  row.l7?.english,
+                  row.l30?.english,
+                  row.l90?.english,
+                  row.l365?.english,
+                );
                 const cs = categoryStyle(row.category as Category);
-                const showTranslation =
-                  !!english &&
-                  isNonEnglishKw &&
-                  english.trim().toLowerCase() !== row.searchTerm.trim().toLowerCase();
+                const showTranslation = shouldShowTranslation(row.searchTerm, english, row.category);
                 return (
                 <tr key={`${row.searchTerm}-${row.surface}`} className="border-t hover:bg-slate-50">
                   {allMode && (
