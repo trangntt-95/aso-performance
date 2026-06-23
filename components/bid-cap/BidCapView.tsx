@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ExternalLink, Search, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ChevronDown, ExternalLink, Search, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import type { BidCapRow } from '@/lib/sheets/types';
 import { useBidNoteStore } from '@/lib/store/bidNoteStore';
 import { currentBidByCategory, deriveBidAction } from '@/lib/market/currentBid';
 import { buildCampLinkIndex, type CampLink } from '@/lib/market/campLink';
+import { findCampBidConflicts } from '@/lib/market/campBidConflicts';
 
 // BidCapRow + the current set bid (median from Master KW Lookup), a derived
 // action, and the best campaign link for this country × category.
@@ -144,6 +145,13 @@ export function BidCapView() {
     });
   }, [data]);
 
+  // Campaigns targeting several countries with diverging recommended bids.
+  const conflicts = useMemo(
+    () => findCampBidConflicts(data?.campLinks ?? [], data?.bidCap ?? []),
+    [data],
+  );
+  const [conflictsOpen, setConflictsOpen] = useState(false);
+
   // Load saved notes from the Bid_Notes sheet tab once on mount.
   const loadNotes = useBidNoteStore((s) => s.load);
   useEffect(() => {
@@ -264,6 +272,68 @@ export function BidCapView() {
         <strong>Action</strong> = so bid hiện tại với bid rec → <span className="text-emerald-700">RAISE</span> /{' '}
         <span className="text-rose-600">REDUCE</span> / HOLD. Filter theo tier / country / category / status.
       </div>
+
+      {/* Alert: 1 campaign target nhiều nước có bid rec lệch nhau → 1 bid không tối ưu cho hết. */}
+      {!isLoading && conflicts.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50">
+          <button
+            type="button"
+            onClick={() => setConflictsOpen((o) => !o)}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left"
+          >
+            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+            <span className="text-xs font-semibold text-amber-900">
+              {conflicts.length} campaign target nhiều nước nhưng bid rec lệch nhau
+            </span>
+            <span className="text-[10px] text-amber-700 hidden sm:inline">
+              — 1 camp chỉ set được 1 bid → cân nhắc tách camp theo nước
+            </span>
+            <ChevronDown
+              className={cn('h-4 w-4 text-amber-600 ml-auto transition-transform', conflictsOpen && 'rotate-180')}
+            />
+          </button>
+          {conflictsOpen && (
+            <ul className="divide-y divide-amber-200 border-t border-amber-200 max-h-[40vh] overflow-y-auto">
+              {conflicts.map((c) => (
+                <li key={c.camp} className="px-3 py-2 text-[11px]">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {c.url ? (
+                      <a
+                        href={c.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`Mở campaign: ${c.camp}`}
+                        className="inline-flex items-center gap-1 font-medium text-indigo-700 hover:underline"
+                      >
+                        <ExternalLink className="h-3 w-3 shrink-0" />
+                        {c.camp}
+                      </a>
+                    ) : (
+                      <span className="font-medium text-slate-800">{c.camp}</span>
+                    )}
+                    <span className="text-[10px] text-slate-500">· {c.category}</span>
+                    <span className="rounded bg-amber-200/70 px-1.5 py-0.5 font-mono text-[10px] text-amber-900">
+                      lệch {Math.round(c.spreadPct * 100)}% (${c.min.toFixed(2)}–${c.max.toFixed(2)})
+                    </span>
+                    {c.perCountry.length < c.targetCount && (
+                      <span className="text-[10px] text-slate-400" title="Các nước còn lại chưa có bid rec trong Max bid cap nên không so được">
+                        {c.perCountry.length}/{c.targetCount} nước có bid rec
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-slate-600">
+                    {c.perCountry.map((p) => (
+                      <span key={p.country}>
+                        {p.country} <span className="font-semibold text-slate-800">${p.bid.toFixed(2)}</span>
+                      </span>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Filters */}
       {!isLoading && rows.length > 0 && (

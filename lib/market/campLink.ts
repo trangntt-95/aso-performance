@@ -35,7 +35,7 @@ const CAT_MAP: Record<string, string[]> = {
 
 /** The bid-cap categories a camp can serve: Camp_Links Category column first,
  *  else the token after "TP - " in the camp name. */
-function campCategories(c: CampLinkRow): string[] {
+export function campCategories(c: CampLinkRow): string[] {
   const fromCol = CAT_MAP[c.category.trim().toLowerCase()];
   if (fromCol) return fromCol;
   const m = c.camp.match(/TP\s*-\s*([A-Za-z& ]+?)\s*-/i);
