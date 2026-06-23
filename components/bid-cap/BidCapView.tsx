@@ -83,6 +83,7 @@ function actionTone(action: string): string {
 }
 
 type SortKey =
+  | 'tier'
   | 'country'
   | 'category'
   | 'status'
@@ -93,9 +94,29 @@ type SortKey =
   | 'action';
 type SortDir = 'asc' | 'desc';
 
+// Tier order (strongest → excluded) for sorting + badge tone.
+const TIER_RANK: Record<string, number> = {
+  'Tier 1 Strong': 1,
+  'Tier 1.5': 2,
+  'Tier 1.5 Watch': 3,
+  'Tier 2': 4,
+  'Tier 3': 5,
+  Untiered: 6,
+  Excluded: 7,
+};
+function tierStyle(tier: string): { bg: string; text: string } {
+  if (/^tier 1 strong/i.test(tier)) return { bg: 'bg-emerald-100', text: 'text-emerald-800' };
+  if (/^tier 1\.5/i.test(tier)) return { bg: 'bg-teal-100', text: 'text-teal-800' };
+  if (/^tier 2/i.test(tier)) return { bg: 'bg-sky-100', text: 'text-sky-800' };
+  if (/^tier 3/i.test(tier)) return { bg: 'bg-indigo-100', text: 'text-indigo-800' };
+  if (/excluded/i.test(tier)) return { bg: 'bg-rose-100', text: 'text-rose-700' };
+  return { bg: 'bg-slate-100', text: 'text-slate-600' }; // Untiered / blank
+}
+
 // Per-column value accessor + type. 'num' columns default to desc on first
 // click (biggest first), 'text' columns to asc (A→Z).
 const SORT_COLS: Record<SortKey, { kind: 'num' | 'text'; get: (r: BidCapRowX) => number | string | null }> = {
+  tier: { kind: 'text', get: (r) => (r.tier ? String(TIER_RANK[r.tier] ?? 98).padStart(2, '0') : '') },
   country: { kind: 'text', get: (r) => r.country },
   category: { kind: 'text', get: (r) => r.category },
   status: { kind: 'text', get: (r) => r.status },
@@ -160,7 +181,7 @@ export function BidCapView() {
       if (r.status) st.add(r.status);
     });
     return {
-      tiers: Array.from(t).sort(),
+      tiers: Array.from(t).sort((a, b) => (TIER_RANK[a] ?? 98) - (TIER_RANK[b] ?? 98)),
       countries: Array.from(c).sort(),
       categories: Array.from(cat).sort(),
       statuses: Array.from(st).sort(),
@@ -316,7 +337,8 @@ export function BidCapView() {
               <tr>
                 {(
                   [
-                    { k: 'country', label: 'Country', align: 'left', title: 'Sort theo country', extra: 'pl-3 min-w-[11rem]' },
+                    { k: 'tier', label: 'Tier', align: 'left', title: 'Sort theo tier (Tier 1 Strong → Excluded)', extra: 'pl-3 min-w-[7rem]' },
+                    { k: 'country', label: 'Country', align: 'left', title: 'Sort theo country', extra: 'min-w-[11rem]' },
                     { k: 'category', label: 'Category', align: 'left', title: 'Sort theo category' },
                     { k: 'status', label: 'Status', align: 'left', title: 'Sort theo status' },
                     { k: 'bid', label: 'Bid rec', align: 'right', title: 'Mức bid nên set (Bid Rec ⭐)' },
@@ -363,11 +385,22 @@ export function BidCapView() {
                 return (
                   <tr key={`${r.country}|${r.category}|${i}`} className="border-t hover:bg-slate-50">
                     <td className="px-3 py-1.5 align-top">
+                      {r.tier ? (
+                        (() => {
+                          const ts = tierStyle(r.tier);
+                          return (
+                            <span className={cn('inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap', ts.bg, ts.text)}>
+                              {r.tier}
+                            </span>
+                          );
+                        })()
+                      ) : (
+                        <span className="text-[11px] text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top">
                       <div className="font-medium text-sm text-slate-900">{r.country}</div>
-                      <div className="text-[10px] text-slate-400">
-                        {r.countryCode}
-                        {r.tier && ` · ${r.tier}`}
-                      </div>
+                      <div className="text-[10px] text-slate-400">{r.countryCode}</div>
                     </td>
                     <td className="px-2 py-1.5 align-top">
                       <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium', cs.bg, cs.text)}>
