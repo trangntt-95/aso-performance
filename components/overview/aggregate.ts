@@ -487,6 +487,8 @@ export interface ContributorRow {
   prior: number;
   deltaPct: number | null;
   sharePct: number;
+  /** Conversion rate of this keyword (installs ÷ users), fraction 0–1. Null when users = 0. */
+  cr: number | null;
 }
 
 export interface ContributorsResult {
@@ -523,6 +525,7 @@ export function topContributors(
         prior,
         deltaPct,
         sharePct: (value / total) * 100,
+        cr: r.usersL > 0 ? r.getAppL / r.usersL : null,
       };
     });
   return { rows: ranked, total, fullCount: rows.length };
@@ -984,16 +987,23 @@ export function topContributorsForRange(
   if (!data) return { rows: [], total: 0, fullCount: 0 };
   const catMap = keywordCategoryMap(data);
   const rows = dailyRowsInRange(data, from, to, opts, catMap);
-  const byKw = new Map<string, { value: number; surface: SurfaceLabel; category: Category }>();
+  const byKw = new Map<
+    string,
+    { value: number; users: number; getApp: number; surface: SurfaceLabel; category: Category }
+  >();
   for (const r of rows) {
     const v = metric === 'users' ? r.users : r.getApp ?? 0;
     const cur =
       byKw.get(r.keyword) ?? {
         value: 0,
+        users: 0,
+        getApp: 0,
         surface: (r.surface === 'search_ad' ? 'paid' : 'organic') as SurfaceLabel,
         category: (catMap.get(r.keyword.toLowerCase()) ?? 'Unknown') as Category,
       };
     cur.value += v;
+    cur.users += r.users;
+    cur.getApp += r.getApp ?? 0;
     byKw.set(r.keyword, cur);
   }
   const all = Array.from(byKw.entries()).map(([keyword, v]) => ({ keyword, ...v }));
@@ -1010,6 +1020,7 @@ export function topContributorsForRange(
       prior: 0,
       deltaPct: null as number | null,
       sharePct: (r.value / total) * 100,
+      cr: r.users > 0 ? r.getApp / r.users : null,
     }));
   return { rows: ranked, total, fullCount: all.length };
 }

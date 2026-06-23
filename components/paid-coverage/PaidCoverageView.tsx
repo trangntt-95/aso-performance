@@ -431,9 +431,9 @@ export function PaidCoverageView() {
           Không có keyword khớp filter.
         </div>
       ) : (
-        <div className="border rounded-lg bg-white overflow-x-auto">
+        <div className="border rounded-lg bg-white overflow-auto max-h-[75vh]">
           <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="bg-slate-50 text-slate-600 sticky top-0 z-10 shadow-sm [&_th]:bg-slate-50">
               <tr>
                 <th className="px-3 py-2 text-left font-medium min-w-[14rem]">Keyword</th>
                 <th className="px-2 py-2 text-left font-medium">Category</th>

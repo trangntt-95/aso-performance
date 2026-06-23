@@ -241,9 +241,9 @@ export function UnderbidView() {
           Không có keyword nào khớp ngưỡng underbid. Thử nới ngưỡng (tăng paid share, giảm organic≥).
         </div>
       ) : (
-        <div className="border rounded-lg bg-white overflow-x-auto">
+        <div className="border rounded-lg bg-white overflow-auto max-h-[75vh]">
           <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="bg-slate-50 text-slate-600 sticky top-0 z-10 shadow-sm [&_th]:bg-slate-50">
               <tr>
                 <SortHead label="Keyword" col="keyword" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} extra="px-3 min-w-[13rem]" />
                 <SortHead label="Category" col="category" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />

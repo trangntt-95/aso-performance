@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Search, X } from 'lucide-react';
+import { AlertCircle, ExternalLink, Search, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -12,10 +12,15 @@ import { cn } from '@/lib/utils';
 import type { BidCapRow } from '@/lib/sheets/types';
 import { useBidNoteStore } from '@/lib/store/bidNoteStore';
 import { currentBidByCategory, deriveBidAction } from '@/lib/market/currentBid';
+import { buildCampLinkIndex, type CampLink } from '@/lib/market/campLink';
 
-// BidCapRow + the current set bid (median from Master KW Lookup) and an action
-// derived from current-vs-recommended when the sheet doesn't supply one.
-type BidCapRowX = BidCapRow & { bidNow: number | null; action: string };
+// BidCapRow + the current set bid (median from Master KW Lookup), a derived
+// action, and the best campaign link for this country × category.
+type BidCapRowX = BidCapRow & {
+  bidNow: number | null;
+  action: string;
+  campLink: CampLink | null;
+};
 
 // Editable note cell, auto-saved to the Bid_Notes sheet tab (server-side, shared
 // across users). Optimistic + debounced; shows a tiny "lưu…" while in flight.
@@ -105,6 +110,7 @@ export function BidCapView() {
   const { data, isLoading, error } = useSheetData();
   const rows: BidCapRowX[] = useMemo(() => {
     const cur = currentBidByCategory(data?.masterKwLookup ?? [], data?.pausedKw ?? []);
+    const campIdx = buildCampLinkIndex(data?.campLinks ?? []);
     return (data?.bidCap ?? []).map((r) => {
       const bidNow = cur.get(r.category)?.median ?? null;
       return {
@@ -112,6 +118,7 @@ export function BidCapView() {
         bidNow,
         // Prefer a sheet-supplied action; else derive from current vs recommended.
         action: r.actionRecommended || deriveBidAction(bidNow, r.bidRecommended),
+        campLink: campIdx.pick(r.country, r.category),
       };
     });
   }, [data]);
@@ -341,6 +348,9 @@ export function BidCapView() {
                     </th>
                   );
                 })}
+                <th className="px-2 py-2 text-left font-medium" title="Link campaign để mở ra chỉnh bid">
+                  Camp
+                </th>
                 <th className="px-2 py-2 text-left font-medium min-w-[9rem]" title="Ghi chú của bạn (tự lưu)">
                   Note
                 </th>
@@ -402,6 +412,34 @@ export function BidCapView() {
                     <td className="px-2 py-1.5 align-top">
                       <span className={cn('text-[11px] font-medium', actionTone(r.action))}>{r.action || '—'}</span>
                     </td>
+                    <td className="px-2 py-1.5 align-top">
+                      {r.campLink ? (
+                        <a
+                          href={r.campLink.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={
+                            r.campLink.exactCategory
+                              ? r.campLink.camp
+                              : `${r.campLink.camp}\n(không có camp ${r.category} cho ${r.country} — link camp ${r.campLink.category})`
+                          }
+                          className={cn(
+                            'inline-flex items-center gap-1 px-1.5 py-1 rounded text-[10px] font-medium whitespace-nowrap transition-colors',
+                            r.campLink.exactCategory
+                              ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                              : 'bg-amber-50 text-amber-700 hover:bg-amber-100',
+                          )}
+                        >
+                          Mở camp
+                          <ExternalLink className="h-3 w-3" />
+                          {!r.campLink.exactCategory && (
+                            <span className="text-[9px] opacity-70">({r.campLink.category})</span>
+                          )}
+                        </a>
+                      ) : (
+                        <span className="text-[11px] text-slate-300">—</span>
+                      )}
+                    </td>
                     <NoteCell country={r.country} category={r.category} />
                   </tr>
                 );
@@ -411,7 +449,10 @@ export function BidCapView() {
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
             Bid rec / Bid hiện tại = USD · Bid hiện tại <span className="text-emerald-700">xanh</span> = đang thấp hơn rec (nên tăng),{' '}
             <span className="text-rose-600">đỏ</span> = cao hơn rec (nên giảm) · Bid hiện tại là median theo category (Master KW Lookup không có data theo country) ·
-            CR used = CR dùng để tính bid · L30 = Imp / Clicks / Installs 30 ngày · Note = tự lưu vào Google Sheet (tab Bid_Notes), share cho cả team
+            CR used = CR dùng để tính bid · L30 = Imp / Clicks / Installs 30 ngày ·{' '}
+            <span className="text-indigo-700">Mở camp</span> = link campaign đúng category (geo phủ country) để chỉnh bid;{' '}
+            <span className="text-amber-700">vàng</span> = không có camp đúng category → link camp gần nhất theo ưu tiên brand→profit→feature→language→others→test ·
+            Note = tự lưu vào Google Sheet (tab Bid_Notes), share cho cả team
           </div>
         </div>
       )}

@@ -14,6 +14,8 @@ interface ColumnProps {
   rows: ContributorRow[];
   total: number;
   accent: 'indigo' | 'emerald';
+  /** Show each keyword's CR (installs ÷ users) — used on the Install column. */
+  showCr?: boolean;
   activeKeyword?: string | null;
   activeSurface?: 'all' | 'organic' | 'paid';
   activeCountry?: string | null;
@@ -21,7 +23,14 @@ interface ColumnProps {
   onKeywordSelect?: (keyword: string) => void;
 }
 
-function Column({ title, unitLabel, Icon, rows, total, accent, activeKeyword, activeSurface, activeCountry, onRowClick, onKeywordSelect }: ColumnProps) {
+// CR pill tone: green = healthy converter, amber = mid, slate = low/none.
+function crTone(cr: number): string {
+  if (cr >= 0.1) return 'bg-emerald-100 text-emerald-700';
+  if (cr >= 0.04) return 'bg-amber-100 text-amber-700';
+  return 'bg-slate-100 text-slate-500';
+}
+
+function Column({ title, unitLabel, Icon, rows, total, accent, showCr, activeKeyword, activeSurface, activeCountry, onRowClick, onKeywordSelect }: ColumnProps) {
   const headerColor = accent === 'indigo' ? 'text-indigo-700' : 'text-emerald-700';
   const barColor = accent === 'indigo' ? 'bg-indigo-500' : 'bg-emerald-500';
   const barBg = accent === 'indigo' ? 'bg-indigo-100' : 'bg-emerald-100';
@@ -111,6 +120,17 @@ function Column({ title, unitLabel, Icon, rows, total, accent, activeKeyword, ac
                   <span className="text-sm font-mono font-semibold text-slate-900 tabular-nums shrink-0">
                     {formatNumber(r.value)}
                   </span>
+                  {showCr && (
+                    <span
+                      className={cn(
+                        'text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-full tabular-nums shrink-0',
+                        r.cr === null ? 'bg-slate-100 text-slate-400' : crTone(r.cr),
+                      )}
+                      title="CR = Install ÷ Users của keyword này"
+                    >
+                      CR {r.cr === null ? '—' : `${(r.cr * 100).toFixed(1)}%`}
+                    </span>
+                  )}
                   <div className={cn('flex-1 h-1.5 rounded-full overflow-hidden', barBg)}>
                     <div
                       className={cn('h-full', barColor)}
@@ -199,11 +219,12 @@ export function TopContributors({
       />
       <Column
         title="Top Install"
-        unitLabel="installs · share %"
+        unitLabel="installs · CR · share %"
         Icon={Target}
         rows={fGetApp}
         total={totalGetApp}
         accent="emerald"
+        showCr
         activeKeyword={activeKeyword}
         activeSurface={activeSurface}
         activeCountry={activeCountry}
