@@ -348,8 +348,8 @@ export function BidCapView() {
                     </th>
                   );
                 })}
-                <th className="px-2 py-2 text-left font-medium" title="Link campaign để mở ra chỉnh bid">
-                  Camp
+                <th className="px-2 py-2 text-left font-medium min-w-[12rem]" title="Tên campaign đúng category phủ country này — click để mở chỉnh bid">
+                  Campaign
                 </th>
                 <th className="px-2 py-2 text-left font-medium min-w-[9rem]" title="Ghi chú của bạn (tự lưu)">
                   Note
@@ -418,26 +418,16 @@ export function BidCapView() {
                           href={r.campLink.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          title={
-                            r.campLink.exactCategory
-                              ? r.campLink.camp
-                              : `${r.campLink.camp}\n(không có camp ${r.category} cho ${r.country} — link camp ${r.campLink.category})`
-                          }
-                          className={cn(
-                            'inline-flex items-center gap-1 px-1.5 py-1 rounded text-[10px] font-medium whitespace-nowrap transition-colors',
-                            r.campLink.exactCategory
-                              ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-                              : 'bg-amber-50 text-amber-700 hover:bg-amber-100',
-                          )}
+                          title={`Mở campaign: ${r.campLink.camp}`}
+                          className="inline-flex items-start gap-1 max-w-[15rem] text-[10px] text-indigo-700 hover:text-indigo-900 hover:underline"
                         >
-                          Mở camp
-                          <ExternalLink className="h-3 w-3" />
-                          {!r.campLink.exactCategory && (
-                            <span className="text-[9px] opacity-70">({r.campLink.category})</span>
-                          )}
+                          <ExternalLink className="h-3 w-3 mt-0.5 shrink-0" />
+                          <span className="leading-snug break-words">{r.campLink.camp}</span>
                         </a>
                       ) : (
-                        <span className="text-[11px] text-slate-300">—</span>
+                        <span className="text-[11px] text-slate-300" title="Không có campaign đúng category phủ country này">
+                          —
+                        </span>
                       )}
                     </td>
                     <NoteCell country={r.country} category={r.category} />
@@ -450,8 +440,7 @@ export function BidCapView() {
             Bid rec / Bid hiện tại = USD · Bid hiện tại <span className="text-emerald-700">xanh</span> = đang thấp hơn rec (nên tăng),{' '}
             <span className="text-rose-600">đỏ</span> = cao hơn rec (nên giảm) · Bid hiện tại là median theo category (Master KW Lookup không có data theo country) ·
             CR used = CR dùng để tính bid · L30 = Imp / Clicks / Installs 30 ngày ·{' '}
-            <span className="text-indigo-700">Mở camp</span> = link campaign đúng category (geo phủ country) để chỉnh bid;{' '}
-            <span className="text-amber-700">vàng</span> = không có camp đúng category → link camp gần nhất theo ưu tiên brand→profit→feature→language→others→test ·
+            <span className="text-indigo-700">Campaign</span> = camp ĐÚNG category có geo phủ country (ưu tiên camp target đúng nước &gt; all &gt; chưa điền geo) — click để mở chỉnh bid; trống (—) = không có camp đúng category cho country này ·
             Note = tự lưu vào Google Sheet (tab Bid_Notes), share cho cả team
           </div>
         </div>

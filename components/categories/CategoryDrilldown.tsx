@@ -184,7 +184,21 @@ function MetricsCell({ row, metrics }: { row: KeywordRow | null; metrics: Set<Me
 
 type SurfaceFilter = 'all' | 'organic' | 'paid';
 type PaidFilter = 'all' | 'in_paid' | 'manual' | 'paused' | 'not_in_paid';
-type MetricWindow = 'l7' | 'l30' | 'l90';
+type MetricWindow = 'l7' | 'l30' | 'l90' | 'l365';
+
+// Unified {users, install, pos} for the chosen threshold window. L7/L30/L90 are
+// KeywordRow (usersL/getAppL/posL); L365 is a SnapshotRow (users/getApp/pos).
+function windowMetric(
+  row: KeywordSummary,
+  win: MetricWindow,
+): { users: number; install: number; pos: number | null } | null {
+  if (win === 'l365') {
+    const s = row.l365;
+    return s ? { users: s.users, install: s.getApp, pos: s.pos } : null;
+  }
+  const m = row[win];
+  return m ? { users: m.usersL, install: m.getAppL, pos: m.posL } : null;
+}
 
 export function CategoryDrilldown({ category }: { category?: string }) {
   // No category prop → flat "all categories" view with a category filter.
@@ -265,18 +279,18 @@ export function CategoryDrilldown({ category }: { category?: string }) {
         const hay = `${r.searchTerm} ${(r.l7?.english ?? r.l30?.english ?? r.l90?.english ?? r.l365?.english ?? '')}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      // Numeric thresholds — pulled from the chosen metric window (L7/L30/L90).
+      // Numeric thresholds — pulled from the chosen metric window (L7/L30/L90/L365).
       // Row without that window is filtered out only when a numeric filter is set
       // (so the table doesn't collapse when no filter is active).
-      const metric = r[metricWindow];
+      const metric = windowMetric(r, metricWindow);
       if (minU !== null && Number.isFinite(minU)) {
-        if (!metric || metric.usersL < minU) return false;
+        if (!metric || metric.users < minU) return false;
       }
       if (minG !== null && Number.isFinite(minG)) {
-        if (!metric || metric.getAppL < minG) return false;
+        if (!metric || metric.install < minG) return false;
       }
       if (maxP !== null && Number.isFinite(maxP)) {
-        if (!metric || metric.posL === null || metric.posL > maxP) return false;
+        if (!metric || metric.pos === null || metric.pos > maxP) return false;
       }
       return true;
     });
@@ -443,6 +457,7 @@ export function CategoryDrilldown({ category }: { category?: string }) {
               <option value="l7">L7</option>
               <option value="l30">L30</option>
               <option value="l90">L90</option>
+              <option value="l365">L365</option>
             </select>
           </div>
           {dirty && (
