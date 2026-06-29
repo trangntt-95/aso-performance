@@ -25,6 +25,8 @@ export interface UnderbidRow {
   /** paid / (organic + paid) — low means paid is under-represented. */
   paidShare: number;
   organicPos: number | null;
+  /** Organic conversion rate (getApp / users) — high CR = stronger paid potential. */
+  organicCr: number | null;
   paidPos: number | null;
   inPaidSource: 'master' | 'manual';
   camps: UnderbidCamp[];
@@ -114,6 +116,7 @@ export function findUnderbidKeywords(
       paidUsers,
       paidShare,
       organicPos: a.organic?.pos ?? null,
+      organicCr: a.organic?.cr ?? null,
       paidPos,
       inPaidSource: status.source === 'manual' ? 'manual' : 'master',
       camps,

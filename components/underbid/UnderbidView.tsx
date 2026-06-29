@@ -24,6 +24,7 @@ type SortKey =
   | 'category'
   | 'organicUsers'
   | 'organicPos'
+  | 'organicCr'
   | 'paidUsers'
   | 'paidPos'
   | 'paidShare'
@@ -39,6 +40,7 @@ const SORT_COLS: Record<
   category: { kind: 'text', get: (r) => r.category },
   organicUsers: { kind: 'num', get: (r) => r.organicUsers },
   organicPos: { kind: 'num', get: (r) => r.organicPos },
+  organicCr: { kind: 'num', get: (r) => r.organicCr },
   paidUsers: { kind: 'num', get: (r) => r.paidUsers },
   paidPos: { kind: 'num', get: (r) => r.paidPos },
   paidShare: { kind: 'num', get: (r) => r.paidShare },
@@ -249,6 +251,7 @@ export function UnderbidView() {
                 <SortHead label="Category" col="category" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Org users" col="organicUsers" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Org pos" col="organicPos" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortHead label="Org CR" col="organicCr" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Paid users" col="paidUsers" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Paid pos" col="paidPos" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Paid share" col="paidShare" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -275,6 +278,9 @@ export function UnderbidView() {
                     </td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-500">
                       {formatPos(r.organicPos)}
+                    </td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">
+                      {formatPercent(r.organicCr)}
                     </td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px]">
                       <span className={r.paidUsers === 0 ? 'text-rose-600 font-medium' : ''}>
@@ -323,7 +329,7 @@ export function UnderbidView() {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            L365 · pos = avg position · Paid share = paid ÷ (organic + paid) · <b>click cột để sort</b> · mặc định sắp theo nhu cầu organic mà paid đang bỏ lỡ
+            L365 · pos = avg position · Org CR = install organic ÷ users organic (CR cao = tiềm năng convert tốt, đáng tăng bid) · Paid share = paid ÷ (organic + paid) · <b>click cột để sort</b> · mặc định sắp theo nhu cầu organic mà paid đang bỏ lỡ
           </div>
         </div>
       )}
