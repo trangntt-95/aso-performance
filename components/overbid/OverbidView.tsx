@@ -229,7 +229,6 @@ export function OverbidView() {
                 <SortHead label="Clicks" col="clicks" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Inst" col="installs" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Spend" col="spend" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                <th className="px-2 py-2 text-left font-medium min-w-[10rem]">Vấn đề</th>
                 <th className="px-2 py-2 text-left font-medium min-w-[9rem]" title="Ghi chú của bạn (tự lưu)">Note</th>
               </tr>
             </thead>
@@ -274,13 +273,6 @@ export function OverbidView() {
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">{formatNumber(r.clicks, { compact: true })}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">{formatNumber(r.installs, { compact: true })}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] font-semibold text-slate-800">${formatNumber(r.spend, { compact: true })}</td>
-                    <td className="px-2 py-2">
-                      <ul className="space-y-0.5">
-                        {r.reasons.map((reason, i) => (
-                          <li key={i} className="text-[10px] text-rose-700 leading-tight">• {reason}</li>
-                        ))}
-                      </ul>
-                    </td>
                     <NoteCell scope="overbid" noteId={r.camp} />
                   </tr>
                 );
