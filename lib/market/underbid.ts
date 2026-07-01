@@ -1,5 +1,6 @@
 import type {
   CampLinkRow,
+  KeywordRow,
   KwAddedManualRow,
   MasterKwRow,
   SnapshotRow,
@@ -25,9 +26,13 @@ export interface UnderbidRow {
   /** paid / (organic + paid) — low means paid is under-represented. */
   paidShare: number;
   organicPos: number | null;
+  /** Organic avg position over the recent L30 window (from All_L30). */
+  organicPosL30: number | null;
   /** Organic conversion rate (getApp / users) — high CR = stronger paid potential. */
   organicCr: number | null;
   paidPos: number | null;
+  /** Paid avg position over the recent L30 window (from All_L30). */
+  paidPosL30: number | null;
   inPaidSource: 'master' | 'manual';
   camps: UnderbidCamp[];
   /** Priority = organic demand the paid side is missing. */
@@ -47,6 +52,7 @@ export function findUnderbidKeywords(
   negativeKw: string[],
   pausedKw: MasterKwRow[],
   campLinks: CampLinkRow[],
+  allL30: KeywordRow[],
   params: UnderbidParams = {},
 ): UnderbidRow[] {
   const minOrganic = params.minOrganicUsers ?? 5;
@@ -57,6 +63,17 @@ export function findUnderbidKeywords(
   const campUrl = new Map<string, string>();
   for (const c of campLinks) {
     if (c.camp && c.url) campUrl.set(normKw(c.camp), c.url);
+  }
+
+  // Recent (L30) avg position per keyword, split organic vs paid — display only,
+  // does NOT affect the underbid rules (those stay on L365). posL is the L30 col.
+  const l30Pos = new Map<string, { organic: number | null; paid: number | null }>();
+  for (const r of allL30) {
+    const k = normKw(r.searchTerm);
+    if (!l30Pos.has(k)) l30Pos.set(k, { organic: null, paid: null });
+    const slot = l30Pos.get(k)!;
+    if (r.surface === 'search_ad') slot.paid = r.posL;
+    else slot.organic = r.posL;
   }
 
   // Group L365 by keyword → its organic + paid snapshot rows.
@@ -109,6 +126,8 @@ export function findUnderbidKeywords(
       url: campUrl.get(normKw(name)),
     }));
 
+    const l30 = l30Pos.get(normKw(a.term));
+
     out.push({
       term: a.term,
       category: a.category,
@@ -116,8 +135,10 @@ export function findUnderbidKeywords(
       paidUsers,
       paidShare,
       organicPos: a.organic?.pos ?? null,
+      organicPosL30: l30?.organic ?? null,
       organicCr: a.organic?.cr ?? null,
       paidPos,
+      paidPosL30: l30?.paid ?? null,
       inPaidSource: status.source === 'manual' ? 'manual' : 'master',
       camps,
       score: organicUsers * (1 - paidShare),
