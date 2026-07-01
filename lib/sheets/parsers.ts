@@ -31,8 +31,15 @@ import type {
 // ---------------------------------------------------------------------------
 
 const numOrNull = (v: unknown): number | null => {
-  if (v === '' || v === null || v === undefined) return null;
-  const n = typeof v === 'number' ? v : Number(v);
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  // Text-formatted cells (e.g. "$6.45", "1,234.5") come back as strings when the
+  // sheet stores them as text — strip currency symbols, thousands separators and
+  // surrounding spaces so they still parse. (Percent left intact so "49.91%" does
+  // not get silently rescaled.)
+  const s = String(v).trim().replace(/[$€£¥,\s]/g, '');
+  if (s === '') return null;
+  const n = Number(s);
   return Number.isFinite(n) ? n : null;
 };
 
