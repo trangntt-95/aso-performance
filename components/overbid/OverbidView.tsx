@@ -91,7 +91,7 @@ export function OverbidView() {
 
   const rows = useMemo(() => {
     if (!data) return [];
-    return findOverbidCamps(data.shopifyCamps ?? [], data.bidCap ?? [], data.campLinks ?? [], {
+    return findOverbidCamps(data.shopifyCamps ?? [], data.bidCap ?? [], data.campLinks ?? [], data.pausedKw ?? [], {
       minClicks: Number(minClicks) || 0,
       cpcTolerancePct: Number(cpcTol) || 0,
       cpiTolerancePct: Number(cpiTol) || 0,

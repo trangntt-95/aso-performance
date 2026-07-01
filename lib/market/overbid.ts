@@ -1,5 +1,6 @@
-import type { BidCapRow, CampLinkRow, ShopifyCampRow } from '@/lib/sheets/types';
-import { buildCampGeoIndex } from '@/lib/sheets/campGeo';
+import type { BidCapRow, CampLinkRow, MasterKwRow, ShopifyCampRow } from '@/lib/sheets/types';
+import { buildCampGeoIndex, type CampGeo } from '@/lib/sheets/campGeo';
+import { normalizeCampName } from '@/lib/sheets/campName';
 
 // Detect OVERBID campaigns: paid camps (from Shopify_daily) whose effective
 // CPC (Spend/Clicks) and/or CPI (Spend/Installs) run ABOVE the allowed bid /
@@ -98,9 +99,17 @@ export function findOverbidCamps(
   shopifyCamps: ShopifyCampRow[],
   bidCap: BidCapRow[],
   campLinks: CampLinkRow[],
+  pausedCamps: MasterKwRow[] = [],
   params: OverbidParams = {},
 ): OverbidRow[] {
   const minClicks = params.minClicks ?? 5;
+  // Camps in the 'Paused_camp' tab are no longer running — drop them so the
+  // table only lists live camps whose bid you can still act on. Match on the
+  // note-stripped name so a paused camp renamed with a "(CPI …)" tag in
+  // Shopify_daily is still recognised.
+  const pausedSet = new Set(
+    pausedCamps.map((p) => normalizeCampName(p.camp)).filter(Boolean),
+  );
   const cpcTol = (params.cpcTolerancePct ?? 0) / 100;
   const cpiTol = (params.cpiTolerancePct ?? 0) / 100;
 
@@ -113,12 +122,29 @@ export function findOverbidCamps(
     cellsByCat.set(r.category, list);
   }
 
-  const geoIndex = buildCampGeoIndex(campLinks);
+  // Camp_Links keeps un-annotated names, so key both the geo and URL lookups by
+  // the note-stripped name and query with the same. Re-key the geo index
+  // (first non-unknown geo wins, mirroring buildCampGeoIndex).
+  const geoIndexRaw = buildCampGeoIndex(campLinks);
+  const geoIndex = new Map<string, CampGeo>();
+  geoIndexRaw.forEach((geo, name) => {
+    const key = normalizeCampName(name);
+    const existing = geoIndex.get(key);
+    if (!existing || (existing.mode === 'unknown' && geo.mode !== 'unknown')) {
+      geoIndex.set(key, geo);
+    }
+  });
   const campUrl = new Map<string, string>();
-  for (const c of campLinks) if (c.camp && c.url) campUrl.set(c.camp, c.url);
+  for (const c of campLinks) {
+    if (!c.camp || !c.url) continue;
+    const key = normalizeCampName(c.camp);
+    if (!campUrl.has(key)) campUrl.set(key, c.url);
+  }
 
   const out: OverbidRow[] = [];
   for (const c of shopifyCamps) {
+    const campKey = normalizeCampName(c.camp); // note-stripped key for cross-tab lookups
+    if (pausedSet.has(campKey)) continue; // paused camp — bid no longer actionable
     if (c.clicks < minClicks) continue; // too little data to trust CPC
 
     const category = campCategory(c.camp);
@@ -130,7 +156,7 @@ export function findOverbidCamps(
     const cpi = c.installs > 0 ? c.spend / c.installs : null;
 
     // Resolve target cells from Camp_Links Geo; blank/missing geo = general.
-    const geo = geoIndex.get(c.camp);
+    const geo = geoIndex.get(campKey);
     let targetCells: Cell[] = catCells;
     let matchLevel: 'country' | 'category' = 'category';
     let countryLabel = `general · avg ${category}`;
@@ -176,7 +202,7 @@ export function findOverbidCamps(
 
     out.push({
       camp: c.camp,
-      url: campUrl.get(c.camp),
+      url: campUrl.get(campKey),
       category,
       countries,
       matchLevel,
