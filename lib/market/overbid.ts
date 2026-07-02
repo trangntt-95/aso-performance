@@ -41,6 +41,10 @@ export interface OverbidRow {
   reasons: string[];
   /** Priority = worst overage × spend (biggest wasted budget on top). */
   score: number;
+  /** How many Shopify_daily rows were merged into this camp (same URL). 1 = none. */
+  mergedCount: number;
+  /** The original Shopify_daily names that were merged (for tooltip). */
+  mergedNames: string[];
 }
 
 export interface OverbidParams {
@@ -141,13 +145,53 @@ export function findOverbidCamps(
     if (!campUrl.has(key)) campUrl.set(key, c.url);
   }
 
-  const out: OverbidRow[] = [];
+  // Merge Shopify_daily rows that are the SAME campaign. Trang renames a camp
+  // over time (adding "(CPI xx)" / other notes), so one campaign can appear as
+  // several rows — each covering part of the reporting window. They resolve to
+  // one Camp_Links URL (= one campaign id); sum their impressions/clicks/
+  // installs/spend so CPC/CPI reflect the whole window, not a single slice.
+  // Rows with no resolvable URL can't be proven identical, so they merge only
+  // with rows sharing the exact note-stripped name.
+  interface MergedCamp {
+    key: string; // note-stripped name of the representative row
+    name: string; // representative (shortest) original name
+    url?: string;
+    impressions: number;
+    clicks: number;
+    installs: number;
+    spend: number;
+    members: string[];
+  }
+  const groups = new Map<string, MergedCamp>();
   for (const c of shopifyCamps) {
-    const campKey = normalizeCampName(c.camp); // note-stripped key for cross-tab lookups
+    const campKey = normalizeCampName(c.camp);
     if (pausedSet.has(campKey)) continue; // paused camp — bid no longer actionable
+    const url = campUrl.get(campKey);
+    const groupKey = url ?? `name:${campKey}`; // URL = campaign identity; else fall back to name
+    let g = groups.get(groupKey);
+    if (!g) {
+      g = { key: campKey, name: c.camp, url, impressions: 0, clicks: 0, installs: 0, spend: 0, members: [] };
+      groups.set(groupKey, g);
+    }
+    g.impressions += c.impressions;
+    g.clicks += c.clicks;
+    g.installs += c.installs;
+    g.spend += c.spend;
+    g.members.push(c.camp);
+    // Prefer the shortest name as the label — notes only make names longer, so
+    // the shortest member is the closest to the clean base name.
+    if (c.camp.length < g.name.length) {
+      g.name = c.camp;
+      g.key = campKey;
+    }
+  }
+
+  const out: OverbidRow[] = [];
+  for (const c of Array.from(groups.values())) {
+    const campKey = c.key; // note-stripped key of the representative name
     if (c.clicks < minClicks) continue; // too little data to trust CPC
 
-    const category = campCategory(c.camp);
+    const category = campCategory(c.name);
     if (!category) continue; // can't map to a bid-cap category → can't assess
     const catCells = cellsByCat.get(category);
     if (!catCells || catCells.length === 0) continue; // no recommendation to compare
@@ -201,8 +245,8 @@ export function findOverbidCamps(
     const worstOver = Math.max(cpcOverPct ?? 0, cpiOverPct ?? 0);
 
     out.push({
-      camp: c.camp,
-      url: campUrl.get(campKey),
+      camp: c.name,
+      url: c.url ?? campUrl.get(campKey),
       category,
       countries,
       matchLevel,
@@ -219,6 +263,8 @@ export function findOverbidCamps(
       cpiOverPct,
       reasons,
       score: worstOver * c.spend,
+      mergedCount: c.members.length,
+      mergedNames: c.members,
     });
   }
 

@@ -150,7 +150,10 @@ export function OverbidView() {
           <b>CPC thực tế (Spend/Clicks)</b> vượt <b>bid cho phép</b> hoặc <b>CPI</b> vượt CPI cho phép (tab{' '}
           <code className="text-[10px]">Max bid cap</code>). → nên <b>hạ bid</b>. Nước target lấy từ cột{' '}
           <b>Geo</b> trong <code className="text-[10px]">Camp_Links</code> (🎯, so với trung bình các nước đó); camp
-          không điền Geo coi là <b>general</b> → so với <b>trung bình cả category</b> (🌐).
+          không điền Geo coi là <b>general</b> → so với <b>trung bình cả category</b> (🌐). Các dòng{' '}
+          <code className="text-[10px]">Shopify_daily</code> <b>cùng 1 campaign</b> (cùng URL, do đổi tên/thêm ghi
+          chú) được <b>gộp lại</b> — cộng dồn clicks/installs/spend cho cả khoảng — và đánh dấu{' '}
+          <span className="rounded bg-indigo-100 px-1 text-[9px] font-semibold text-indigo-700">gộp N</span>.
           {data?.shopifyDateRange && (
             <span className="mt-1 block font-medium text-rose-800">
               📅 Dữ liệu áp dụng: {data.shopifyDateRange}
@@ -236,16 +239,26 @@ export function OverbidView() {
               {filtered.map((r) => {
                 const cs = categoryStyle(r.category as Category);
                 return (
-                  <tr key={r.camp} className="border-t hover:bg-slate-50 align-top">
+                  <tr key={r.url ?? r.camp} className="border-t hover:bg-slate-50 align-top">
                     <td className="px-3 py-2">
-                      {r.url ? (
-                        <a href={r.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-start gap-1 font-medium text-[12px] text-indigo-600 hover:underline">
-                          {r.camp}
-                          <ExternalLink className="h-3 w-3 shrink-0 mt-0.5" />
-                        </a>
-                      ) : (
-                        <span className="font-medium text-[12px] text-slate-800">{r.camp}</span>
-                      )}
+                      <span className="inline-flex items-start gap-1">
+                        {r.url ? (
+                          <a href={r.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-start gap-1 font-medium text-[12px] text-indigo-600 hover:underline">
+                            {r.camp}
+                            <ExternalLink className="h-3 w-3 shrink-0 mt-0.5" />
+                          </a>
+                        ) : (
+                          <span className="font-medium text-[12px] text-slate-800">{r.camp}</span>
+                        )}
+                        {r.mergedCount > 1 && (
+                          <span
+                            title={`Gộp từ ${r.mergedCount} dòng cùng campaign (cùng URL):\n${r.mergedNames.join('\n')}`}
+                            className="shrink-0 rounded bg-indigo-100 px-1 text-[9px] font-semibold text-indigo-700 leading-[1.4] cursor-help"
+                          >
+                            gộp {r.mergedCount}
+                          </span>
+                        )}
+                      </span>
                       <div className="text-[10px] text-slate-400">
                         {r.matchLevel === 'country' ? (
                           <span title="Nước target lấy từ Geo trong Camp_Links — so với trung bình các nước đó">🎯 {r.countryLabel}</span>
