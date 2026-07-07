@@ -3,10 +3,47 @@ import type {
   KeywordRow,
   KwAddedManualRow,
   MasterKwRow,
+  SheetPayload,
   SnapshotRow,
 } from '@/lib/sheets/types';
 import { buildPaidStatusIndex, resolvePaidStatus } from '@/lib/sheets/paidStatus';
 import { normKw } from '@/lib/sheets/kwNorm';
+
+// Time-range windows the underbid analysis can run on. L365 is the default
+// (long-term demand). L30/L90 let the user re-run the same rule on a shorter,
+// more recent window. Their tabs are KeywordRow[] and get adapted to the
+// SnapshotRow shape the rule expects (see windowSnapshotRows).
+export type UnderbidWindow = 'L30' | 'L90' | 'L365';
+
+export const UNDERBID_WINDOWS: UnderbidWindow[] = ['L30', 'L90', 'L365'];
+
+/**
+ * Primary snapshot rows for a given window. L365 is already SnapshotRow[]; the
+ * shorter windows are KeywordRow[] (last-period L values) adapted to the same
+ * shape so the underbid rule can run unchanged on any window.
+ */
+export function windowSnapshotRows(
+  data: SheetPayload,
+  window: UnderbidWindow,
+): SnapshotRow[] {
+  if (window === 'L365') return data.allL365 ?? [];
+  const tab: KeywordRow[] = window === 'L30' ? data.allL30 ?? [] : data.allL90 ?? [];
+  return tab.map(
+    (r): SnapshotRow => ({
+      category: r.category,
+      searchTerm: r.searchTerm,
+      country: r.country,
+      surface: r.surface,
+      users: r.usersL,
+      getApp: r.getAppL,
+      cr: r.crL,
+      pos: r.posL,
+      sharePct: 0,
+      lang: r.lang,
+      english: r.english,
+    }),
+  );
+}
 
 // Uncover UNDERBID keywords: terms with real long-term (L365) organic demand
 // that ARE being bid in a paid campaign, yet barely show up in paid (low paid
@@ -22,6 +59,8 @@ export interface UnderbidRow {
   term: string;
   category: string;
   organicUsers: number;
+  /** Organic installs (getApp) in the selected window. */
+  organicInstalls: number;
   paidUsers: number;
   /** paid / (organic + paid) — low means paid is under-represented. */
   paidShare: number;
@@ -132,6 +171,7 @@ export function findUnderbidKeywords(
       term: a.term,
       category: a.category,
       organicUsers,
+      organicInstalls: a.organic?.getApp ?? 0,
       paidUsers,
       paidShare,
       organicPos: a.organic?.pos ?? null,
