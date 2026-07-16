@@ -15,6 +15,10 @@ export function noteKeyOf(scope: string, key: string): string {
 
 interface NotesState {
   notes: Record<string, string>;
+  /** ISO timestamp of the last edit per note key — used for time-gated UI
+   *  (e.g. Overbid hides a camp for a few days after it's noted). Stamped
+   *  optimistically on edit; refreshed from the server on load. */
+  updatedAt: Record<string, string>;
   loaded: boolean;
   /** truthy while a save is in flight/pending, for the saving indicator. */
   saving: Record<string, boolean>;
@@ -40,14 +44,18 @@ async function postNote(scope: string, key: string, note: string) {
 
 export const useNotesStore = create<NotesState>()((set) => ({
   notes: {},
+  updatedAt: {},
   loaded: false,
   saving: {},
   load: async () => {
     try {
       const res = await fetch('/api/notes');
       if (!res.ok) throw new Error(`Load failed (${res.status})`);
-      const data = (await res.json()) as { notes?: Record<string, string> };
-      set({ notes: data.notes ?? {}, loaded: true });
+      const data = (await res.json()) as {
+        notes?: Record<string, string>;
+        updatedAt?: Record<string, string>;
+      };
+      set({ notes: data.notes ?? {}, updatedAt: data.updatedAt ?? {}, loaded: true });
     } catch {
       // Leave notes empty on failure; the table still works without them.
       set({ loaded: true });
@@ -55,12 +63,20 @@ export const useNotesStore = create<NotesState>()((set) => ({
   },
   setNote: (scope, key, note) => {
     const composite = noteKeyOf(scope, key);
-    // Optimistic local update.
+    const nowIso = new Date().toISOString();
+    // Optimistic local update — stamp/clear updatedAt so time-gated UI reacts
+    // immediately (before the debounced server write lands).
     set((s) => {
       const next = { ...s.notes };
-      if (note.trim() === '') delete next[composite];
-      else next[composite] = note;
-      return { notes: next, saving: { ...s.saving, [composite]: true } };
+      const nextTs = { ...s.updatedAt };
+      if (note.trim() === '') {
+        delete next[composite];
+        delete nextTs[composite];
+      } else {
+        next[composite] = note;
+        nextTs[composite] = nowIso;
+      }
+      return { notes: next, updatedAt: nextTs, saving: { ...s.saving, [composite]: true } };
     });
     // Debounced server write.
     const existing = timers.get(composite);

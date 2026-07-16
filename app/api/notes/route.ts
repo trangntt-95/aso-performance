@@ -55,13 +55,18 @@ export async function GET() {
     await ensureTab(sheets, spreadsheetId);
     const rows = await readRows(sheets, spreadsheetId);
     const notes: Record<string, string> = {};
+    // updatedAt (ISO) per note — lets pages time-gate on when a note was written
+    // (e.g. Overbid hides a camp for a few days after you note it).
+    const updatedAt: Record<string, string> = {};
     rows.slice(1).forEach((r) => {
-      const [scope, key, note] = r;
+      const [scope, key, note, ts] = r;
       if (scope && key && note && String(note).trim() !== '') {
-        notes[composite(String(scope), String(key))] = String(note);
+        const c = composite(String(scope), String(key));
+        notes[c] = String(note);
+        if (ts) updatedAt[c] = String(ts);
       }
     });
-    return NextResponse.json({ notes });
+    return NextResponse.json({ notes, updatedAt });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }

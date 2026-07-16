@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Search, X, ExternalLink, Flame } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
-import { useNotesStore } from '@/lib/store/notesStore';
+import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -19,6 +19,18 @@ const selectCls =
 
 const money = (n: number | null): string =>
   n === null || !Number.isFinite(n) ? '—' : `$${n.toFixed(2)}`;
+
+// After you note an overbid camp, hide it for this many days so the list only
+// shows camps still needing action. It reappears afterwards so you can re-check
+// the fix. Snapshotted at load → the camp you're typing into never vanishes
+// mid-edit; the hide kicks in from the next visit.
+const HIDE_DAYS = 5;
+const DAY_MS = 86_400_000;
+
+const dmy = (ms: number): string => {
+  const d = new Date(ms);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
 
 type SortKey = 'camp' | 'category' | 'cpc' | 'cpi' | 'targetBid' | 'spend' | 'clicks' | 'installs' | 'score';
 type SortDir = 'asc' | 'desc';
@@ -66,9 +78,22 @@ export function OverbidView() {
 
   // Load saved notes from the App_Notes sheet tab once on mount.
   const loadNotes = useNotesStore((s) => s.load);
+  const notesLoaded = useNotesStore((s) => s.loaded);
+  const noteTimes = useNotesStore((s) => s.updatedAt);
   useEffect(() => {
     loadNotes();
   }, [loadNotes]);
+
+  // Snapshot note timestamps once when they first load, so a camp you note in
+  // this session stays visible while you're typing — it only gets hidden on the
+  // next visit (when its updatedAt is part of the loaded snapshot).
+  const [noteSnapshot, setNoteSnapshot] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    if (notesLoaded && noteSnapshot === null) setNoteSnapshot(noteTimes);
+  }, [notesLoaded, noteSnapshot, noteTimes]);
+
+  // Whether to reveal camps currently in their post-note hide window.
+  const [showHidden, setShowHidden] = useState(false);
 
   // Detection thresholds (tunable).
   const [minClicks, setMinClicks] = useState('5');
@@ -98,6 +123,22 @@ export function OverbidView() {
     });
   }, [data, minClicks, cpcTol, cpiTol]);
 
+  // Camps still inside their post-note hide window → camp name -> reappear time.
+  const hiddenUntil = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!noteSnapshot) return map;
+    const now = Date.now();
+    for (const r of rows) {
+      const ts = noteSnapshot[noteKeyOf('overbid', r.camp)];
+      if (!ts) continue;
+      const noted = new Date(ts).getTime();
+      if (!Number.isFinite(noted)) continue;
+      const until = noted + HIDE_DAYS * DAY_MS;
+      if (until > now) map.set(r.camp, until);
+    }
+    return map;
+  }, [rows, noteSnapshot]);
+
   const categoryOptions = useMemo(() => {
     const set = new Set<string>();
     rows.forEach((r) => set.add(r.category));
@@ -108,6 +149,7 @@ export function OverbidView() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const out = rows.filter((r) => {
+      if (!showHidden && hiddenUntil.has(r.camp)) return false;
       if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
       if (matchFilter !== 'all' && r.matchLevel !== matchFilter) return false;
       if (q && !r.camp.toLowerCase().includes(q)) return false;
@@ -126,9 +168,10 @@ export function OverbidView() {
       return base * dir || b.score - a.score;
     });
     return out;
-  }, [rows, search, categoryFilter, matchFilter, sortKey, sortDir]);
+  }, [rows, search, categoryFilter, matchFilter, sortKey, sortDir, showHidden, hiddenUntil]);
 
   const totalSpend = useMemo(() => filtered.reduce((s, r) => s + r.spend, 0), [filtered]);
+  const hiddenCount = hiddenUntil.size;
   const dirty = search !== '' || categoryFilter !== 'all' || matchFilter !== 'all';
 
   if (error) {
@@ -201,10 +244,24 @@ export function OverbidView() {
       )}
 
       {!isLoading && (
-        <div className="text-xs text-slate-500">
-          {filtered.length}
-          {filtered.length !== rows.length ? ` / ${rows.length}` : ''} camp overbid · tổng spend{' '}
-          <span className="font-semibold text-rose-700">${formatNumber(totalSpend, { compact: true })}</span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+          <span>
+            {filtered.length}
+            {filtered.length !== rows.length ? ` / ${rows.length}` : ''} camp overbid · tổng spend{' '}
+            <span className="font-semibold text-rose-700">${formatNumber(totalSpend, { compact: true })}</span>
+          </span>
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHidden((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:border-slate-400 hover:text-slate-900"
+              title={`${hiddenCount} camp đã ghi note đang tạm ẩn ${HIDE_DAYS} ngày để bạn fix; sẽ tự hiện lại để kiểm tra.`}
+            >
+              {showHidden
+                ? `Đang hiện ${hiddenCount} camp đã note — bấm để ẩn`
+                : `🙈 ${hiddenCount} camp đã note (ẩn ${HIDE_DAYS} ngày) — hiện`}
+            </button>
+          )}
         </div>
       )}
 
@@ -238,8 +295,9 @@ export function OverbidView() {
             <tbody>
               {filtered.map((r) => {
                 const cs = categoryStyle(r.category as Category);
+                const hiddenTs = hiddenUntil.get(r.camp);
                 return (
-                  <tr key={r.url ?? r.camp} className="border-t hover:bg-slate-50 align-top">
+                  <tr key={r.url ?? r.camp} className={cn('border-t hover:bg-slate-50 align-top', hiddenTs && 'bg-slate-50/60 text-slate-400')}>
                     <td className="px-3 py-2">
                       <span className="inline-flex items-start gap-1">
                         {r.url ? (
@@ -256,6 +314,14 @@ export function OverbidView() {
                             className="shrink-0 rounded bg-indigo-100 px-1 text-[9px] font-semibold text-indigo-700 leading-[1.4] cursor-help"
                           >
                             gộp {r.mergedCount}
+                          </span>
+                        )}
+                        {hiddenTs && (
+                          <span
+                            title={`Đã ghi note → tạm ẩn để bạn fix. Tự hiện lại ngày ${dmy(hiddenTs)} để kiểm tra thay đổi.`}
+                            className="shrink-0 rounded bg-amber-100 px-1 text-[9px] font-semibold text-amber-700 leading-[1.4] cursor-help"
+                          >
+                            ẩn → hiện lại {dmy(hiddenTs)}
                           </span>
                         )}
                       </span>
