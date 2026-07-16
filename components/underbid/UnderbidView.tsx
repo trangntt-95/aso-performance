@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Search, X, ExternalLink, AlertTriangle } from 'lucide-react';
+import { AlertCircle, Search, X, ExternalLink, AlertTriangle, ChevronDown } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
-import { useNotesStore } from '@/lib/store/notesStore';
+import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,6 +23,18 @@ import type { Category } from '@/lib/sheets/types';
 
 const selectCls =
   'h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500';
+
+// After you note an underbid keyword, hide it for this many days so the list
+// only shows keywords still needing action. It reappears afterwards so you can
+// re-check the change. Snapshotted at load → the row you're typing into never
+// vanishes mid-edit; the hide kicks in from the next visit.
+const HIDE_DAYS = 5;
+const DAY_MS = 86_400_000;
+
+const dmy = (ms: number): string => {
+  const d = new Date(ms);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
 
 type SortKey =
   | 'keyword'
@@ -94,14 +106,86 @@ function SortHead({
   );
 }
 
+// Camp cell: collapses to a single line (the first camp) and lets the user
+// expand the rest on click. Paused camps with no link are already filtered out
+// upstream (findUnderbidKeywords), so everything here is a live camp.
+function CampOne({ camp }: { camp: import('@/lib/market/underbid').UnderbidCamp }) {
+  return camp.url ? (
+    <a
+      href={camp.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:underline"
+    >
+      {camp.name}
+      <ExternalLink className="h-3 w-3 shrink-0" />
+    </a>
+  ) : (
+    <span className="text-[11px] text-slate-600" title="Camp này chưa có URL trong Camp_Links">
+      {camp.name}
+    </span>
+  );
+}
+
+function CampCell({ camps, manual }: { camps: import('@/lib/market/underbid').UnderbidCamp[]; manual: boolean }) {
+  const [open, setOpen] = useState(false);
+  const extra = camps.length - 1;
+
+  return (
+    <td className="px-2 py-2 min-w-[12rem]">
+      {camps.length === 0 ? (
+        <span className="text-slate-400 text-[11px]">—</span>
+      ) : (
+        <div className="flex flex-col gap-0.5">
+          {/* Always-visible first line + toggle for the rest */}
+          <div className="flex items-center gap-1">
+            <CampOne camp={camps[0]} />
+            {extra > 0 && (
+              <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                title={open ? 'Thu gọn' : `Xem thêm ${extra} camp`}
+              >
+                <ChevronDown className={cn('h-3 w-3 transition-transform', open && 'rotate-180')} />
+                {open ? 'Thu gọn' : `+${extra}`}
+              </button>
+            )}
+          </div>
+          {open &&
+            camps.slice(1).map((c, i) => (
+              <div key={i} className="pl-0.5">
+                <CampOne camp={c} />
+              </div>
+            ))}
+        </div>
+      )}
+      {manual && <span className="text-[10px] text-slate-400">✍️ added manual</span>}
+    </td>
+  );
+}
+
 export function UnderbidView() {
   const { data, isLoading, error } = useSheetData();
 
   // Load saved notes from the App_Notes sheet tab once on mount.
   const loadNotes = useNotesStore((s) => s.load);
+  const notesLoaded = useNotesStore((s) => s.loaded);
+  const noteTimes = useNotesStore((s) => s.updatedAt);
   useEffect(() => {
     loadNotes();
   }, [loadNotes]);
+
+  // Snapshot note timestamps once when they first load, so a keyword you note in
+  // this session stays visible while you're typing — it only gets hidden on the
+  // next visit (when its updatedAt is part of the loaded snapshot).
+  const [noteSnapshot, setNoteSnapshot] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    if (notesLoaded && noteSnapshot === null) setNoteSnapshot(noteTimes);
+  }, [notesLoaded, noteSnapshot, noteTimes]);
+
+  // Whether to reveal keywords currently in their post-note hide window.
+  const [showHidden, setShowHidden] = useState(false);
 
   // Time range the analysis runs on (default L365 = long-term demand).
   const [window, setWindow] = useState<UnderbidWindow>('L365');
@@ -142,6 +226,22 @@ export function UnderbidView() {
     );
   }, [data, window, minOrganic, maxShare, posTh]);
 
+  // Keywords still inside their post-note hide window → term -> reappear time.
+  const hiddenUntil = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!noteSnapshot) return map;
+    const now = Date.now();
+    for (const r of rows) {
+      const ts = noteSnapshot[noteKeyOf('underbid', r.term)];
+      if (!ts) continue;
+      const noted = new Date(ts).getTime();
+      if (!Number.isFinite(noted)) continue;
+      const until = noted + HIDE_DAYS * DAY_MS;
+      if (until > now) map.set(r.term, until);
+    }
+    return map;
+  }, [rows, noteSnapshot]);
+
   const categoryOptions = useMemo(() => {
     const set = new Set<string>();
     rows.forEach((r) => set.add(r.category));
@@ -155,6 +255,7 @@ export function UnderbidView() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const out = rows.filter((r) => {
+      if (!showHidden && hiddenUntil.has(r.term)) return false;
       if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
       if (q && !r.term.toLowerCase().includes(q)) return false;
       return true;
@@ -175,8 +276,9 @@ export function UnderbidView() {
       return base * dir || b.score - a.score;
     });
     return out;
-  }, [rows, search, categoryFilter, sortKey, sortDir]);
+  }, [rows, search, categoryFilter, sortKey, sortDir, showHidden, hiddenUntil]);
 
+  const hiddenCount = hiddenUntil.size;
   const dirty = search !== '' || categoryFilter !== 'all';
 
   if (error) {
@@ -262,9 +364,23 @@ export function UnderbidView() {
       )}
 
       {!isLoading && (
-        <div className="text-xs text-slate-500">
-          {filtered.length}
-          {filtered.length !== rows.length ? ` / ${rows.length}` : ''} keyword underbid
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+          <span>
+            {filtered.length}
+            {filtered.length !== rows.length ? ` / ${rows.length}` : ''} keyword underbid
+          </span>
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHidden((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:border-slate-400 hover:text-slate-900"
+              title={`${hiddenCount} keyword đã ghi note đang tạm ẩn ${HIDE_DAYS} ngày để bạn xử lý; sẽ tự hiện lại để kiểm tra.`}
+            >
+              {showHidden
+                ? `Đang hiện ${hiddenCount} keyword đã note — bấm để ẩn`
+                : `🙈 ${hiddenCount} keyword đã note (ẩn ${HIDE_DAYS} ngày) — hiện`}
+            </button>
+          )}
         </div>
       )}
 
@@ -301,10 +417,21 @@ export function UnderbidView() {
             <tbody>
               {filtered.map((r) => {
                 const cs = categoryStyle(r.category as Category);
+                const hiddenTs = hiddenUntil.get(r.term);
                 return (
-                  <tr key={r.term} className="border-t hover:bg-slate-50 align-top">
+                  <tr key={r.term} className={cn('border-t hover:bg-slate-50 align-top', hiddenTs && 'bg-slate-50/60 text-slate-400')}>
                     <td className="px-3 py-2">
-                      <KeywordLink keyword={r.term} surface="paid" className="font-medium text-sm" />
+                      <div className="flex items-start gap-1">
+                        <KeywordLink keyword={r.term} surface="paid" className="font-medium text-sm" />
+                        {hiddenTs && (
+                          <span
+                            title={`Đã ghi note → tạm ẩn để bạn xử lý. Tự hiện lại ngày ${dmy(hiddenTs)} để kiểm tra thay đổi.`}
+                            className="shrink-0 rounded bg-amber-100 px-1 text-[9px] font-semibold text-amber-700 leading-[1.4] cursor-help"
+                          >
+                            ẩn → hiện lại {dmy(hiddenTs)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-2 py-2">
                       <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap', cs.bg, cs.text)}>
@@ -341,35 +468,7 @@ export function UnderbidView() {
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       <span className="font-mono text-[11px] font-semibold text-amber-700">{formatPercent(r.paidShare)}</span>
                     </td>
-                    <td className="px-2 py-2">
-                      <div className="flex flex-col gap-0.5">
-                        {r.camps.length === 0 ? (
-                          <span className="text-slate-400 text-[11px]">—</span>
-                        ) : (
-                          r.camps.map((c, i) =>
-                            c.url ? (
-                              <a
-                                key={i}
-                                href={c.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:underline"
-                              >
-                                {c.name}
-                                <ExternalLink className="h-3 w-3 shrink-0" />
-                              </a>
-                            ) : (
-                              <span key={i} className="text-[11px] text-slate-600" title="Camp này chưa có URL trong Camp_Links">
-                                {c.name}
-                              </span>
-                            ),
-                          )
-                        )}
-                        {r.inPaidSource === 'manual' && (
-                          <span className="text-[10px] text-slate-400">✍️ added manual</span>
-                        )}
-                      </div>
-                    </td>
+                    <CampCell camps={r.camps} manual={r.inPaidSource === 'manual'} />
                     <NoteCell scope="underbid" noteId={r.term} />
                   </tr>
                 );
