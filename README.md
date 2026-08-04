@@ -4,7 +4,7 @@ Dashboard theo dõi hiệu suất **ASO (App Store Optimization)** cho **TruePro
 
 Ứng dụng đọc dữ liệu keyword/ranking/install từ một **Google Sheet** (do bộ ASO tracker bằng Apps Script ghi vào), tổng hợp lại và hiển thị thành các dashboard tương tác để team marketing ra quyết định **bid / keyword** hằng ngày.
 
-- **Live:** https://aso-performance.vercel.app
+- **Live:** https://appstore-performance.vercel.app (Vercel project `appstore-performance`)
 - **Repo:** github.com/trangntt-95/aso-performance (private)
 - **Thư mục:** `app-dau-tien/` (tên thư mục cũ; project đã đổi tên thành `aso-performance`)
 
@@ -102,10 +102,10 @@ GitHub auto-deploy **không hoạt động** (vercel git connect lỗi). Quy tr�
 ```bash
 git push
 vercel deploy --prod --yes
-vercel alias set <deployment-url> aso-performance.vercel.app
+vercel alias set <deployment-url> appstore-performance.vercel.app
 ```
 
-> Alias `aso-performance.vercel.app` không tự rebind sang deployment mới nhất nên phải set alias sau mỗi lần deploy prod.
+> Domain prod là `appstore-performance.vercel.app` (KHÔNG phải `aso-performance.vercel.app` — alias đó không trỏ đi đâu cả). Set alias sau mỗi lần deploy prod cho chắc.
 
 ---
 
