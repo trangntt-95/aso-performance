@@ -234,16 +234,15 @@ export interface KwAddedManualRow {
   note: string;
 }
 
+// Only the four fields the dashboard actually reads. The Master tab also carries
+// matchType / impressions / clicks / installs / classification, but nothing
+// consumes them and this row type is the payload's 2nd-biggest tab
+// (masterKwLookup ~13k rows + pausedKw ~4.7k) — so they stay out of the JSON.
 export interface MasterKwRow {
   category: string;
   camp: string;
   keyword: string;
-  matchType: string;
   bidMax: string;
-  impressions: number;
-  clicks: number;
-  installs: number;
-  classification: string;
 }
 
 /**
@@ -320,8 +319,8 @@ export interface AlertLogRow {
   posL: number | null;
   deltaPos: number | null;
   usersL: number;
-  topContribWindows: string;
-  emailSent: boolean;
+  // top_contrib_windows / email_sent exist in the AlertLog tab but nothing reads
+  // them — left out of the payload.
 }
 
 export interface Tier1WatchRow {

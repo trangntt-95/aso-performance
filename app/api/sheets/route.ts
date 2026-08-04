@@ -31,7 +31,7 @@ export async function GET() {
     const raw = await fetchAllTabs();
     const masterKwLookup = parseMasterKw(raw['Master KW Lookup'] ?? []);
     const langKws = languageOnlyKeywords(masterKwLookup);
-    // Language reclassify, then exact-match category fixes (e.g. profit calculator → Feature).
+    // Language reclassify, then category fixes (brand, "profit" → Profit, tracker → Feature).
     const fixKw = (rows: KeywordRow[]) => overrideCategoryExact(overrideToLanguage(rows, langKws));
     const fixSnap = (rows: SnapshotRow[]) => overrideCategoryExact(overrideToLanguage(rows, langKws));
     const windowDates: Record<string, { from: string; to: string }> = {};

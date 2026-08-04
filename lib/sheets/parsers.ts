@@ -563,12 +563,7 @@ export function parseMasterKw(rows: string[][]): MasterKwRow[] {
         category: str(row[0]).trim(),
         camp: str(row[1]).trim(),
         keyword,
-        matchType: str(row[3]).trim(),
         bidMax: str(row[4]).trim(),
-        impressions: num(row[5]),
-        clicks: num(row[6]),
-        installs: num(row[7]),
-        classification: str(row[8]).trim(),
       };
     })
     .filter((r): r is MasterKwRow => r !== null);
@@ -802,8 +797,6 @@ export function parseAlertLog(rows: string[][]): AlertLogRow[] {
         posL: numOrNull(row[6]),
         deltaPos: numOrNull(row[7]),
         usersL: num(row[8]),
-        topContribWindows: str(row[9]),
-        emailSent: String(row[10] ?? '').toLowerCase() === 'true',
       };
     })
     .filter((r): r is AlertLogRow => r !== null);
