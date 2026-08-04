@@ -32,6 +32,22 @@ type Metric = 'users' | 'getApp' | 'cr';
 
 const METRIC_LABEL: Record<Metric, string> = { users: 'Users', getApp: 'Install', cr: 'CR' };
 
+const DELTA_KEY: Record<Metric, 'deltaUsersPct' | 'deltaGetAppPct' | 'deltaCrPct'> = {
+  users: 'deltaUsersPct',
+  getApp: 'deltaGetAppPct',
+  cr: 'deltaCrPct',
+};
+
+function fmtDelta(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '';
+  const p = v * 100;
+  return `${p >= 0 ? '+' : ''}${p.toFixed(1)}%`;
+}
+function deltaClass(v: number | null | undefined): string {
+  if (v === null || v === undefined || v === 0 || !Number.isFinite(v)) return 'text-slate-400';
+  return v > 0 ? 'text-emerald-600' : 'text-rose-600';
+}
+
 export function CategoryShareDonut({ data, height = 260, activeCategory, onCategoryClick }: Props) {
   const [metric, setMetric] = useState<Metric>('users');
   const clickable = Boolean(onCategoryClick);
@@ -149,6 +165,18 @@ export function CategoryShareDonut({ data, height = 260, activeCategory, onCateg
               <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: PALETTE[d.category] ?? '#94a3b8' }} />
               <span className="text-slate-700 truncate flex-1">{d.category}</span>
               <span className="text-slate-500 font-mono tabular-nums">{formatPercent(isCr ? d.cr : d.metricShare)}</span>
+              {(() => {
+                const dv = d[DELTA_KEY[metric]];
+                if (dv === null || dv === undefined || !Number.isFinite(dv)) return null;
+                return (
+                  <span
+                    className={cn('font-mono tabular-nums text-[10px] w-12 text-right shrink-0', deltaClass(dv))}
+                    title="% thay đổi so với kỳ trước"
+                  >
+                    {fmtDelta(dv)}
+                  </span>
+                );
+              })()}
             </button>
           ))}
         </div>

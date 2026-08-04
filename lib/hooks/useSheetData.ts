@@ -18,8 +18,11 @@ export function useSheetData() {
   return useQuery({
     queryKey: QUERY_KEY,
     queryFn: fetchSheetData,
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
+    // Short staleness + refetch on focus so edits made in the sheet show up when
+    // you switch back to the dashboard tab (server route is force-dynamic, so a
+    // refetch always pulls the latest sheet values). Manual Refresh button too.
+    staleTime: 2 * 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 }
 

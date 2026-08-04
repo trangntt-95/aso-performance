@@ -147,7 +147,13 @@ export function buildCampGeoIndex(campLinks: CampLinkRow[]): Map<string, CampGeo
   return index;
 }
 
-const covers = (geo: CampGeo, country: string): boolean | null => {
+// Countries the account never advertises in (confirmed by Trang 2026-07). Two
+// uses: (1) a blank Geo cell means "all countries EXCEPT these"; (2) these are
+// never flagged as a coverage GAP — "chưa bid ở India/Vietnam" is intentional,
+// not something to alert on. Names use Country_L* canonical EN spelling.
+const NEVER_TARGET_COUNTRIES = new Set(['India', 'Pakistan', 'Vietnam']);
+
+const covers = (geo: CampGeo, country: string): boolean => {
   switch (geo.mode) {
     case 'all':
       return true;
@@ -156,7 +162,9 @@ const covers = (geo: CampGeo, country: string): boolean | null => {
     case 'exclude':
       return !geo.countries.includes(country);
     default:
-      return null; // unknown
+      // unknown = ô Geo để trống. Quy tắc: target = tất cả nước − exclude mặc
+      // định (IN, PK, VN). Nên camp geo-trống cover mọi nước trừ 3 nước này.
+      return !NEVER_TARGET_COUNTRIES.has(country);
   }
 };
 
@@ -170,8 +178,9 @@ export interface CountryCoverage {
 }
 
 /** For a keyword bid in `camps`, classify each traffic country as covered / gap.
- *  A country is a GAP only when every camp has known geo and none covers it —
- *  with any unknown-geo camp the verdict downgrades to "maybe" (hasUnknownGeo). */
+ *  Blank-Geo camps are treated as targeting ALL countries, so a country is a GAP
+ *  only when NO camp (known-geo or blank) covers it. `hasUnknownGeo` is still
+ *  reported for reference but no longer blocks gaps. */
 export function resolveCountryCoverage(
   camps: string[],
   trafficCountries: string[],
@@ -182,8 +191,14 @@ export function resolveCountryCoverage(
   const covered: string[] = [];
   const gaps: string[] = [];
   for (const country of trafficCountries) {
-    if (geos.some((g) => covers(g, country) === true)) covered.push(country);
-    else if (!hasUnknownGeo) gaps.push(country);
+    // Never flag India/Pakistan/Vietnam as a gap — intentionally not targeted.
+    if (NEVER_TARGET_COUNTRIES.has(country)) {
+      continue;
+    }
+    // A blank-Geo camp now counts as covering everything (see `covers`), so a
+    // country is a GAP only when NO camp — known or blank — targets it.
+    if (geos.some((g) => covers(g, country))) covered.push(country);
+    else gaps.push(country);
   }
   return { covered, gaps, hasUnknownGeo };
 }

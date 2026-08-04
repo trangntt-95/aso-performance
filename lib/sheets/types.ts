@@ -280,6 +280,11 @@ export interface BidCapRow {
   /** True if the recommendation was capped by the ceiling ('Ceil Blk' col). */
   ceilBlocked: boolean;
   actionRecommended: string;
+  /** Campaign link the user maintains by hand in the 'Max bid cap' sheet
+   *  ('Link campaign' col). Raw cell text — a campaign NAME (values.get can't
+   *  read a hyperlink's URL, only its display text) or a pasted URL. Shown as-is
+   *  on the dashboard, taking priority over the auto-detected camp link. */
+  linkCampaign: string;
 }
 
 /**

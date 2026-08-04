@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Users, Target, Search } from 'lucide-react';
+import { Users, Target, Search, Download } from 'lucide-react';
 import type { ContributorRow } from './aggregate';
 import { KeywordLink } from '@/components/shared/KeywordLink';
 import { formatDeltaPct, formatNumber, deltaTone } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
+import { downloadCsv, pct, type Cell, type ExportSheet } from '@/lib/export/exporters';
 
 interface ColumnProps {
   title: string;
@@ -161,6 +162,62 @@ interface Props {
   activeCountry?: string | null;
   onRowClick?: (keyword: string) => void;
   onKeywordSelect?: (keyword: string) => void;
+  /** Base filename for the right-click CSV export. */
+  exportName?: string;
+}
+
+// Merge the users-ranked + install-ranked lists (same keyword set, different
+// order) into ONE flat table for CSV export: one row per keyword × surface.
+function buildCsvSheet(users: ContributorRow[], getApp: ContributorRow[]): ExportSheet {
+  interface E {
+    keyword: string;
+    category: string;
+    surface: string;
+    users: number;
+    usersShare: number;
+    install: number;
+    installShare: number;
+    cr: number | null;
+  }
+  const m = new Map<string, E>();
+  const ensure = (r: ContributorRow): E => {
+    const key = `${r.keyword}||${r.surface}`;
+    let e = m.get(key);
+    if (!e) {
+      e = { keyword: r.keyword, category: r.category, surface: r.surface, users: 0, usersShare: 0, install: 0, installShare: 0, cr: null };
+      m.set(key, e);
+    }
+    return e;
+  };
+  for (const r of users) {
+    const e = ensure(r);
+    e.users = r.value;
+    e.usersShare = r.sharePct;
+    if (r.cr !== null) e.cr = r.cr;
+  }
+  for (const r of getApp) {
+    const e = ensure(r);
+    e.install = r.value;
+    e.installShare = r.sharePct;
+    if (r.cr !== null) e.cr = r.cr;
+  }
+  const rows = Array.from(m.values()).sort((a, b) => b.users - a.users);
+  return {
+    name: 'Top Contribution',
+    rows: [
+      ['Keyword', 'Category', 'Surface', 'Users', 'Users %', 'Install', 'Install %', 'CR'],
+      ...rows.map((e): Cell[] => [
+        e.keyword,
+        e.category,
+        e.surface,
+        e.users,
+        `${e.usersShare.toFixed(1)}%`,
+        e.install,
+        `${e.installShare.toFixed(1)}%`,
+        e.cr !== null ? pct(e.cr) : '',
+      ]),
+    ],
+  };
 }
 
 export function TopContributors({
@@ -173,6 +230,7 @@ export function TopContributors({
   activeCountry,
   onRowClick,
   onKeywordSelect,
+  exportName = 'top-contribution',
 }: Props) {
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
@@ -180,35 +238,65 @@ export function TopContributors({
     query ? rows.filter((r) => r.keyword.toLowerCase().includes(query)) : rows;
   const fUsers = matchRows(users);
   const fGetApp = matchRows(getApp);
+  // Hide a keyword only when it's truly empty — 0 now AND 0 before. A row that
+  // dropped to 0 from a non-zero prior (i.e. -100% vs previous period) stays
+  // visible so the loss is obvious. In date mode prior is always 0, so this is
+  // just value > 0 there.
+  const hasSignal = (r: ContributorRow) => r.value > 0 || r.prior > 0;
+  const fUsersShown = fUsers.filter(hasSignal);
+  const fGetAppShown = fGetApp.filter(hasSignal);
+
+  const hasData = fUsers.length > 0 || fGetApp.length > 0;
+  const exportCsv = () => {
+    if (!hasData) return;
+    void downloadCsv([buildCsvSheet(fUsers, fGetApp)], exportName);
+  };
 
   return (
     <div className="space-y-2">
-      <div className="relative max-w-xs">
-        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-        <input
-          type="text"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Tìm keyword trong bảng…"
-          className="w-full rounded-md border border-slate-200 pl-7 pr-7 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-        />
-        {q && (
-          <button
-            type="button"
-            onClick={() => setQ('')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
-            title="Xóa tìm kiếm"
-          >
-            ✕
-          </button>
-        )}
+      <div className="flex items-center gap-2">
+        <div className="relative max-w-xs flex-1">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <input
+            type="text"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Tìm keyword trong bảng…"
+            className="w-full rounded-md border border-slate-200 pl-7 pr-7 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          />
+          {q && (
+            <button
+              type="button"
+              onClick={() => setQ('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+              title="Xóa tìm kiếm"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={!hasData}
+          title="Tải bảng (đang hiển thị) về .csv"
+          className={cn(
+            'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition',
+            hasData
+              ? 'border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-900'
+              : 'border-slate-100 text-slate-300 cursor-not-allowed',
+          )}
+        >
+          <Download className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">CSV</span>
+        </button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <Column
         title="Top Users"
         unitLabel="users · share %"
         Icon={Users}
-        rows={fUsers}
+        rows={fUsersShown}
         total={totalUsers}
         accent="indigo"
         activeKeyword={activeKeyword}
@@ -221,7 +309,7 @@ export function TopContributors({
         title="Top Install"
         unitLabel="installs · CR · share %"
         Icon={Target}
-        rows={fGetApp}
+        rows={fGetAppShown}
         total={totalGetApp}
         accent="emerald"
         showCr

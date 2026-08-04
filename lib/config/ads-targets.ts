@@ -8,9 +8,9 @@ export const ADS_MONTHLY_TARGETS: Record<string, number> = {
   '2026-04': 195,
   '2026-05': 203,
   '2026-06': 213,
-  '2026-07': 222,
-  '2026-08': 244,
-  '2026-09': 234,
+  '2026-07': 165,
+  '2026-08': 169,
+  '2026-09': 163,
 };
 
 function daysInMonth(year: number, monthIndex0: number): number {
@@ -100,15 +100,18 @@ export function runrateAdsToMonthEnd(
     };
   }
 
-  // L3/L7/L14/L30 → pace × days_in_month / monthly_target.
+  // L3/L7/L14/L30 → month-to-date pace (per Trang's formula):
+  //   projection = actual / days_covered × days_in_month
+  //   pct        = projection / monthly_target
+  // days_covered = how many days the window's actual falls inside the current
+  // month = min(windowDays, completed_days_this_month). completed days excludes
+  // today's partial day (on the 13th → 12), floored at 1 for day-1 safety.
+  //   - L30 on the 13th → min(30, 12) = 12  → 60/12×31 (Trang's formula)
+  //   - L7  on the 13th → min(7, 12)  = 7   → true 7-day rate
   const monthlyTarget = ADS_MONTHLY_TARGETS[ymKey(asOf)];
   if (monthlyTarget === undefined || monthlyTarget <= 0) return null;
-  const daysElapsedInMonth = asOf.getDate();
-  const minMtdDays = Math.ceil(windowDays / 2);
-  const effectiveDays = daysElapsedInMonth >= minMtdDays
-    ? Math.min(windowDays, daysElapsedInMonth)
-    : windowDays;
-  if (effectiveDays <= 0) return null;
+  const completedDays = Math.max(asOf.getDate() - 1, 1);
+  const effectiveDays = Math.min(windowDays, completedDays);
   const projectedInstalls = (actualInstalls / effectiveDays) * days;
   return {
     pct: projectedInstalls / monthlyTarget,

@@ -12,6 +12,7 @@ import {
   marketTrajectory,
   channelSplit,
   topCountriesFor,
+  effectiveCountryWindow,
   categoryShareFor,
   topVolumeMovers,
   topContributors,
@@ -192,11 +193,14 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
   const kpis = useMemo(() => computeKpis(data, window, filters), [data, window, filters]);
   const trajectory = useMemo(() => marketTrajectory(data, filters), [data, filters]);
-  const split = useMemo(() => channelSplit(data), [data]);
+  const split = useMemo(() => channelSplit(data, filters), [data, filters]);
   const topCountries = useMemo(
     () => topCountriesFor(data, window, 55, filters),
     [data, window, filters],
   );
+  // Country_L90 / Country_L365 tabs are empty in the sheet → Top countries falls
+  // back to the nearest window that has country data; note it when it differs.
+  const countryWin = useMemo(() => effectiveCountryWindow(data, window), [data, window]);
   const dailyTrendData = useMemo(() => dailyTrend(data, filters), [data, filters]);
   const categoryShares = useMemo(
     () => categoryShareFor(data, window, filters),
@@ -225,11 +229,11 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     [data, window, filters.country, filters.keyword, filters.category],
   );
   const topUsers = useMemo(
-    () => topContributors(data, window, 'users', 50, filters),
+    () => topContributors(data, window, 'users', Infinity, filters),
     [data, window, filters],
   );
   const topGetApp = useMemo(
-    () => topContributors(data, window, 'getApp', 50, filters),
+    () => topContributors(data, window, 'getApp', Infinity, filters),
     [data, window, filters],
   );
   const channelSnapshot = useMemo(
@@ -246,11 +250,11 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     [data, dateRange, filters],
   );
   const dateTopUsers = useMemo(
-    () => (dateRange ? topContributorsForRange(data, dateRange.from, dateRange.to, 'users', 50, filters) : null),
+    () => (dateRange ? topContributorsForRange(data, dateRange.from, dateRange.to, 'users', Infinity, filters) : null),
     [data, dateRange, filters],
   );
   const dateTopGetApp = useMemo(
-    () => (dateRange ? topContributorsForRange(data, dateRange.from, dateRange.to, 'getApp', 50, filters) : null),
+    () => (dateRange ? topContributorsForRange(data, dateRange.from, dateRange.to, 'getApp', Infinity, filters) : null),
     [data, dateRange, filters],
   );
   const dateCategoryShares = useMemo(
@@ -417,7 +421,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
   return (
     <div className="space-y-5 max-w-7xl mx-auto">
-      <header className="space-y-3">
+      <header className="sticky top-[57px] z-20 -mx-4 md:-mx-6 px-4 md:px-6 py-3 bg-slate-50/95 backdrop-blur border-b border-slate-200 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-slate-900">
@@ -603,11 +607,11 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               actual={surfaceFocus === 'organic' ? 0 : channelSnapshot?.paidGetApp ?? 0}
               expected={surfaceFocus === 'organic' ? null : adsTargetExpected}
               runratePct={
-                window !== 'L30' && window !== 'L90'
-                  ? undefined
-                  : surfaceFocus === 'organic'
+                surfaceFocus === 'organic'
                   ? null
-                  : adsRunrate?.pct ?? null
+                  : adsRunrate
+                  ? adsRunrate.pct
+                  : undefined
               }
               runrateTooltip={
                 adsRunrate
@@ -761,8 +765,12 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <SectionCard
-          title={`Top countries · ${window}`}
-          hint={`Click a country to filter the whole page.${winNote}`}
+          title={`Top countries · ${countryWin}`}
+          hint={
+            countryWin !== window
+              ? `Country lấy theo ${countryWin} (dùng chung mọi window — phân bố nước gần như không đổi). Click a country to filter.`
+              : `Click a country to filter the whole page.${winNote}`
+          }
           anchorId="sec-top-countries"
           highlighted={highlightKey === 'top-countries'}
           onCopyLink={embedded ? undefined : () => copyLink('top-countries')}
@@ -826,8 +834,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         title={`Top contribution · ${kpiSuffix}`}
         hint={
           inDateMode
-            ? `Top keywords theo ${isSingleDay ? 'ngày' : 'khoảng'} đã chọn (per-day). Không có Δ.`
-            : 'Top keywords by absolute Users and Installs, with share %.'
+            ? `Tất cả keywords theo ${isSingleDay ? 'ngày' : 'khoảng'} đã chọn (per-day). Không có Δ. Chuột phải để tải CSV.`
+            : 'Tất cả keywords theo Users và Installs, kèm share %. Chuột phải để tải CSV.'
         }
         anchorId="sec-top-contribution"
         highlighted={highlightKey === 'top-contribution'}
@@ -850,6 +858,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             activeCountry={countryFocus}
             onRowClick={(k) => setKeywordFocus(keywordFocus === k ? null : k)}
             onKeywordSelect={(k) => setKeywordFocus(k)}
+            exportName={`top-contribution-${inDateMode ? (dateRange ? (dateRange.from === dateRange.to ? dateRange.from : `${dateRange.from}_${dateRange.to}`) : 'date') : window}`}
           />
         )}
       </SectionCard>

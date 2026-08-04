@@ -12,16 +12,27 @@ import { cn } from '@/lib/utils';
 import type { BidCapRow } from '@/lib/sheets/types';
 import { useBidNoteStore } from '@/lib/store/bidNoteStore';
 import { currentBidByCategory, deriveBidAction } from '@/lib/market/currentBid';
-import { buildCampLinkIndex, type CampLink } from '@/lib/market/campLink';
+import { buildCampLinkIndex } from '@/lib/market/campLink';
 import { findCampBidConflicts } from '@/lib/market/campBidConflicts';
+import { normalizeCampName } from '@/lib/sheets/campName';
+import { normKw } from '@/lib/sheets/kwNorm';
+
+// The campaign shown on a row: a name + optional URL (clickable when known).
+// `fromSheet` = came from the hand-maintained 'Link campaign' column.
+type RowCamp = { name: string; url?: string; fromSheet: boolean } | null;
 
 // BidCapRow + the current set bid (median from Master KW Lookup), a derived
-// action, and the best campaign link for this country × category.
+// action, and the campaign to show for this country × category.
 type BidCapRowX = BidCapRow & {
   bidNow: number | null;
   action: string;
-  campLink: CampLink | null;
+  camp: RowCamp;
 };
+
+// Camp identity key: strip trailing "(CPI …)" tag, lowercase, collapse spaces —
+// so a hand-typed name still matches its Camp_Links row to recover the URL.
+const campKey = (s: string) => normKw(normalizeCampName(s));
+const isUrl = (s: string) => /^https?:\/\//i.test(s);
 
 // Editable note cell, auto-saved to the Bid_Notes sheet tab (server-side, shared
 // across users). Optimistic + debounced; shows a tiny "lưu…" while in flight.
@@ -132,7 +143,27 @@ export function BidCapView() {
   const { data, isLoading, error } = useSheetData();
   const rows: BidCapRowX[] = useMemo(() => {
     const cur = currentBidByCategory(data?.masterKwLookup ?? [], data?.pausedKw ?? []);
-    const campIdx = buildCampLinkIndex(data?.campLinks ?? []);
+    const campIdx = buildCampLinkIndex(data?.campLinks ?? [], data?.pausedKw ?? []);
+    // Camp_Links lookups to make a hand-typed name/URL clickable.
+    const urlByName = new Map<string, string>();
+    const nameByUrl = new Map<string, string>();
+    for (const c of data?.campLinks ?? []) {
+      if (c.camp && c.url) {
+        if (!urlByName.has(campKey(c.camp))) urlByName.set(campKey(c.camp), c.url);
+        if (!nameByUrl.has(c.url)) nameByUrl.set(c.url, c.camp);
+      }
+    }
+    // Resolve the row's campaign: the sheet's 'Link campaign' column wins; only
+    // if it's blank do we fall back to the auto-detected camp (non-destructive).
+    const resolveCamp = (r: BidCapRow): RowCamp => {
+      const raw = r.linkCampaign?.trim();
+      if (raw) {
+        if (isUrl(raw)) return { name: nameByUrl.get(raw) ?? raw, url: raw, fromSheet: true };
+        return { name: raw, url: urlByName.get(campKey(raw)), fromSheet: true };
+      }
+      const auto = campIdx.pick(r.country, r.category);
+      return auto ? { name: auto.camp, url: auto.url, fromSheet: false } : null;
+    };
     return (data?.bidCap ?? []).map((r) => {
       const bidNow = cur.get(r.category)?.median ?? null;
       return {
@@ -140,7 +171,7 @@ export function BidCapView() {
         bidNow,
         // Prefer a sheet-supplied action; else derive from current vs recommended.
         action: r.actionRecommended || deriveBidAction(bidNow, r.bidRecommended),
-        campLink: campIdx.pick(r.country, r.category),
+        camp: resolveCamp(r),
       };
     });
   }, [data]);
@@ -440,7 +471,7 @@ export function BidCapView() {
                     </th>
                   );
                 })}
-                <th className="px-2 py-2 text-left font-medium min-w-[12rem]" title="Tên campaign đúng category phủ country này — click để mở chỉnh bid">
+                <th className="px-2 py-2 text-left font-medium min-w-[12rem]" title="Link campaign lấy từ cột trong sheet Max bid cap (bạn tự điền) — click để mở chỉnh bid">
                   Campaign
                 </th>
                 <th className="px-2 py-2 text-left font-medium min-w-[9rem]" title="Ghi chú của bạn (tự lưu)">
@@ -516,19 +547,28 @@ export function BidCapView() {
                       <span className={cn('text-[11px] font-medium', actionTone(r.action))}>{r.action || '—'}</span>
                     </td>
                     <td className="px-2 py-1.5 align-top">
-                      {r.campLink ? (
-                        <a
-                          href={r.campLink.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={`Mở campaign: ${r.campLink.camp}`}
-                          className="inline-flex items-start gap-1 max-w-[15rem] text-[10px] text-indigo-700 hover:text-indigo-900 hover:underline"
-                        >
-                          <ExternalLink className="h-3 w-3 mt-0.5 shrink-0" />
-                          <span className="leading-snug break-words">{r.campLink.camp}</span>
-                        </a>
+                      {r.camp ? (
+                        r.camp.url ? (
+                          <a
+                            href={r.camp.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`Mở campaign: ${r.camp.name}`}
+                            className="inline-flex items-start gap-1 max-w-[15rem] text-[10px] text-indigo-700 hover:text-indigo-900 hover:underline"
+                          >
+                            <ExternalLink className="h-3 w-3 mt-0.5 shrink-0" />
+                            <span className="leading-snug break-words">{r.camp.name}</span>
+                          </a>
+                        ) : (
+                          <span
+                            className="inline-block max-w-[15rem] text-[10px] leading-snug break-words text-slate-600"
+                            title="Tên camp từ sheet nhưng chưa tìm được URL trong Camp_Links"
+                          >
+                            {r.camp.name}
+                          </span>
+                        )
                       ) : (
-                        <span className="text-[11px] text-slate-300" title="Không có campaign đúng category phủ country này">
+                        <span className="text-[11px] text-slate-300" title="Chưa điền Link campaign trong sheet Max bid cap (và không auto-detect được)">
                           —
                         </span>
                       )}
@@ -543,7 +583,7 @@ export function BidCapView() {
             Bid rec / Bid hiện tại = USD · Bid hiện tại <span className="text-emerald-700">xanh</span> = đang thấp hơn rec (nên tăng),{' '}
             <span className="text-rose-600">đỏ</span> = cao hơn rec (nên giảm) · Bid hiện tại là median theo category (Master KW Lookup không có data theo country) ·
             CR used = CR dùng để tính bid · L30 = Imp / Clicks / Installs 30 ngày ·{' '}
-            <span className="text-indigo-700">Campaign</span> = camp ĐÚNG category có geo phủ country (ưu tiên camp target đúng nước &gt; all &gt; chưa điền geo) — click để mở chỉnh bid; trống (—) = không có camp đúng category cho country này ·
+            <span className="text-indigo-700">Campaign</span> = lấy từ cột <b>Link campaign</b> bạn tự điền trong sheet Max bid cap (URL → link thẳng; tên camp → tự tra URL trong Camp_Links để click được, không tra ra thì hiện tên); ô nào chưa điền thì tạm auto-detect; trống (—) = chưa có ·
             Note = tự lưu vào Google Sheet (tab Bid_Notes), share cho cả team
           </div>
         </div>

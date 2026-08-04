@@ -637,6 +637,8 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
     estPosAtRec: find('est pos', 'est_pos_at_rec'),
     ceilBlocked: find('ceil blk', 'ceil blocked', 'ceiling blocked'),
     actionRecommended: find('action', 'action_recommended'),
+    // Hand-maintained campaign link column. Match several likely header names.
+    linkCampaign: find('link campaign', 'campaign link', 'link camp', 'camp link', 'link', 'campaign', 'camp'),
   };
   const at = (row: string[], idx: number): unknown => (idx >= 0 ? row[idx] : undefined);
   return rows
@@ -668,6 +670,7 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
         estPosAtRec: numOrNull(at(row, ci.estPosAtRec)),
         ceilBlocked: /^true$/i.test(str(at(row, ci.ceilBlocked)).trim()),
         actionRecommended: str(at(row, ci.actionRecommended)).trim(),
+        linkCampaign: str(at(row, ci.linkCampaign)).trim(),
       };
     })
     .filter((r): r is BidCapRow => r !== null);

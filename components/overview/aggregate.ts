@@ -107,12 +107,16 @@ function rowsForWindow(
   opts: OverviewFilters = {},
 ): KeywordRow[] {
   if (!data) return [];
-  if (window === 'L365') {
+  // A country filter needs the Country_L tabs (they carry the country column).
+  // Some of those are empty in the sheet (Country_L90/L365 were deleted), so
+  // fall back to the nearest populated country window — otherwise a country-
+  // filtered L90/L365 view would go blank (channel split, KPIs, mix, …).
+  const w = opts.country ? effectiveCountryWindow(data, window) : window;
+  if (w === 'L365') {
     const snaps = (opts.country ? data.countryL365 : data.allL365) as SnapshotRow[];
     return applyFilters(snapshotsAsKeywordRows(snaps ?? []), opts);
   }
-  // Country filter requires the Country_L tabs (which carry the country column).
-  const tab = opts.country ? COUNTRY_TAB_BY_WINDOW[window] : KEYWORD_TAB_BY_WINDOW[window];
+  const tab = opts.country ? COUNTRY_TAB_BY_WINDOW[w] : KEYWORD_TAB_BY_WINDOW[w];
   return applyFilters(data[tab] as KeywordRow[], opts);
 }
 
@@ -126,6 +130,38 @@ function countryRowsForWindow(
     return applyFilters(snapshotsAsKeywordRows((data.countryL365 ?? []) as SnapshotRow[]), opts);
   }
   return applyFilters(data[COUNTRY_TAB_BY_WINDOW[window]] as KeywordRow[], opts);
+}
+
+// Some Country_* tabs are empty in the sheet (verified live: Country_L90 &
+// Country_L365 have 0 rows — the Apps Script only fills the shorter windows).
+// Country-breakdown views therefore fall back to the nearest window that
+// actually has rows, so they don't render blank.
+const COUNTRY_WINDOW_FALLBACK: Record<OverviewWindow, OverviewWindow[]> = {
+  L3: ['L3', 'L7', 'L14', 'L30', 'L90', 'L365'],
+  L7: ['L7', 'L14', 'L30', 'L90', 'L365'],
+  L14: ['L14', 'L30', 'L7', 'L90', 'L365'],
+  L30: ['L30', 'L14', 'L7', 'L90', 'L365'],
+  L90: ['L90', 'L30', 'L14', 'L7', 'L365'],
+  L365: ['L365', 'L90', 'L30', 'L14', 'L7'],
+};
+
+function rawCountryRowCount(data: SheetPayload | undefined, window: OverviewWindow): number {
+  if (!data) return 0;
+  const tab = window === 'L365' ? data.countryL365 : data[COUNTRY_TAB_BY_WINDOW[window]];
+  return (tab as unknown[] | undefined)?.length ?? 0;
+}
+
+/** The window whose Country_* tab actually holds data — the requested one if
+ *  populated, else the nearest populated fallback. Equals `window` when nothing
+ *  has country data at all. */
+export function effectiveCountryWindow(
+  data: SheetPayload | undefined,
+  window: OverviewWindow,
+): OverviewWindow {
+  for (const w of COUNTRY_WINDOW_FALLBACK[window]) {
+    if (rawCountryRowCount(data, w) > 0) return w;
+  }
+  return window;
 }
 
 export interface OverviewKpi {
@@ -300,10 +336,20 @@ export interface ChannelSplitPoint {
   paidGetApp: number;
 }
 
-export function channelSplit(data: SheetPayload | undefined): ChannelSplitPoint[] {
+export function channelSplit(
+  data: SheetPayload | undefined,
+  opts: OverviewFilters = {},
+): ChannelSplitPoint[] {
   if (!data) return [];
+  // The chart IS the organic-vs-paid split, so it always needs BOTH surfaces —
+  // drop the surface filter but honour the page's country/keyword/category focus.
+  const base: OverviewFilters = {
+    country: opts.country,
+    keyword: opts.keyword,
+    category: opts.category,
+  };
   return [...OVERVIEW_WINDOWS].reverse().map((w) => {
-    const { org, paid } = splitBySurface(rowsForWindow(data, w));
+    const { org, paid } = splitBySurface(rowsForWindow(data, w, base));
     return {
       window: w,
       organicUsers: org.usersL,
@@ -320,6 +366,20 @@ export interface CountryRollup {
   getApp: number;
   cr: number;
   alertCount: number;
+  /** % change vs the prior period, per metric (fraction; null when no prior —
+   *  e.g. L365 snapshot has no compare columns). */
+  deltaUsersPct: number | null;
+  deltaGetAppPct: number | null;
+  deltaCrPct: number | null;
+}
+
+interface CountryAcc {
+  country: string;
+  users: number;
+  getApp: number;
+  usersPrior: number;
+  getAppPrior: number;
+  alertCount: number;
 }
 
 export function topCountriesFor(
@@ -329,25 +389,93 @@ export function topCountriesFor(
   opts: OverviewFilters = {},
 ): CountryRollup[] {
   // Country filter is intentionally dropped here: the chart needs all countries
-  // to remain visible so the user can swap their focus.
-  const rows = countryRowsForWindow(data, window, {
+  // to remain visible so the user can swap their focus. Fall back to the nearest
+  // window with country data when the requested one's tab is empty.
+  const rows = countryRowsForWindow(data, effectiveCountryWindow(data, window), {
     surface: opts.surface,
     keyword: opts.keyword,
     category: opts.category,
   });
-  const map = new Map<string, CountryRollup>();
+  const map = new Map<string, CountryAcc>();
   rows.forEach((r) => {
     if (!r.country) return;
-    const cur = map.get(r.country) ?? { country: r.country, users: 0, getApp: 0, cr: 0, alertCount: 0 };
+    const cur =
+      map.get(r.country) ??
+      { country: r.country, users: 0, getApp: 0, usersPrior: 0, getAppPrior: 0, alertCount: 0 };
     cur.users += r.usersL;
     cur.getApp += r.getAppL;
+    cur.usersPrior += r.usersP;
+    cur.getAppPrior += r.getAppP;
     if (r.alert && r.alert !== 'OK') cur.alertCount += 1;
     map.set(r.country, cur);
   });
+  const delta = (curr: number, prev: number): number | null => (prev > 0 ? (curr - prev) / prev : null);
   return Array.from(map.values())
-    .map((c) => ({ ...c, cr: c.users > 0 ? c.getApp / c.users : 0 }))
+    .map((c): CountryRollup => {
+      const cr = c.users > 0 ? c.getApp / c.users : 0;
+      const crPrior = c.usersPrior > 0 ? c.getAppPrior / c.usersPrior : 0;
+      return {
+        country: c.country,
+        users: c.users,
+        getApp: c.getApp,
+        cr,
+        alertCount: c.alertCount,
+        deltaUsersPct: delta(c.users, c.usersPrior),
+        deltaGetAppPct: delta(c.getApp, c.getAppPrior),
+        deltaCrPct: crPrior > 0 ? (cr - crPrior) / crPrior : null,
+      };
+    })
     .sort((a, b) => b.users - a.users)
     .slice(0, limit);
+}
+
+export interface CountryWeight {
+  country: string;
+  users: number;
+  getApp: number;
+  /** Share of total Users / Install across ALL countries (the "weight"). */
+  usersShare: number;
+  getAppShare: number;
+  deltaUsersPct: number | null;
+  deltaGetAppPct: number | null;
+}
+
+/** "Core market" broken down by country, with each country's weight = its share
+ *  of total Users AND of total Install (the UI toggles between them). Returns
+ *  ALL countries (sorted by Users desc); the component slices. Falls back to the
+ *  nearest populated country window (L90/L365 tabs are empty in the sheet). */
+export function countryMarketWeights(
+  data: SheetPayload | undefined,
+  window: OverviewWindow,
+): { rows: CountryWeight[]; totalUsers: number; totalGetApp: number; totalCountries: number; effWindow: OverviewWindow } {
+  const eff = effectiveCountryWindow(data, window);
+  const rows = countryRowsForWindow(data, eff, {});
+  const map = new Map<string, { users: number; getApp: number; usersPrior: number; getAppPrior: number }>();
+  let totalUsers = 0;
+  let totalGetApp = 0;
+  for (const r of rows) {
+    if (!r.country) continue;
+    const c = map.get(r.country) ?? { users: 0, getApp: 0, usersPrior: 0, getAppPrior: 0 };
+    c.users += r.usersL;
+    c.getApp += r.getAppL;
+    c.usersPrior += r.usersP;
+    c.getAppPrior += r.getAppP;
+    map.set(r.country, c);
+    totalUsers += r.usersL;
+    totalGetApp += r.getAppL;
+  }
+  const out = Array.from(map.entries())
+    .map(([country, c]): CountryWeight => ({
+      country,
+      users: c.users,
+      getApp: c.getApp,
+      usersShare: totalUsers > 0 ? c.users / totalUsers : 0,
+      getAppShare: totalGetApp > 0 ? c.getApp / totalGetApp : 0,
+      deltaUsersPct: c.usersPrior > 0 ? (c.users - c.usersPrior) / c.usersPrior : null,
+      deltaGetAppPct: c.getAppPrior > 0 ? (c.getApp - c.getAppPrior) / c.getAppPrior : null,
+    }))
+    .sort((a, b) => b.users - a.users);
+  return { rows: out, totalUsers, totalGetApp, totalCountries: map.size, effWindow: eff };
 }
 
 export interface CategoryShare {
@@ -356,6 +484,10 @@ export interface CategoryShare {
   getApp: number;
   share: number;
   cr: number;
+  /** % change vs prior period, per metric (fraction; null when no prior). */
+  deltaUsersPct: number | null;
+  deltaGetAppPct: number | null;
+  deltaCrPct: number | null;
 }
 
 export function categoryShareFor(
@@ -366,17 +498,34 @@ export function categoryShareFor(
   // Drop the category filter here so the donut always shows every slice —
   // the user must be able to switch focus to another category.
   const rows = rowsForWindow(data, window, { ...opts, category: null });
-  const map = new Map<string, CategoryShare>();
+  interface Acc { users: number; getApp: number; usersPrior: number; getAppPrior: number }
+  const map = new Map<string, Acc>();
   let totalUsers = 0;
   rows.forEach((r) => {
-    const cur = map.get(r.category) ?? { category: r.category, users: 0, getApp: 0, share: 0, cr: 0 };
+    const cur = map.get(r.category) ?? { users: 0, getApp: 0, usersPrior: 0, getAppPrior: 0 };
     cur.users += r.usersL;
     cur.getApp += r.getAppL;
+    cur.usersPrior += r.usersP;
+    cur.getAppPrior += r.getAppP;
     totalUsers += r.usersL;
     map.set(r.category, cur);
   });
-  return Array.from(map.values())
-    .map((c) => ({ ...c, share: totalUsers > 0 ? c.users / totalUsers : 0, cr: c.users > 0 ? c.getApp / c.users : 0 }))
+  const delta = (curr: number, prev: number): number | null => (prev > 0 ? (curr - prev) / prev : null);
+  return Array.from(map.entries())
+    .map(([category, c]): CategoryShare => {
+      const cr = c.users > 0 ? c.getApp / c.users : 0;
+      const crPrior = c.usersPrior > 0 ? c.getAppPrior / c.usersPrior : 0;
+      return {
+        category,
+        users: c.users,
+        getApp: c.getApp,
+        share: totalUsers > 0 ? c.users / totalUsers : 0,
+        cr,
+        deltaUsersPct: delta(c.users, c.usersPrior),
+        deltaGetAppPct: delta(c.getApp, c.getAppPrior),
+        deltaCrPct: crPrior > 0 ? (cr - crPrior) / crPrior : null,
+      };
+    })
     .sort((a, b) => b.users - a.users);
 }
 
@@ -1035,11 +1184,14 @@ export function categoryShareForRange(
   const catMap = keywordCategoryMap(data);
   // Drop category filter so the donut keeps every slice (matches categoryShareFor).
   const rows = dailyRowsInRange(data, from, to, { ...opts, category: null }, catMap);
+  // Date-mode has no prior period → deltas stay null.
   const map = new Map<string, CategoryShare>();
   let totalUsers = 0;
   for (const r of rows) {
     const cat = (catMap.get(r.keyword.toLowerCase()) ?? 'Unknown') as string;
-    const cur = map.get(cat) ?? { category: cat, users: 0, getApp: 0, share: 0, cr: 0 };
+    const cur =
+      map.get(cat) ??
+      { category: cat, users: 0, getApp: 0, share: 0, cr: 0, deltaUsersPct: null, deltaGetAppPct: null, deltaCrPct: null };
     cur.users += r.users;
     cur.getApp += r.getApp ?? 0;
     totalUsers += r.users;

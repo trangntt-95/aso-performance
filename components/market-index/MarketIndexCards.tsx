@@ -9,6 +9,7 @@ import { NarrativePanel } from './NarrativePanel';
 import { ExecutiveSummaryCard } from './ExecutiveSummaryCard';
 import { WowComparison } from './WowComparison';
 import { DynamicBasketCard } from './DynamicBasketCard';
+import { CoreMarketCountries } from './CoreMarketCountries';
 import { Skeleton } from '@/components/ui/skeleton';
 import { deriveNarrativeEvidence } from '@/lib/market/narrativeEvidence';
 import { accountFunnel, accountTotals } from '@/lib/market/accountAggregates';
@@ -137,9 +138,12 @@ export function MarketIndexCards() {
         </div>
       )}
 
-      {!isLoading && market?.basket && market.basket.length > 0 && (
-        <DynamicBasketCard data={market.basket} />
-      )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {!isLoading && market?.basket && market.basket.length > 0 && (
+          <DynamicBasketCard data={market.basket} />
+        )}
+        {!isLoading && <CoreMarketCountries data={data} />}
+      </div>
     </div>
   );
 }

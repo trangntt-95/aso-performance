@@ -1,6 +1,6 @@
 import type { BidCapRow, CampLinkRow, MasterKwRow, ShopifyCampRow } from '@/lib/sheets/types';
 import { buildCampGeoIndex, type CampGeo } from '@/lib/sheets/campGeo';
-import { normalizeCampName } from '@/lib/sheets/campName';
+import { normalizeCampName, buildCampNameResolver } from '@/lib/sheets/campName';
 
 // Detect OVERBID campaigns: paid camps (from Shopify_daily) whose effective
 // CPC (Spend/Clicks) and/or CPI (Spend/Installs) run ABOVE the allowed bid /
@@ -108,12 +108,13 @@ export function findOverbidCamps(
 ): OverbidRow[] {
   const minClicks = params.minClicks ?? 5;
   // Camps in the 'Paused_camp' tab are no longer running — drop them so the
-  // table only lists live camps whose bid you can still act on. Match on the
-  // note-stripped name so a paused camp renamed with a "(CPI …)" tag in
-  // Shopify_daily is still recognised.
-  const pausedSet = new Set(
-    pausedCamps.map((p) => normalizeCampName(p.camp)).filter(Boolean),
-  );
+  // table only lists live camps whose bid you can still act on. Resolve on the
+  // base name so a paused camp renamed with a "(CPI …)" tag or a free-text note
+  // ("- cân nhắc off") in Shopify_daily is still recognised.
+  const pausedResolver = buildCampNameResolver(pausedCamps.map((p) => p.camp));
+  // Maps an annotated Shopify_daily name onto its Camp_Links base name so notes
+  // like "(CPI 107) - cân nhắc off" or "- good CPI 7" don't lose the URL/geo.
+  const linkResolver = buildCampNameResolver(campLinks.map((c) => c.camp));
   const cpcTol = (params.cpcTolerancePct ?? 0) / 100;
   const cpiTol = (params.cpiTolerancePct ?? 0) / 100;
 
@@ -164,8 +165,11 @@ export function findOverbidCamps(
   }
   const groups = new Map<string, MergedCamp>();
   for (const c of shopifyCamps) {
-    const campKey = normalizeCampName(c.camp);
-    if (pausedSet.has(campKey)) continue; // paused camp — bid no longer actionable
+    if (pausedResolver.resolve(c.camp)) continue; // paused camp — bid no longer actionable
+    // Base name = Camp_Links match (annotations stripped) if any, else the raw
+    // note-stripped name. Used to look up URL/geo AND to merge rows that are the
+    // same campaign under different annotations.
+    const campKey = linkResolver.resolve(c.camp) ?? normalizeCampName(c.camp);
     const url = campUrl.get(campKey);
     const groupKey = url ?? `name:${campKey}`; // URL = campaign identity; else fall back to name
     let g = groups.get(groupKey);

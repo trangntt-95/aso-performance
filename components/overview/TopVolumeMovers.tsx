@@ -171,6 +171,21 @@ function MoverRow({
               className="font-semibold text-[13px]"
             />
             <CategoryChip category={m.category} compact />
+            {/* Surface đang biến động: xanh = organic, hổ phách = paid */}
+            <span
+              className={cn(
+                'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0',
+                m.surface === 'paid' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800',
+              )}
+              title={
+                m.direction === 'down'
+                  ? `Giảm ở kênh ${m.surface === 'paid' ? 'Paid (Ads)' : 'Organic'}`
+                  : `Tăng ở kênh ${m.surface === 'paid' ? 'Paid (Ads)' : 'Organic'}`
+              }
+            >
+              {m.surface === 'paid' ? <DollarSign className="h-2.5 w-2.5" /> : <Leaf className="h-2.5 w-2.5" />}
+              {m.direction === 'down' ? '↓' : '↑'} {m.surface === 'paid' ? 'Paid' : 'Organic'}
+            </span>
             <span className="text-[10px] text-slate-500">{m.country}</span>
           </div>
 

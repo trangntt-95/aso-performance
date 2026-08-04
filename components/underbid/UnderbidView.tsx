@@ -11,6 +11,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { categoryStyle, CATEGORY_ORDER } from '@/lib/utils/colors';
 import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
 import { KeywordLink } from '@/components/shared/KeywordLink';
+import { ImpactCell } from './ImpactCell';
+import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
+import { normKw } from '@/lib/sheets/kwNorm';
+import { buildPaidShareIndex, summarizeImpact, type NoteImpact } from '@/lib/market/noteImpact';
 import { formatNumber, formatPercent, formatPos } from '@/lib/utils/format';
 import {
   findUnderbidKeywords,
@@ -186,6 +190,20 @@ export function UnderbidView() {
 
   // Whether to reveal keywords currently in their post-note hide window.
   const [showHidden, setShowHidden] = useState(false);
+
+  // Open the keyword detail sheet (shows the bid-impact chart) on click.
+  const openKeyword = useKeywordTrendStore((s) => s.openKeyword);
+
+  // Paid-share timeline per keyword (from History_Daily) → lets each noted row
+  // show how paid share moved before vs ~10 days after the note.
+  const shareIndex = useMemo(() => buildPaidShareIndex(data?.historyDaily ?? []), [data?.historyDaily]);
+  const impactOf = (term: string): NoteImpact | null => {
+    const ts = noteTimes[noteKeyOf('underbid', term)];
+    if (!ts) return null;
+    const at = new Date(ts).getTime();
+    if (!Number.isFinite(at)) return null;
+    return summarizeImpact(shareIndex.get(normKw(term)), at);
+  };
 
   // Time range the analysis runs on (default L365 = long-term demand).
   const [window, setWindow] = useState<UnderbidWindow>('L365');
@@ -411,6 +429,12 @@ export function UnderbidView() {
                 <SortHead label="Paid pos L30" col="paidPosL30" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Paid share" col="paidShare" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <th className="px-2 py-2 text-left font-medium min-w-[12rem]">Camp (đang bid)</th>
+                <th
+                  className="px-2 py-2 text-left font-medium min-w-[7rem]"
+                  title="Sau khi bạn ghi note (sửa bid), paid share thay đổi thế nào ~10 ngày sau? Tăng = paid đang hứng được nhu cầu organic → tốt."
+                >
+                  Impact bid
+                </th>
                 <th className="px-2 py-2 text-left font-medium min-w-[9rem]" title="Ghi chú của bạn (tự lưu)">Note</th>
               </tr>
             </thead>
@@ -469,6 +493,7 @@ export function UnderbidView() {
                       <span className="font-mono text-[11px] font-semibold text-amber-700">{formatPercent(r.paidShare)}</span>
                     </td>
                     <CampCell camps={r.camps} manual={r.inPaidSource === 'manual'} />
+                    <ImpactCell impact={impactOf(r.term)} onOpen={() => openKeyword(r.term, { surface: 'paid' })} />
                     <NoteCell scope="underbid" noteId={r.term} />
                   </tr>
                 );

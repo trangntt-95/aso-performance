@@ -6,6 +6,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -14,6 +15,22 @@ import {
 import type { CountryRollup } from './aggregate';
 import { formatNumber, formatPercent } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
+
+const DELTA_KEY: Record<Metric, keyof CountryRollup> = {
+  users: 'deltaUsersPct',
+  getApp: 'deltaGetAppPct',
+  cr: 'deltaCrPct',
+};
+
+function fmtDelta(v: number | null): string {
+  if (v === null || !Number.isFinite(v)) return '';
+  const p = v * 100;
+  return `${p >= 0 ? '+' : ''}${p.toFixed(1)}%`;
+}
+function deltaColor(v: number | null): string {
+  if (v === null || v === 0 || !Number.isFinite(v)) return '#94a3b8';
+  return v > 0 ? '#059669' : '#dc2626';
+}
 
 const PALETTE = ['#4f46e5', '#6366f1', '#818cf8', '#a5b4fc', '#c7d2fe', '#e0e7ff', '#eef2ff', '#f5f3ff'];
 
@@ -42,6 +59,28 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
     .sort((a, b) => b[metric] - a[metric])
     .map((d, i) => ({ ...d, rankLabel: `${i + 1}. ${d.country}` }));
   const axisFmt = (n: number) => (isCr ? formatPercent(n) : tickFmt(n));
+  const deltaKey = DELTA_KEY[metric];
+
+  // % change vs last period, drawn just past the end of each bar.
+  const renderDelta = (props: {
+    x?: number | string;
+    y?: number | string;
+    width?: number | string;
+    height?: number | string;
+    index?: number;
+  }) => {
+    const i = props.index ?? 0;
+    const d = sortedData[i];
+    const dv = (d?.[deltaKey] ?? null) as number | null;
+    if (dv === null || !Number.isFinite(dv)) return null;
+    const x = Number(props.x) + Number(props.width) + 6;
+    const y = Number(props.y) + Number(props.height) / 2;
+    return (
+      <text x={x} y={y} dy={3.5} fontSize={10} fontWeight={600} fill={deltaColor(dv)} textAnchor="start">
+        {fmtDelta(dv)}
+      </text>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-2" style={{ height }}>
@@ -81,7 +120,7 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
       </div>
       <div className="flex-1 min-h-0">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={sortedData} layout="vertical" margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+          <BarChart data={sortedData} layout="vertical" margin={{ top: 8, right: 56, bottom: 4, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
             <XAxis
               type="number"
@@ -104,9 +143,12 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
             <Tooltip
               cursor={{ fill: '#f1f5f9' }}
               contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
-              formatter={(v) => {
+              formatter={(v, _name, item) => {
                 const n = typeof v === 'number' ? v : Number(v);
-                return [isCr ? formatPercent(n) : formatNumber(n), METRIC_LABEL[metric]];
+                const dv = (item?.payload?.[deltaKey] ?? null) as number | null;
+                const base = isCr ? formatPercent(n) : formatNumber(n);
+                const suffix = dv === null || !Number.isFinite(dv) ? '' : ` (${fmtDelta(dv)} vs kỳ trước)`;
+                return [`${base}${suffix}`, METRIC_LABEL[metric]];
               }}
             />
             <Bar
@@ -134,6 +176,7 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
                   />
                 );
               })}
+              <LabelList dataKey={metric} content={renderDelta} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>

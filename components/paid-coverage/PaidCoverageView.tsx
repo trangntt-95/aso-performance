@@ -54,9 +54,13 @@ interface CoverageRow extends PaidStatus {
   l30: WinStat | null;
   l90: WinStat | null;
   l365: WinStat | null;
-  /** Traffic countries (from Country_L90 ∪ Country_L365), users desc. */
+  /** Traffic countries per window (users desc) — the Countries column shows the
+   *  set for whichever window the tab is reporting on. */
+  countriesByWin: Record<Win, { name: string; users: number }[]>;
+  /** Union of all windows (max users/country) — for the country filter + as the
+   *  traffic set fed to geo-coverage. */
   countries: { name: string; users: number }[];
-  /** Geo coverage of the ACTIVE camps bidding this kw (master only). */
+  /** Geo coverage of the camps bidding this kw (master active camps or manual). */
   coverage: CountryCoverage | null;
 }
 
@@ -64,6 +68,15 @@ type StatusFilter = 'all' | 'not_in_paid' | 'not_in_paid_strict' | 'paused' | 'i
 type Win = 'l7' | 'l30' | 'l90' | 'l365';
 
 const WIN_LABEL: Record<Win, string> = { l7: 'L7', l30: 'L30', l90: 'L90', l365: 'L365' };
+
+// Country_L90 / Country_L365 tabs are empty in the sheet → the Countries column
+// falls back to the nearest window that actually has country data.
+const WIN_FALLBACK: Record<Win, Win[]> = {
+  l7: ['l7', 'l30', 'l90', 'l365'],
+  l30: ['l30', 'l7', 'l90', 'l365'],
+  l90: ['l90', 'l30', 'l7', 'l365'],
+  l365: ['l365', 'l90', 'l30', 'l7'],
+};
 
 function buildRows(data: SheetPayload): CoverageRow[] {
   const paidIndex = buildPaidStatusIndex(
@@ -115,31 +128,63 @@ function buildRows(data: SheetPayload): CoverageRow[] {
     addWin(ensure(r.searchTerm, r.english, r.category), 'l365', r.users, r.getApp, surface);
   }
 
-  // Traffic countries per kw: max(users in Country_L90, Country_L365) per country.
-  const countryUsers = new Map<string, Map<string, number>>();
-  const addCountry = (term: string, country: string | undefined, users: number) => {
+  // Traffic countries per kw PER WINDOW: max users/country within each window's
+  // Country_L* tab. The Countries column then shows the set for the reporting
+  // window; the union (below) feeds the country filter + geo-coverage.
+  const WINS: Win[] = ['l7', 'l30', 'l90', 'l365'];
+  const countryByWin: Record<Win, Map<string, Map<string, number>>> = {
+    l7: new Map(),
+    l30: new Map(),
+    l90: new Map(),
+    l365: new Map(),
+  };
+  const addCountry = (win: Win, term: string, country: string | undefined, users: number) => {
     if (!country || country.startsWith('(')) return; // skip "(all countries)"
     const k = normKw(term);
-    if (!countryUsers.has(k)) countryUsers.set(k, new Map());
-    const m = countryUsers.get(k)!;
+    const perKw = countryByWin[win];
+    if (!perKw.has(k)) perKw.set(k, new Map());
+    const m = perKw.get(k)!;
     m.set(country, Math.max(m.get(country) ?? 0, users));
   };
-  for (const r of data.countryL90 ?? []) addCountry(r.searchTerm, r.country, r.usersL);
-  for (const r of (data.countryL365 ?? []) as SnapshotRow[]) addCountry(r.searchTerm, r.country, r.users);
+  for (const r of data.countryL7 ?? []) addCountry('l7', r.searchTerm, r.country, r.usersL);
+  for (const r of data.countryL30 ?? []) addCountry('l30', r.searchTerm, r.country, r.usersL);
+  for (const r of data.countryL90 ?? []) addCountry('l90', r.searchTerm, r.country, r.usersL);
+  for (const r of (data.countryL365 ?? []) as SnapshotRow[]) addCountry('l365', r.searchTerm, r.country, r.users);
 
   const out: CoverageRow[] = [];
   accMap.forEach((acc, k) => {
     const status = resolvePaidStatus(acc.keyword, paidIndex);
-    const countries = Array.from(countryUsers.get(k)?.entries() ?? [])
+    const sortedFor = (win: Win) =>
+      Array.from(countryByWin[win].get(k)?.entries() ?? [])
+        .map(([name, users]) => ({ name, users }))
+        .sort((a, b) => b.users - a.users);
+    const countriesByWin: Record<Win, { name: string; users: number }[]> = {
+      l7: sortedFor('l7'),
+      l30: sortedFor('l30'),
+      l90: sortedFor('l90'),
+      l365: sortedFor('l365'),
+    };
+    // Union across windows (max users per country) for filter + coverage.
+    const unionMap = new Map<string, number>();
+    for (const win of WINS) {
+      for (const c of countriesByWin[win]) {
+        unionMap.set(c.name, Math.max(unionMap.get(c.name) ?? 0, c.users));
+      }
+    }
+    const countries = Array.from(unionMap.entries())
       .map(([name, users]) => ({ name, users }))
       .sort((a, b) => b.users - a.users);
+
+    // In Paid = Master (active camps) OR Manual added — both get geo-gap coverage.
+    const coverageCamps =
+      status.source === 'master'
+        ? status.masterCamps ?? []
+        : status.source === 'manual' && status.manualCamp
+          ? [status.manualCamp]
+          : [];
     const coverage =
-      status.source === 'master' && (status.masterCamps?.length ?? 0) > 0
-        ? resolveCountryCoverage(
-            status.masterCamps!,
-            countries.map((c) => c.name),
-            geoIndex,
-          )
+      coverageCamps.length > 0
+        ? resolveCountryCoverage(coverageCamps, countries.map((c) => c.name), geoIndex)
         : null;
     out.push({
       keyword: acc.keyword,
@@ -150,6 +195,7 @@ function buildRows(data: SheetPayload): CoverageRow[] {
       l30: acc.wins.l30 ?? null,
       l90: acc.wins.l90 ?? null,
       l365: acc.wins.l365 ?? null,
+      countriesByWin,
       countries,
       coverage,
       ...status,
@@ -169,16 +215,16 @@ function WinCell({ stat }: { stat: WinStat | null }) {
 }
 
 function GeoCell({ row }: { row: CoverageRow }) {
-  if (row.source !== 'master' || !row.coverage) {
+  if (!row.coverage) {
     return <td className="px-2 py-1.5 text-center text-slate-300">—</td>;
   }
-  const { gaps, hasUnknownGeo } = row.coverage;
+  const { gaps } = row.coverage;
   if (gaps.length > 0) {
     return (
       <td className="px-2 py-1.5 align-top">
         <span
           className="text-[10px] text-rose-700 font-medium"
-          title={`Có traffic nhưng KHÔNG camp active nào target: ${gaps.join(', ')}`}
+          title={`Có traffic nhưng KHÔNG camp nào target: ${gaps.join(', ')}`}
         >
           ⚠ Chưa bid: {gaps.slice(0, 3).join(', ')}
           {gaps.length > 3 && ` +${gaps.length - 3}`}
@@ -186,21 +232,9 @@ function GeoCell({ row }: { row: CoverageRow }) {
       </td>
     );
   }
-  if (hasUnknownGeo) {
-    return (
-      <td className="px-2 py-1.5 align-top">
-        <span
-          className="text-[10px] text-slate-400"
-          title="Có camp chưa điền Geo trong Camp_Links — không kết luận được country coverage"
-        >
-          geo ?
-        </span>
-      </td>
-    );
-  }
   return (
     <td className="px-2 py-1.5 align-top">
-      <span className="text-[10px] text-emerald-700" title="Mọi country có traffic đều được ≥1 camp active cover">
+      <span className="text-[10px] text-emerald-700" title="Mọi country có traffic đều được ≥1 camp cover (ô Geo trống = coi như target tất cả nước)">
         ✓ đủ
       </span>
     </td>
@@ -218,6 +252,13 @@ export function PaidCoverageView() {
   const [win, setWin] = useState<Win>('l365');
 
   const rows = useMemo(() => (data ? buildRows(data) : []), [data]);
+
+  // Effective window for the Countries column: the selected one if it has data,
+  // else the nearest populated fallback (L90/L365 country tabs are empty).
+  const countryWin = useMemo(
+    () => WIN_FALLBACK[win].find((w) => rows.some((r) => r.countriesByWin[w].length > 0)) ?? win,
+    [rows, win],
+  );
 
   const { categories, countries } = useMemo(() => {
     const c = new Set<string>();
@@ -442,7 +483,16 @@ export function PaidCoverageView() {
                 <th className="px-2 py-2 text-left font-medium" title="Users / Install">L30</th>
                 <th className="px-2 py-2 text-left font-medium" title="Users / Install">L90</th>
                 <th className="px-2 py-2 text-left font-medium" title="Users / Install">L365</th>
-                <th className="px-2 py-2 text-left font-medium">Countries</th>
+                <th
+                  className="px-2 py-2 text-left font-medium"
+                  title={
+                    countryWin !== win
+                      ? `Country lấy theo ${WIN_LABEL[countryWin]} (dùng chung mọi window — phân bố nước gần như không đổi), nhiều users nhất trước`
+                      : `Country có traffic trong window ${WIN_LABEL[win]}, nhiều users nhất trước`
+                  }
+                >
+                  Countries · {WIN_LABEL[countryWin]}
+                </th>
                 <th className="px-2 py-2 text-left font-medium">Paid?</th>
                 <th className="px-2 py-2 text-left font-medium" title="Country coverage của camp active (cần Geo trong Camp_Links)">Geo</th>
               </tr>
@@ -476,17 +526,21 @@ export function PaidCoverageView() {
                     <WinCell stat={row.l90} />
                     <WinCell stat={row.l365} />
                     <td className="px-2 py-1.5 align-top max-w-[12rem]">
-                      {row.countries.length === 0 ? (
-                        <span className="text-slate-300">—</span>
-                      ) : (
-                        <span
-                          className="text-[10px] text-slate-500"
-                          title={row.countries.map((c) => `${c.name} (${c.users})`).join(', ')}
-                        >
-                          {row.countries.slice(0, 4).map((c) => c.name).join(', ')}
-                          {row.countries.length > 4 && ` +${row.countries.length - 4}`}
-                        </span>
-                      )}
+                      {(() => {
+                        // Countries of the reporting window (falls back to the
+                        // nearest populated window), most users first.
+                        const cc = row.countriesByWin[countryWin];
+                        if (cc.length === 0) return <span className="text-slate-300">—</span>;
+                        return (
+                          <span
+                            className="text-[10px] text-slate-500"
+                            title={cc.map((c) => `${c.name} (${c.users})`).join(', ')}
+                          >
+                            {cc.slice(0, 4).map((c) => c.name).join(', ')}
+                            {cc.length > 4 && ` +${cc.length - 4}`}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-2 py-1.5 align-top">
                       <PaidStatusBadge status={row} />

@@ -8,6 +8,13 @@ import type {
 } from '@/lib/sheets/types';
 import { buildPaidStatusIndex, resolvePaidStatus } from '@/lib/sheets/paidStatus';
 import { normKw } from '@/lib/sheets/kwNorm';
+import { normalizeCampName, buildCampNameResolver } from '@/lib/sheets/campName';
+
+// Camp identity key: strip trailing "(CPI …)" performance tags THEN lowercase +
+// collapse whitespace. Master KW Lookup annotates camp names ("Beprofit (CPI 17)")
+// while Camp_Links / Paused_camp keep the base name, so keying both sides through
+// this is what lets an annotated camp find its URL / be recognised as paused.
+const campKey = (s: string) => normKw(normalizeCampName(s));
 
 // Time-range windows the underbid analysis can run on. L365 is the default
 // (long-term demand). L30/L90 let the user re-run the same rule on a shorter,
@@ -101,8 +108,16 @@ export function findUnderbidKeywords(
   const index = buildPaidStatusIndex(masterKwLookup, kwAddedManual, negativeKw, pausedKw);
   const campUrl = new Map<string, string>();
   for (const c of campLinks) {
-    if (c.camp && c.url) campUrl.set(normKw(c.camp), c.url);
+    if (c.camp && c.url && !campUrl.has(campKey(c.camp))) campUrl.set(campKey(c.camp), c.url);
   }
+  // Master camp names carry notes ("(CPI 107) - cân nhắc off", "- good CPI 7")
+  // that the plain key can't strip, so resolve them onto the real Camp_Links /
+  // Paused_camp base names before looking up the URL / paused state.
+  const linkResolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+  // Camps present in the Paused_camp tab are no longer running. A stale annotated
+  // Master row of a paused camp can escape buildPaidStatusIndex's exact-name pause
+  // filter, so we re-check camp-by-camp here against the paused base names.
+  const pausedResolver = buildCampNameResolver(pausedKw.map((p) => p.camp));
 
   // Recent (L30) avg position per keyword, split organic vs paid — display only,
   // does NOT affect the underbid rules (those stay on L365). posL is the L30 col.
@@ -160,10 +175,25 @@ export function findUnderbidKeywords(
           ? [status.manualCamp]
           : []
         : status.masterCamps ?? [];
-    const camps: UnderbidCamp[] = campNames.map((name) => ({
-      name,
-      url: campUrl.get(normKw(name)),
-    }));
+
+    // Resolve each camp's URL; a camp with no URL that turns out to be in
+    // Paused_camp is dropped (it's not actually running anymore).
+    const camps: UnderbidCamp[] = [];
+    let pausedDropped = 0;
+    for (const name of campNames) {
+      const canon = linkResolver.resolve(name);
+      const url = canon ? campUrl.get(campKey(canon)) : undefined;
+      if (url) {
+        camps.push({ name, url });
+      } else if (pausedResolver.resolve(name)) {
+        pausedDropped++; // paused → hide this camp
+      } else {
+        camps.push({ name }); // active but not in Camp_Links → show name only
+      }
+    }
+    // Every camp this kw was "bid" in turned out paused → it's no longer actively
+    // bid, so it isn't an underbid candidate. Drop the whole row.
+    if (camps.length === 0 && pausedDropped > 0) return;
 
     const l30 = l30Pos.get(normKw(a.term));
 

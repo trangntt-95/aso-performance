@@ -69,6 +69,26 @@ export async function GET() {
       windowDates,
       fetchedAt: new Date().toISOString(),
     };
+    // Guard: a transient Google API failure makes fetchAllTabs swallow the
+    // error and return every tab empty. That still parses into a valid-looking
+    // payload, and if we cache it (s-maxage + stale-while-revalidate=24h) the
+    // whole dashboard shows zeros for everyone until the cache expires. So treat
+    // an empty payload as an upstream failure: return 503 with no-store, which
+    // (a) is never cached and (b) lets the CDN keep serving the last GOOD copy.
+    const hasData =
+      payload.actionQueue.length > 0 ||
+      payload.allL7.length > 0 ||
+      payload.allL30.length > 0 ||
+      payload.allL90.length > 0 ||
+      payload.marketIndex.summary.length > 0;
+    if (!hasData) {
+      console.error('Sheets fetch returned an empty payload — treating as upstream failure, not caching.');
+      return NextResponse.json(
+        { error: 'Upstream sheet fetch returned no data — try again.' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+
     return NextResponse.json(payload, {
       headers: {
         'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=86400',
@@ -77,6 +97,9 @@ export async function GET() {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('Sheets fetch failed:', err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } },
+    );
   }
 }

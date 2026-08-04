@@ -1,5 +1,6 @@
-import type { CampLinkRow } from '@/lib/sheets/types';
+import type { CampLinkRow, MasterKwRow } from '@/lib/sheets/types';
 import { buildCampGeoIndex, type CampGeo } from '@/lib/sheets/campGeo';
+import { normalizeCampName } from '@/lib/sheets/campName';
 
 // ---------------------------------------------------------------------------
 // Pick ONE campaign link for a Bid Recommendations row (Country × Category).
@@ -84,13 +85,23 @@ interface Cand {
   geo: CampGeo;
 }
 
-export function buildCampLinkIndex(campLinks: CampLinkRow[]): CampLinkIndex {
+export function buildCampLinkIndex(
+  campLinks: CampLinkRow[],
+  pausedCamps: MasterKwRow[] = [],
+): CampLinkIndex {
   const geoIndex = buildCampGeoIndex(campLinks);
+  // Camps in Paused_camp are no longer running → never suggest one to adjust its
+  // bid. Match on the note-stripped name so a paused camp renamed with a
+  // "(CPI …)" tag is still recognised (same rule as overbid/underbid).
+  const pausedSet = new Set(
+    pausedCamps.map((p) => normalizeCampName(p.camp)).filter(Boolean),
+  );
   // One candidate per camp (first row with a URL wins) that has a URL + a
-  // resolvable bid-cap category.
+  // resolvable bid-cap category and is not paused.
   const byCamp = new Map<string, Cand>();
   for (const c of campLinks) {
     if (!c.url || byCamp.has(c.camp)) continue;
+    if (pausedSet.has(normalizeCampName(c.camp))) continue; // paused → skip
     const categories = campCategories(c);
     if (categories.length === 0) continue;
     byCamp.set(c.camp, {

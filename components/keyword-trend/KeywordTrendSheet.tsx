@@ -10,9 +10,12 @@ import {
 } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
 import { TrendChart } from './TrendChart';
+import { BidImpactChart } from './BidImpactChart';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
 import { useStatusStore } from '@/lib/store/statusStore';
+import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
+import { keywordPaidShare, summarizeImpact, type ImpactPoint } from '@/lib/market/noteImpact';
 import type { ActionQueueRow, HistoryRow, KeywordRow, SheetPayload } from '@/lib/sheets/types';
 import { formatDeltaPct, formatNumber, formatPercent, formatPos, deltaTone } from '@/lib/utils/format';
 import { shouldShowTranslation } from '@/lib/utils/translation';
@@ -201,11 +204,63 @@ function SortHeader({
   );
 }
 
+// One before→after tile in the bid-impact panel. betterWhenHigher flips the
+// colour: paid share / users are good when they rise, position when it falls.
+function ImpactTile({
+  label,
+  before,
+  after,
+  betterWhenHigher,
+  fmt,
+}: {
+  label: string;
+  before: number | null;
+  after: number | null;
+  betterWhenHigher: boolean;
+  fmt: (v: number | null) => string;
+}) {
+  const delta = before != null && after != null ? after - before : null;
+  const improved = delta == null || Math.abs(delta) < 1e-9 ? null : betterWhenHigher ? delta > 0 : delta < 0;
+  const tone = improved == null ? 'text-slate-400' : improved ? 'text-emerald-600' : 'text-rose-600';
+  return (
+    <div className="border rounded p-2 bg-white space-y-0.5">
+      <div className="text-[10px] text-slate-500">{label}</div>
+      <div className="font-mono text-[12px]">
+        <span className="text-slate-500">{fmt(before)}</span>
+        <span className={cn('mx-1', tone)}>→</span>
+        <span className={cn('font-semibold', tone)}>{fmt(after)}</span>
+      </div>
+    </div>
+  );
+}
+
+const fmtShare = (v: number | null): string => (v == null ? '—' : `${Math.round(v * 100)}%`);
+
 export function KeywordTrendSheet() {
   const { open, keyword, country, surface, close } = useKeywordTrendStore();
   const { data } = useSheetData();
   const notes = useStatusStore((s) => s.notes);
   const setNote = useStatusStore((s) => s.setNote);
+
+  // Underbid note + timestamp (server-side App_Notes) → drives the bid-impact
+  // panel. Ensure they're loaded even if the sheet is opened from a page that
+  // hasn't already fetched them.
+  const loadNotes = useNotesStore((s) => s.load);
+  const notesLoaded = useNotesStore((s) => s.loaded);
+  useEffect(() => {
+    if (!notesLoaded) loadNotes();
+  }, [notesLoaded, loadNotes]);
+  const ubNoteKey = keyword ? noteKeyOf('underbid', keyword) : '';
+  const ubNote = useNotesStore((s) => (ubNoteKey ? s.notes[ubNoteKey] : undefined));
+  const ubNoteAt = useNotesStore((s) => (ubNoteKey ? s.updatedAt[ubNoteKey] : undefined));
+
+  const bidImpact = useMemo(() => {
+    if (!keyword || !data || !ubNoteAt) return null;
+    const at = new Date(ubNoteAt).getTime();
+    if (!Number.isFinite(at)) return null;
+    const pts: ImpactPoint[] = keywordPaidShare(data.historyDaily ?? [], keyword);
+    return summarizeImpact(pts, at);
+  }, [keyword, data, ubNoteAt]);
   const [drillWindow, setDrillWindow] = useState<DrillWindow>('L7');
   const [channelView, setChannelView] = useState<ChannelView>('all');
   const [countrySearch, setCountrySearch] = useState('');
@@ -395,6 +450,77 @@ export function KeywordTrendSheet() {
                   <span><span className="font-semibold">Lang:</span> {trendData.meta.lang}</span>
                 )}
               </div>
+            )}
+
+            {bidImpact && (
+              <section className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-[11px] uppercase tracking-wide font-semibold text-amber-700">
+                    💡 Impact bid (sau note)
+                  </h3>
+                  {ubNoteAt && (
+                    <span className="text-[10px] text-slate-500">
+                      note {new Date(ubNoteAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                    </span>
+                  )}
+                </div>
+                {ubNote && ubNote.trim() && (
+                  <div className="text-[11px] italic text-slate-600 whitespace-pre-line">“{ubNote.trim()}”</div>
+                )}
+                {bidImpact.status === 'measured' ? (
+                  <>
+                    <div className="grid grid-cols-3 gap-2">
+                      <ImpactTile
+                        label="Paid share"
+                        before={bidImpact.before?.paidShare ?? null}
+                        after={bidImpact.after?.paidShare ?? null}
+                        betterWhenHigher
+                        fmt={fmtShare}
+                      />
+                      <ImpactTile
+                        label="Paid pos"
+                        before={bidImpact.before?.paidPos ?? null}
+                        after={bidImpact.after?.paidPos ?? null}
+                        betterWhenHigher={false}
+                        fmt={formatPos}
+                      />
+                      <ImpactTile
+                        label="Paid users"
+                        before={bidImpact.before?.paidUsers ?? null}
+                        after={bidImpact.after?.paidUsers ?? null}
+                        betterWhenHigher
+                        fmt={(v) => (v == null ? '—' : formatNumber(v, { compact: true }))}
+                      />
+                    </div>
+                    <BidImpactChart points={bidImpact.points} noteAt={bidImpact.noteAt} />
+                    <p className="text-[10px] text-slate-500">
+                      Baseline trước note vs ~{bidImpact.spanDays} ngày sau. Paid share ↑ = bid đang hứng thêm nhu cầu
+                      organic (đúng mục tiêu underbid). Đo <b>kết quả</b>, không xác thực số bid trong note.
+                    </p>
+                  </>
+                ) : bidImpact.status === 'too-recent' ? (
+                  <div className="text-[12px] text-slate-500">
+                    ⏳ Mới note gần đây — chờ đủ ~10 ngày dữ liệu sau note để đo tác động.
+                  </div>
+                ) : bidImpact.status === 'no-paid-yet' ? (
+                  <>
+                    {bidImpact.before?.paidShare != null && (
+                      <div className="text-[12px] text-slate-600">
+                        Paid share trước note: <b>{fmtShare(bidImpact.before.paidShare)}</b>
+                      </div>
+                    )}
+                    <div className="text-[12px] text-amber-700">
+                      ⚠️ Đã đủ thời gian sau note nhưng <b>chưa ghi nhận paid traffic</b> — tăng bid chưa tạo ra
+                      hiển thị paid. Cân nhắc tăng mạnh hơn, kiểm tra match type, hoặc keyword này khó cạnh tranh.
+                    </div>
+                    <BidImpactChart points={bidImpact.points} noteAt={bidImpact.noteAt} />
+                  </>
+                ) : (
+                  <div className="text-[12px] text-slate-500">
+                    Keyword này chưa có lịch sử paid trong History_Daily để đo.
+                  </div>
+                )}
+              </section>
             )}
 
             <section className="space-y-2">

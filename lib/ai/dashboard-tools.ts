@@ -291,34 +291,54 @@ export function makeDashboardTools(data: SheetPayload) {
 
     search_keyword: tool({
       description:
-        'Drill into a single keyword across windows + countries. Returns its position, users, installs, CR, alert, and any matching action-queue entries.',
+        'Drill into a keyword across windows + countries. Returns position, users, installs, CR, alert, and matching action-queue entries. Matches the EXACT keyword if it exists; otherwise falls back to PARTIAL (substring) match — so "accounting" surfaces "accounting software", "accounting app", etc. Always check match_mode and matched_terms in the result before concluding "no data".',
       inputSchema: z.object({
-        keyword: z.string().describe('Exact keyword text (case-insensitive)'),
+        keyword: z
+          .string()
+          .describe('Keyword text (case-insensitive). Partial text is fine — e.g. "accounting" matches variants if no exact keyword exists.'),
       }),
       execute: async ({ keyword }) => {
-        const kw = keyword.toLowerCase();
+        const kw = keyword.toLowerCase().trim();
         const windows: Array<keyof SheetPayload> = ['allL3', 'allL7', 'allL14', 'allL30', 'allL90'];
         const cwindows: Array<keyof SheetPayload> = ['countryL3', 'countryL7', 'countryL14', 'countryL30', 'countryL90'];
+
+        // Match mode: prefer an exact keyword; if none exists anywhere, fall
+        // back to substring so partial queries still surface real variants.
+        const allTerms = new Set<string>();
+        windows.forEach((tab) => {
+          (data[tab] as Array<{ searchTerm: string }>).forEach((r) => allTerms.add(r.searchTerm.toLowerCase()));
+        });
+        const hasExact = allTerms.has(kw);
+        const matches = (term: string) => {
+          const t = term.toLowerCase();
+          return hasExact ? t === kw : t.includes(kw);
+        };
+        const matchedTerms = new Set<string>();
 
         const all_window_rows: Array<{ window: string; rows: Array<Record<string, unknown>> }> = [];
         windows.forEach((tab) => {
           const w = tab.replace('all', '') as OverviewWindow;
           const matched = (data[tab] as Array<{ searchTerm: string; surface: string; usersL: number; usersP: number; getAppL: number; getAppP: number; crL: number | null; posL: number | null; deltaUsersPct: number; deltaCrPct: number | null; deltaPosPct: number | null; alert: string }>).filter(
-            (r) => r.searchTerm.toLowerCase() === kw,
+            (r) => matches(r.searchTerm),
           );
+          matched.forEach((r) => matchedTerms.add(r.searchTerm));
           all_window_rows.push({
             window: w,
-            rows: matched.map((r) => ({
-              surface: r.surface === 'search_ad' ? 'paid' : 'organic',
-              users: r.usersL,
-              users_delta_pct: round(r.deltaUsersPct * 100),
-              installs: r.getAppL,
-              cr_pct: r.crL !== null ? round(r.crL * 100, 2) : null,
-              cr_delta_pct: r.deltaCrPct !== null ? round(r.deltaCrPct * 100) : null,
-              pos: r.posL,
-              pos_delta_pct: r.deltaPosPct !== null ? round(r.deltaPosPct * 100) : null,
-              alert: r.alert,
-            })),
+            rows: matched
+              .sort((a, b) => b.usersL - a.usersL)
+              .slice(0, 25)
+              .map((r) => ({
+                keyword: r.searchTerm,
+                surface: r.surface === 'search_ad' ? 'paid' : 'organic',
+                users: r.usersL,
+                users_delta_pct: round(r.deltaUsersPct * 100),
+                installs: r.getAppL,
+                cr_pct: r.crL !== null ? round(r.crL * 100, 2) : null,
+                cr_delta_pct: r.deltaCrPct !== null ? round(r.deltaCrPct * 100) : null,
+                pos: r.posL,
+                pos_delta_pct: r.deltaPosPct !== null ? round(r.deltaPosPct * 100) : null,
+                alert: r.alert,
+              })),
           });
         });
 
@@ -326,14 +346,16 @@ export function makeDashboardTools(data: SheetPayload) {
         cwindows.forEach((tab) => {
           const w = tab.replace('country', '') as OverviewWindow;
           const matched = (data[tab] as Array<{ searchTerm: string; country?: string; surface: string; usersL: number; getAppL: number; crL: number | null; posL: number | null; deltaUsersPct: number; alert: string }>).filter(
-            (r) => r.searchTerm.toLowerCase() === kw,
+            (r) => matches(r.searchTerm),
           );
+          matched.forEach((r) => matchedTerms.add(r.searchTerm));
           matched
             .sort((a, b) => b.usersL - a.usersL)
             .slice(0, 10)
             .forEach((r) => {
               countryHits.push({
                 window: w,
+                keyword: r.searchTerm,
                 country: r.country,
                 surface: r.surface === 'search_ad' ? 'paid' : 'organic',
                 users: r.usersL,
@@ -347,8 +369,9 @@ export function makeDashboardTools(data: SheetPayload) {
         });
 
         const actionQueueHits = data.actionQueue
-          .filter((a) => a.keyword.toLowerCase() === kw)
+          .filter((a) => matches(a.keyword))
           .map((a) => ({
+            keyword: a.keyword,
             priority: a.priority,
             score: a.score,
             country: a.country,
@@ -361,7 +384,9 @@ export function makeDashboardTools(data: SheetPayload) {
           }));
 
         return {
-          keyword,
+          query: keyword,
+          match_mode: hasExact ? 'exact' : 'partial',
+          matched_terms: Array.from(matchedTerms).sort(),
           by_window: all_window_rows,
           by_country_top10: countryHits,
           action_queue: actionQueueHits,
