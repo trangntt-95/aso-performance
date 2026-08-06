@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Search, X, ExternalLink, Flame } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
+import { CampImpactCell } from '@/components/overbid/CampImpactCell';
 import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
+import { buildCampPaidShareIndex, summarizeImpact, type CampImpactSeries, type NoteImpact } from '@/lib/market/noteImpact';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -138,6 +140,24 @@ export function OverbidView() {
     }
     return map;
   }, [rows, noteSnapshot]);
+
+  // Bid-impact: after you note a camp as overbid (and hop into ASA to cut the
+  // bid), did the camp keep its paid traffic? Measured on the camp's keywords —
+  // Shopify_daily carries no daily cost, so traffic is what History_Daily can
+  // actually show. Uses the LIVE note timestamp (not the hide snapshot) so a
+  // camp you just noted reads "chờ dữ liệu" straight away.
+  const campShare = useMemo(
+    () => buildCampPaidShareIndex(data?.historyDaily ?? [], data?.masterKwLookup ?? []),
+    [data?.historyDaily, data?.masterKwLookup],
+  );
+  const impactOf = (camp: string): { impact: NoteImpact | null; series: CampImpactSeries | undefined } => {
+    const series = campShare.get(camp);
+    const ts = noteTimes[noteKeyOf('overbid', camp)];
+    if (!ts) return { impact: null, series };
+    const at = new Date(ts).getTime();
+    if (!Number.isFinite(at)) return { impact: null, series };
+    return { impact: summarizeImpact(series?.points, at), series };
+  };
 
   const categoryOptions = useMemo(() => {
     const set = new Set<string>();
@@ -289,6 +309,12 @@ export function OverbidView() {
                 <SortHead label="Clicks" col="clicks" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Inst" col="installs" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Spend" col="spend" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <th
+                  className="px-2 py-2 text-left font-medium min-w-[7rem]"
+                  title="Tác động sau khi bạn note hạ bid: paid share của các keyword thuộc camp, trước note → ~10 ngày sau. Giữ nguyên (±2đ%) = hạ bid mà không mất traffic ✅; giảm mạnh = có thể hạ quá tay."
+                >
+                  Impact bid
+                </th>
                 <th className="px-2 py-2 text-left font-medium min-w-[9rem]" title="Ghi chú của bạn (tự lưu)">Note</th>
               </tr>
             </thead>
@@ -296,6 +322,7 @@ export function OverbidView() {
               {filtered.map((r) => {
                 const cs = categoryStyle(r.category as Category);
                 const hiddenTs = hiddenUntil.get(r.camp);
+                const imp = impactOf(r.camp);
                 return (
                   <tr key={r.url ?? r.camp} className={cn('border-t hover:bg-slate-50 align-top', hiddenTs && 'bg-slate-50/60 text-slate-400')}>
                     <td className="px-3 py-2">
@@ -352,6 +379,7 @@ export function OverbidView() {
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">{formatNumber(r.clicks, { compact: true })}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">{formatNumber(r.installs, { compact: true })}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] font-semibold text-slate-800">${formatNumber(r.spend, { compact: true })}</td>
+                    <CampImpactCell impact={imp.impact} series={imp.series} />
                     <NoteCell scope="overbid" noteId={r.camp} />
                   </tr>
                 );
@@ -361,6 +389,9 @@ export function OverbidView() {
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
             CPC = Spend/Clicks (proxy cho bid đang trả) · CPI = Spend/Installs · bid/CPI cho phép = trung bình từ Max bid cap ·
             🎯 = nước target từ Geo (Camp_Links), <span className="text-amber-600">🌐</span> = general (avg cả category) ·
+            <b> Impact bid</b> = paid share các keyword của camp (Master KW Lookup × History_Daily) trước note → ~10 ngày sau;
+            <span className="text-emerald-600"> giữ nguyên = hạ bid không mất traffic</span>,
+            <span className="text-amber-600"> giảm = có thể hạ quá tay</span> ·
             <b> click cột để sort</b> · mặc định sắp theo spend lãng phí (overage × spend)
           </div>
         </div>
