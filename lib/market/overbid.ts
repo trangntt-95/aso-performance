@@ -17,9 +17,20 @@ import { normalizeCampName, buildCampNameResolver } from '@/lib/sheets/campName'
 // the whole category. NB: in 'Max bid cap' the CPC column == Bid Rec ⭐ (verified
 // live), so "allowed CPC" = Bid Rec.
 
+/** Why a camp is / isn't on the overbid list. Only 'overbid' rows are actionable;
+ *  the rest exist so a camp you noted can still be found after it leaves the list
+ *  (see assessCamps). */
+export type CampVerdict =
+  | 'overbid' // CPC and/or CPI above the allowed level → hạ bid
+  | 'ok' // assessed and within the allowed bid AND CPI → fixed
+  | 'paused' // every Shopify_daily row of the camp is a paused campaign
+  | 'low-clicks' // below the clicks threshold → CPC too noisy to judge
+  | 'no-benchmark'; // camp name maps to no bid-cap category / no rows to compare
+
 export interface OverbidRow {
   camp: string;
   url?: string;
+  verdict: CampVerdict;
   category: string;
   /** Resolved target countries (empty for general). */
   countries: string[];
@@ -45,6 +56,10 @@ export interface OverbidRow {
   mergedCount: number;
   /** The original Shopify_daily names that were merged (for tooltip). */
   mergedNames: string[];
+  /** Names of this camp's Shopify_daily rows that belong to a PAUSED campaign —
+   *  excluded from the totals. Also the names a note may have been filed under
+   *  before the rename/pause. */
+  pausedNames: string[];
 }
 
 export interface OverbidParams {
@@ -99,7 +114,14 @@ function avg(cells: Cell[], pick: (c: Cell) => number): number {
   return vals.reduce((s, v) => s + v, 0) / vals.length;
 }
 
-export function findOverbidCamps(
+/**
+ * Assess EVERY campaign in Shopify_daily and label it with a verdict — the
+ * overbid ones plus the camps that don't (or no longer) trip the rule. The
+ * overbid table filters this down; the "đã xử lý" view needs the rest, because a
+ * camp whose bid you actually fixed drops out of the flagged list and would
+ * otherwise be unfindable — along with its Impact bid reading.
+ */
+export function assessCamps(
   shopifyCamps: ShopifyCampRow[],
   bidCap: BidCapRow[],
   campLinks: CampLinkRow[],
@@ -161,11 +183,11 @@ export function findOverbidCamps(
     clicks: number;
     installs: number;
     spend: number;
-    members: string[];
+    members: string[]; // LIVE rows only — the totals above come from these
+    pausedNames: string[]; // rows of a paused campaign, kept out of the totals
   }
   const groups = new Map<string, MergedCamp>();
   for (const c of shopifyCamps) {
-    if (pausedResolver.resolve(c.camp)) continue; // paused camp — bid no longer actionable
     // Base name = Camp_Links match (annotations stripped) if any, else the raw
     // note-stripped name. Used to look up URL/geo AND to merge rows that are the
     // same campaign under different annotations.
@@ -174,17 +196,24 @@ export function findOverbidCamps(
     const groupKey = url ?? `name:${campKey}`; // URL = campaign identity; else fall back to name
     let g = groups.get(groupKey);
     if (!g) {
-      g = { key: campKey, name: c.camp, url, impressions: 0, clicks: 0, installs: 0, spend: 0, members: [] };
+      g = { key: campKey, name: c.camp, url, impressions: 0, clicks: 0, installs: 0, spend: 0, members: [], pausedNames: [] };
       groups.set(groupKey, g);
+    }
+    // Paused camp — its bid is no longer actionable, so it contributes no
+    // spend/clicks. The name is kept so a note filed before the pause can still
+    // be found.
+    if (pausedResolver.resolve(c.camp)) {
+      g.pausedNames.push(c.camp);
+      continue;
     }
     g.impressions += c.impressions;
     g.clicks += c.clicks;
     g.installs += c.installs;
     g.spend += c.spend;
     g.members.push(c.camp);
-    // Prefer the shortest name as the label — notes only make names longer, so
-    // the shortest member is the closest to the clean base name.
-    if (c.camp.length < g.name.length) {
+    // Prefer the shortest LIVE name as the label — notes only make names longer,
+    // so the shortest member is the closest to the clean base name.
+    if (g.members.length === 1 || c.camp.length < g.name.length) {
       g.name = c.camp;
       g.key = campKey;
     }
@@ -193,12 +222,53 @@ export function findOverbidCamps(
   const out: OverbidRow[] = [];
   for (const c of Array.from(groups.values())) {
     const campKey = c.key; // note-stripped key of the representative name
-    if (c.clicks < minClicks) continue; // too little data to trust CPC
+
+    // A camp that can't be assessed still gets a row so it stays findable.
+    const stub = (verdict: CampVerdict, category: string): OverbidRow => ({
+      camp: c.name,
+      url: c.url ?? campUrl.get(campKey),
+      verdict,
+      category,
+      countries: [],
+      matchLevel: 'category',
+      countryLabel: category === 'Unknown' ? 'không rõ category' : `general · avg ${category}`,
+      impressions: c.impressions,
+      clicks: c.clicks,
+      installs: c.installs,
+      spend: c.spend,
+      cpc: c.clicks > 0 ? c.spend / c.clicks : null,
+      cpi: c.installs > 0 ? c.spend / c.installs : null,
+      targetBid: null,
+      targetCpi: null,
+      cpcOverPct: null,
+      cpiOverPct: null,
+      reasons: [],
+      score: 0,
+      mergedCount: c.members.length,
+      mergedNames: c.members,
+      pausedNames: c.pausedNames,
+    });
+
+    // Every row of this camp is a paused campaign → nothing live to assess.
+    if (c.members.length === 0) {
+      out.push(stub('paused', campCategory(c.pausedNames[0] ?? '') ?? 'Unknown'));
+      continue;
+    }
+    if (c.clicks < minClicks) {
+      out.push(stub('low-clicks', campCategory(c.name) ?? 'Unknown')); // too little data to trust CPC
+      continue;
+    }
 
     const category = campCategory(c.name);
-    if (!category) continue; // can't map to a bid-cap category → can't assess
+    if (!category) {
+      out.push(stub('no-benchmark', 'Unknown')); // can't map to a bid-cap category
+      continue;
+    }
     const catCells = cellsByCat.get(category);
-    if (!catCells || catCells.length === 0) continue; // no recommendation to compare
+    if (!catCells || catCells.length === 0) {
+      out.push(stub('no-benchmark', category)); // no recommendation to compare
+      continue;
+    }
 
     const cpc = c.clicks > 0 ? c.spend / c.clicks : null;
     const cpi = c.installs > 0 ? c.spend / c.installs : null;
@@ -233,11 +303,13 @@ export function findOverbidCamps(
 
     const targetBid = avg(targetCells, (x) => x.bid) || null;
     const targetCpi = avg(targetCells, (x) => x.cpi) || null;
-    if (targetBid === null && targetCpi === null) continue;
+    if (targetBid === null && targetCpi === null) {
+      out.push(stub('no-benchmark', category));
+      continue;
+    }
 
     const cpcOver = cpc !== null && targetBid !== null && cpc > targetBid * (1 + cpcTol);
     const cpiOver = cpi !== null && targetCpi !== null && cpi > targetCpi * (1 + cpiTol);
-    if (!cpcOver && !cpiOver) continue;
 
     const cpcOverPct = cpcOver ? (cpc! - targetBid!) / targetBid! : null;
     const cpiOverPct = cpiOver ? (cpi! - targetCpi!) / targetCpi! : null;
@@ -251,6 +323,7 @@ export function findOverbidCamps(
     out.push({
       camp: c.name,
       url: c.url ?? campUrl.get(campKey),
+      verdict: cpcOver || cpiOver ? 'overbid' : 'ok',
       category,
       countries,
       matchLevel,
@@ -269,9 +342,23 @@ export function findOverbidCamps(
       score: worstOver * c.spend,
       mergedCount: c.members.length,
       mergedNames: c.members,
+      pausedNames: c.pausedNames,
     });
   }
 
   out.sort((a, b) => b.score - a.score);
   return out;
+}
+
+/** The actionable list: camps whose CPC/CPI run above the allowed level. */
+export function findOverbidCamps(
+  shopifyCamps: ShopifyCampRow[],
+  bidCap: BidCapRow[],
+  campLinks: CampLinkRow[],
+  pausedCamps: MasterKwRow[] = [],
+  params: OverbidParams = {},
+): OverbidRow[] {
+  return assessCamps(shopifyCamps, bidCap, campLinks, pausedCamps, params).filter(
+    (r) => r.verdict === 'overbid',
+  );
 }

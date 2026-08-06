@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { categoryStyle, CATEGORY_ORDER } from '@/lib/utils/colors';
 import { formatNumber } from '@/lib/utils/format';
-import { findOverbidCamps, type OverbidRow } from '@/lib/market/overbid';
+import { assessCamps, type CampVerdict, type OverbidRow } from '@/lib/market/overbid';
 import { cn } from '@/lib/utils';
 import type { Category } from '@/lib/sheets/types';
 
@@ -34,8 +34,49 @@ const dmy = (ms: number): string => {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
-type SortKey = 'camp' | 'category' | 'cpc' | 'cpi' | 'targetBid' | 'spend' | 'clicks' | 'installs' | 'score';
+// % above (+, rose) or below (−, emerald) the allowed level. The active list only
+// ever shows camps that are over; the "đã xử lý" list needs the under case too.
+const deltaPct = (actual: number | null, target: number | null): number | null =>
+  actual === null || target === null || !(target > 0) ? null : (actual - target) / target;
+
+function DeltaBadge({ d }: { d: number | null }) {
+  if (d === null) return null;
+  const over = d > 0;
+  return (
+    <span className={cn('block text-[9px]', over ? 'text-rose-500' : 'text-emerald-600')}>
+      {over ? '+' : '−'}
+      {Math.abs(Math.round(d * 100))}%
+    </span>
+  );
+}
+
+// How a camp that LEFT the overbid list is labelled in the "đã xử lý" view.
+const VERDICT_TAG: Record<Exclude<CampVerdict, 'overbid'>, { label: string; cls: string; title: string }> = {
+  ok: {
+    label: '✅ đã về ngưỡng',
+    cls: 'bg-emerald-100 text-emerald-700',
+    title: 'CPC và CPI hiện đều nằm trong mức cho phép → camp đã được fix, không còn overbid.',
+  },
+  paused: {
+    label: '⏸ đã pause',
+    cls: 'bg-slate-200 text-slate-600',
+    title: 'Camp nằm trong tab Paused_camp — không còn chạy nên bid không còn actionable.',
+  },
+  'low-clicks': {
+    label: '📉 ít click',
+    cls: 'bg-amber-100 text-amber-700',
+    title: 'Clicks trong kỳ đã tụt xuống dưới ngưỡng → CPC quá nhiễu để đánh giá (không có nghĩa là đã fix).',
+  },
+  'no-benchmark': {
+    label: '❓ chưa có benchmark',
+    cls: 'bg-slate-100 text-slate-500',
+    title: 'Không map được camp sang category trong Max bid cap, hoặc category đó chưa có Bid Rec → không so được.',
+  },
+};
+
+type SortKey = 'camp' | 'category' | 'cpc' | 'cpi' | 'targetBid' | 'spend' | 'clicks' | 'installs' | 'score' | 'noted';
 type SortDir = 'asc' | 'desc';
+type ViewMode = 'active' | 'fixed';
 
 const SORT_COLS: Record<SortKey, { kind: 'num' | 'text'; get: (r: OverbidRow) => number | string | null }> = {
   camp: { kind: 'text', get: (r) => r.camp },
@@ -47,6 +88,8 @@ const SORT_COLS: Record<SortKey, { kind: 'num' | 'text'; get: (r: OverbidRow) =>
   clicks: { kind: 'num', get: (r) => r.clicks },
   installs: { kind: 'num', get: (r) => r.installs },
   score: { kind: 'num', get: (r) => r.score },
+  // Resolved from the notes store in the comparator, not from the row.
+  noted: { kind: 'num', get: () => null },
 };
 
 function SortHead({
@@ -97,6 +140,12 @@ export function OverbidView() {
   // Whether to reveal camps currently in their post-note hide window.
   const [showHidden, setShowHidden] = useState(false);
 
+  // 'active' = camps still overbid; 'fixed' = camps you noted that have since
+  // left the list (fixed / paused / no longer assessable). Without this second
+  // view a camp you actually fixed disappears — together with the Impact bid
+  // reading that proves the bid cut worked.
+  const [view, setView] = useState<ViewMode>('active');
+
   // Detection thresholds (tunable).
   const [minClicks, setMinClicks] = useState('5');
   const [cpcTol, setCpcTol] = useState('0');
@@ -108,6 +157,12 @@ export function OverbidView() {
   const [sortKey, setSortKey] = useState<SortKey>('score');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
+  const switchView = (next: ViewMode) => {
+    setView(next);
+    setSortKey(next === 'fixed' ? 'noted' : 'score');
+    setSortDir('desc');
+  };
+
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else {
@@ -116,21 +171,51 @@ export function OverbidView() {
     }
   };
 
-  const rows = useMemo(() => {
+  // Every camp in Shopify_daily with its verdict — the overbid ones drive the
+  // main table, the rest are what the "đã xử lý" view is made of.
+  const assessed = useMemo(() => {
     if (!data) return [];
-    return findOverbidCamps(data.shopifyCamps ?? [], data.bidCap ?? [], data.campLinks ?? [], data.pausedKw ?? [], {
+    return assessCamps(data.shopifyCamps ?? [], data.bidCap ?? [], data.campLinks ?? [], data.pausedKw ?? [], {
       minClicks: Number(minClicks) || 0,
       cpcTolerancePct: Number(cpcTol) || 0,
       cpiTolerancePct: Number(cpiTol) || 0,
     });
   }, [data, minClicks, cpcTol, cpiTol]);
 
+  const overbidRows = useMemo(() => assessed.filter((r) => r.verdict === 'overbid'), [assessed]);
+
+  // A note is filed under the camp name shown at the time, so a later rename (or
+  // a pause) leaves it under an alias — check every name this camp has appeared
+  // as in Shopify_daily and keep the newest.
+  const noteAliasOf = useMemo(() => {
+    return (r: OverbidRow): { name: string; at: number } | null => {
+      let best: { name: string; at: number } | null = null;
+      for (const n of [r.camp, ...r.mergedNames, ...r.pausedNames]) {
+        const ts = noteTimes[noteKeyOf('overbid', n)];
+        if (!ts) continue;
+        const at = new Date(ts).getTime();
+        if (!Number.isFinite(at)) continue;
+        if (!best || at > best.at) best = { name: n, at };
+      }
+      return best;
+    };
+  }, [noteTimes]);
+
+  // Camps you noted that are no longer flagged — newest note first.
+  const fixedRows = useMemo(
+    () => assessed.filter((r) => r.verdict !== 'overbid' && noteAliasOf(r) !== null),
+    [assessed, noteAliasOf],
+  );
+
+  const rows = view === 'fixed' ? fixedRows : overbidRows;
+
   // Camps still inside their post-note hide window → camp name -> reappear time.
+  // Only the actionable list hides rows; the "đã xử lý" view shows everything.
   const hiddenUntil = useMemo(() => {
     const map = new Map<string, number>();
     if (!noteSnapshot) return map;
     const now = Date.now();
-    for (const r of rows) {
+    for (const r of overbidRows) {
       const ts = noteSnapshot[noteKeyOf('overbid', r.camp)];
       if (!ts) continue;
       const noted = new Date(ts).getTime();
@@ -139,7 +224,7 @@ export function OverbidView() {
       if (until > now) map.set(r.camp, until);
     }
     return map;
-  }, [rows, noteSnapshot]);
+  }, [overbidRows, noteSnapshot]);
 
   // Bid-impact: after you note a camp as overbid (and hop into ASA to cut the
   // bid), did the camp keep its paid traffic? Measured on the camp's keywords —
@@ -150,13 +235,13 @@ export function OverbidView() {
     () => buildCampPaidShareIndex(data?.historyDaily ?? [], data?.masterKwLookup ?? []),
     [data?.historyDaily, data?.masterKwLookup],
   );
-  const impactOf = (camp: string): { impact: NoteImpact | null; series: CampImpactSeries | undefined } => {
-    const series = campShare.get(camp);
-    const ts = noteTimes[noteKeyOf('overbid', camp)];
-    if (!ts) return { impact: null, series };
-    const at = new Date(ts).getTime();
-    if (!Number.isFinite(at)) return { impact: null, series };
-    return { impact: summarizeImpact(series?.points, at), series };
+  const impactOf = (
+    r: OverbidRow,
+    noteAt: number | null,
+  ): { impact: NoteImpact | null; series: CampImpactSeries | undefined } => {
+    const series = campShare.get(r.camp);
+    if (noteAt === null) return { impact: null, series };
+    return { impact: summarizeImpact(series?.points, noteAt), series };
   };
 
   const categoryOptions = useMemo(() => {
@@ -169,16 +254,18 @@ export function OverbidView() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const out = rows.filter((r) => {
-      if (!showHidden && hiddenUntil.has(r.camp)) return false;
+      if (view === 'active' && !showHidden && hiddenUntil.has(r.camp)) return false;
       if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
       if (matchFilter !== 'all' && r.matchLevel !== matchFilter) return false;
       if (q && !r.camp.toLowerCase().includes(q)) return false;
       return true;
     });
     const { kind, get } = SORT_COLS[sortKey];
+    const noteAt = (r: OverbidRow) => noteAliasOf(r)?.at ?? null;
     const dir = sortDir === 'asc' ? 1 : -1;
     out.sort((a, b) => {
-      const va = get(a), vb = get(b);
+      const va = sortKey === 'noted' ? noteAt(a) : get(a);
+      const vb = sortKey === 'noted' ? noteAt(b) : get(b);
       const aEmpty = va === null || va === '';
       const bEmpty = vb === null || vb === '';
       if (aEmpty && bEmpty) return 0;
@@ -188,7 +275,7 @@ export function OverbidView() {
       return base * dir || b.score - a.score;
     });
     return out;
-  }, [rows, search, categoryFilter, matchFilter, sortKey, sortDir, showHidden, hiddenUntil]);
+  }, [rows, view, search, categoryFilter, matchFilter, sortKey, sortDir, showHidden, hiddenUntil, noteAliasOf]);
 
   const totalSpend = useMemo(() => filtered.reduce((s, r) => s + r.spend, 0), [filtered]);
   const hiddenCount = hiddenUntil.size;
@@ -216,7 +303,9 @@ export function OverbidView() {
           không điền Geo coi là <b>general</b> → so với <b>trung bình cả category</b> (🌐). Các dòng{' '}
           <code className="text-[10px]">Shopify_daily</code> <b>cùng 1 campaign</b> (cùng URL, do đổi tên/thêm ghi
           chú) được <b>gộp lại</b> — cộng dồn clicks/installs/spend cho cả khoảng — và đánh dấu{' '}
-          <span className="rounded bg-indigo-100 px-1 text-[9px] font-semibold text-indigo-700">gộp N</span>.
+          <span className="rounded bg-indigo-100 px-1 text-[9px] font-semibold text-indigo-700">gộp N</span>. Camp đã
+          hạ bid xong sẽ <b>rời list này</b> → tìm lại ở tab{' '}
+          <b>✅ Đã xử lý</b> cùng cột <b>Impact bid</b>.
           {data?.shopifyDateRange && (
             <span className="mt-1 block font-medium text-rose-800">
               📅 Dữ liệu áp dụng: {data.shopifyDateRange}
@@ -224,6 +313,30 @@ export function OverbidView() {
           )}
         </div>
       </div>
+
+      {/* Active vs already-handled */}
+      {!isLoading && (
+        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
+          {([
+            { id: 'active' as ViewMode, label: `🔥 Đang overbid`, n: overbidRows.length, title: 'Camp có CPC/CPI vượt mức cho phép — cần hạ bid.' },
+            { id: 'fixed' as ViewMode, label: `✅ Đã xử lý`, n: fixedRows.length, title: 'Camp bạn đã ghi note và giờ không còn trong list overbid: đã về ngưỡng, đã pause, hoặc không còn đủ dữ liệu để đánh giá.' },
+          ]).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => switchView(t.id)}
+              title={t.title}
+              className={cn(
+                'rounded-md px-2.5 py-1 font-medium transition',
+                view === t.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100',
+              )}
+            >
+              {t.label}
+              <span className={cn('ml-1 text-[10px]', view === t.id ? 'text-slate-300' : 'text-slate-400')}>{t.n}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Thresholds + filters */}
       {!isLoading && (
@@ -267,10 +380,13 @@ export function OverbidView() {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
           <span>
             {filtered.length}
-            {filtered.length !== rows.length ? ` / ${rows.length}` : ''} camp overbid · tổng spend{' '}
-            <span className="font-semibold text-rose-700">${formatNumber(totalSpend, { compact: true })}</span>
+            {filtered.length !== rows.length ? ` / ${rows.length}` : ''}{' '}
+            {view === 'fixed' ? 'camp đã xử lý' : 'camp overbid'} · tổng spend{' '}
+            <span className={cn('font-semibold', view === 'fixed' ? 'text-slate-700' : 'text-rose-700')}>
+              ${formatNumber(totalSpend, { compact: true })}
+            </span>
           </span>
-          {hiddenCount > 0 && (
+          {view === 'active' && hiddenCount > 0 && (
             <button
               type="button"
               onClick={() => setShowHidden((v) => !v)}
@@ -293,9 +409,11 @@ export function OverbidView() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="border rounded-lg bg-white py-16 text-center text-sm text-slate-500">
-          {rows.length === 0
-            ? 'Không tìm thấy camp overbid (kiểm tra tab Shopify_daily đã có data + Max bid cap có Bid Rec).'
-            : 'Không có camp nào khớp filter.'}
+          {rows.length > 0
+            ? 'Không có camp nào khớp filter.'
+            : view === 'fixed'
+              ? 'Chưa có camp nào: ghi note vào camp ở tab 🔥 Đang overbid, khi nó ra khỏi list (đã hạ bid / pause) sẽ xuất hiện ở đây.'
+              : 'Không tìm thấy camp overbid (kiểm tra tab Shopify_daily đã có data + Max bid cap có Bid Rec).'}
         </div>
       ) : (
         <div className="border rounded-lg bg-white overflow-auto max-h-[75vh]">
@@ -303,6 +421,17 @@ export function OverbidView() {
             <thead className="bg-slate-50 text-slate-600 sticky top-0 z-10 shadow-sm [&_th]:bg-slate-50">
               <tr>
                 <SortHead label="Camp" col="camp" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} extra="px-3 min-w-[15rem]" />
+                {view === 'fixed' && (
+                  <SortHead
+                    label="Trạng thái"
+                    col="noted"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                    extra="min-w-[8rem]"
+                    title="Lý do camp không còn trong list overbid + ngày bạn ghi note. Click để sort theo ngày note."
+                  />
+                )}
                 <SortHead label="Category" col="category" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="CPC / cho phép" col="cpc" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="CPC thực tế / bid cho phép (avg Bid Rec)" />
                 <SortHead label="CPI / cho phép" col="cpi" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="CPI thực tế / CPI cho phép (avg)" />
@@ -321,8 +450,10 @@ export function OverbidView() {
             <tbody>
               {filtered.map((r) => {
                 const cs = categoryStyle(r.category as Category);
-                const hiddenTs = hiddenUntil.get(r.camp);
-                const imp = impactOf(r.camp);
+                const hiddenTs = view === 'active' ? hiddenUntil.get(r.camp) : undefined;
+                const alias = noteAliasOf(r);
+                const imp = impactOf(r, alias?.at ?? null);
+                const tag = r.verdict === 'overbid' ? null : VERDICT_TAG[r.verdict];
                 return (
                   <tr key={r.url ?? r.camp} className={cn('border-t hover:bg-slate-50 align-top', hiddenTs && 'bg-slate-50/60 text-slate-400')}>
                     <td className="px-3 py-2">
@@ -360,6 +491,27 @@ export function OverbidView() {
                         )}
                       </div>
                     </td>
+                    {view === 'fixed' && (
+                      <td className="px-2 py-2">
+                        {tag && (
+                          <span
+                            title={tag.title}
+                            className={cn('inline-block rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap cursor-help', tag.cls)}
+                          >
+                            {tag.label}
+                          </span>
+                        )}
+                        {alias && (
+                          <div
+                            className="mt-0.5 text-[10px] text-slate-400"
+                            title={alias.name === r.camp ? undefined : `Note lưu dưới tên cũ của camp: ${alias.name}`}
+                          >
+                            note {dmy(alias.at)}
+                            {alias.name !== r.camp && ' *'}
+                          </div>
+                        )}
+                      </td>
+                    )}
                     <td className="px-2 py-2">
                       <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap', cs.bg, cs.text)}>
                         <span>{cs.emoji}</span>
@@ -369,18 +521,20 @@ export function OverbidView() {
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px]">
                       <span className={r.cpcOverPct !== null ? 'text-rose-600 font-semibold' : 'text-slate-700'}>{money(r.cpc)}</span>
                       <span className="text-slate-400"> / {money(r.targetBid)}</span>
-                      {r.cpcOverPct !== null && <span className="block text-[9px] text-rose-500">+{Math.round(r.cpcOverPct * 100)}%</span>}
+                      <DeltaBadge d={deltaPct(r.cpc, r.targetBid)} />
                     </td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px]">
                       <span className={r.cpiOverPct !== null ? 'text-rose-600 font-semibold' : 'text-slate-700'}>{money(r.cpi)}</span>
                       <span className="text-slate-400"> / {money(r.targetCpi)}</span>
-                      {r.cpiOverPct !== null && <span className="block text-[9px] text-rose-500">+{Math.round(r.cpiOverPct * 100)}%</span>}
+                      <DeltaBadge d={deltaPct(r.cpi, r.targetCpi)} />
                     </td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">{formatNumber(r.clicks, { compact: true })}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">{formatNumber(r.installs, { compact: true })}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] font-semibold text-slate-800">${formatNumber(r.spend, { compact: true })}</td>
                     <CampImpactCell impact={imp.impact} series={imp.series} />
-                    <NoteCell scope="overbid" noteId={r.camp} />
+                    {/* Edit the note where it actually lives — under the camp's
+                        old name if it was renamed after you wrote it. */}
+                    <NoteCell scope="overbid" noteId={alias?.name ?? r.camp} />
                   </tr>
                 );
               })}
@@ -392,7 +546,10 @@ export function OverbidView() {
             <b> Impact bid</b> = paid share các keyword của camp (Master KW Lookup × History_Daily) trước note → ~10 ngày sau;
             <span className="text-emerald-600"> giữ nguyên = hạ bid không mất traffic</span>,
             <span className="text-amber-600"> giảm = có thể hạ quá tay</span> ·
-            <b> click cột để sort</b> · mặc định sắp theo spend lãng phí (overage × spend)
+            <b> click cột để sort</b> ·{' '}
+            {view === 'fixed'
+              ? 'mặc định sắp theo ngày note mới nhất · * = note lưu dưới tên cũ của camp'
+              : 'mặc định sắp theo spend lãng phí (overage × spend)'}
           </div>
         </div>
       )}
