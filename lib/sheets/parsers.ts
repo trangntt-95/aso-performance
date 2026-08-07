@@ -10,6 +10,7 @@ import type {
   ExecutiveSummary,
   FunnelBreakdown,
   HistoryDailyRow,
+  HistoryDailyCountryRow,
   HistoryRow,
   KeywordRow,
   KwAddedManualRow,
@@ -807,6 +808,43 @@ export function parseAlertLog(rows: string[][]): AlertLogRow[] {
 // Schema: date | searchTerm | surface | usersL7D | getAppL7D | crL7D | posL7D
 // Row 1 = headers, row 2+ = data.
 // ---------------------------------------------------------------------------
+
+/**
+ * 'History_Daily_Country' tab → per-day rows split by Tier-1 country.
+ * Columns: date | country | searchTerm | surface | usersDaily | installDaily
+ *          | crDaily | posDaily | source
+ * Returns [] when the tab is absent — the job that writes it may not have run.
+ */
+export function parseHistoryDailyCountry(rows: string[][]): HistoryDailyCountryRow[] {
+  if (!rows || rows.length < 2) return [];
+  return rows
+    .slice(1)
+    .map((row): HistoryDailyCountryRow | null => {
+      if (!row || row.length === 0) return null;
+      const rawDate = row[0];
+      const country = str(row[1]);
+      const searchTerm = str(row[2]);
+      if (rawDate === undefined || rawDate === null || rawDate === '') return null;
+      if (!country || !searchTerm) return null;
+      const dateNumeric = typeof rawDate === 'number' ? rawDate : Number(rawDate);
+      const looksLikeDate =
+        (Number.isFinite(dateNumeric) && dateNumeric > 20000 && dateNumeric < 90000) ||
+        /^\d{4}-\d{2}-\d{2}/.test(str(rawDate));
+      if (!looksLikeDate) return null;
+      return {
+        snapshotDate: typeof rawDate === 'number' ? rawDate : str(rawDate),
+        country,
+        searchTerm,
+        surface: toSurface(row[3]),
+        usersDaily: num(row[4]),
+        getAppDaily: numOrNull(row[5]),
+        crDaily: numOrNull(row[6]),
+        posDaily: numOrNull(row[7]),
+        source: str(row[8]),
+      };
+    })
+    .filter((r): r is HistoryDailyCountryRow => r !== null);
+}
 
 export function parseHistoryDaily(rows: string[][]): HistoryDailyRow[] {
   if (!rows || rows.length < 2) return [];

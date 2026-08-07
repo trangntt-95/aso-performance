@@ -18,6 +18,7 @@ export const TABS = [
   'Country_L365',
   'History',
   'History_Daily',
+  'History_Daily_Country',
   'AlertLog',
   'KW_Added_Manual',
   'Master KW Lookup',

@@ -20,6 +20,7 @@ import {
   channelSnapshotForRange,
   dailyTrend,
   availableDailyDates,
+  countryDateModeAvailable,
   isoAddDays,
   kpisForRange,
   topContributorsForRange,
@@ -268,6 +269,13 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   );
   // Channel mix uses date-scoped data in date mode (History_Daily has surface).
   const channelMixSnapshot = inDateMode ? channelSnapshotDate : channelSnapshot;
+  // Can a country focus actually be honoured for this range? Only when the
+  // Tier-1 per-day tab covers that country inside it.
+  const countryDateOk = useMemo(
+    () => (dateRange ? countryDateModeAvailable(data, dateRange.from, dateRange.to, countryFocus) : false),
+    [data, dateRange, countryFocus],
+  );
+
   // Days inside the picked range that contribute nothing to the totals, folded
   // into contiguous runs so the warning reads "13/07 → 31/07", not 19 dates.
   const coverageGaps = useMemo(() => {
@@ -494,17 +502,17 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                   'inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition',
                   // Struck through in date mode: the chip is still there, but the
                   // date-scoped numbers ignore it (History_Daily has no country).
-                  inDateMode
+                  inDateMode && !countryDateOk
                     ? 'bg-slate-100 text-slate-400 line-through decoration-amber-500 hover:bg-slate-200'
                     : 'bg-sky-100 text-sky-800 hover:bg-sky-200',
                 )}
                 title={
-                  inDateMode
+                  inDateMode && !countryDateOk
                     ? `Đang lọc ngày → filter nước KHÔNG áp dụng cho số bên dưới (History_Daily không có cột country). Click để bỏ.`
                     : 'Click to clear country filter'
                 }
               >
-                {countryFocus} <span className={inDateMode ? 'text-amber-600' : 'text-slate-500'}>✕</span>
+                {countryFocus} <span className={inDateMode && !countryDateOk ? 'text-amber-600' : 'text-slate-500'}>✕</span>
               </button>
             )}
             {keywordFocus && (
@@ -619,7 +627,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           accepted by the UI, shown as a chip, and then silently dropped by the
           math: kpisForRange & friends never read opts.country. Rather than let
           the numbers quietly ignore a filter the user believes is on, say it. */}
-      {inDateMode && countryFocus && (
+      {inDateMode && countryFocus && !countryDateOk && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
           <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
           <div className="space-y-0.5">
@@ -629,8 +637,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             </div>
             <div className="text-[11px] text-amber-700">
               Nguồn dữ liệu theo ngày (<code className="text-[10px]">History_Daily</code>) chỉ có ngày × keyword ×
-              surface, không có cột country. Số theo nước chỉ tồn tại ở các tab{' '}
-              <code className="text-[10px]">Country_L*</code> theo window cố định.
+              surface, không có cột country. Dữ liệu ngày × nước chỉ có cho các thị trường Tier 1 (tab{' '}
+              <code className="text-[10px]">History_Daily_Country</code>) —{' '}
+              <b>{countryFocus}</b> chưa có số trong khoảng này.
             </div>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <button

@@ -228,6 +228,28 @@ export interface HistoryDailyRow {
   source: string;
 }
 
+/**
+ * One day of TRUE per-day metrics for a keyword in ONE Tier-1 country
+ * ('History_Daily_Country' tab). Deliberately a separate tab from History_Daily:
+ * adding a country column there would break its (date|term|surface) key, and
+ * GA4 withholds low-volume rows on granular queries — so country detail is kept
+ * only for the ~10 markets whose samples survive that thresholding.
+ *
+ * Every metric is TRUE per-day (GA4 queried with a one-day range), so these CAN
+ * be summed across a date range. There is no rolling L7D block here on purpose.
+ */
+export interface HistoryDailyCountryRow {
+  snapshotDate: string | number;
+  country: string;
+  searchTerm: string;
+  surface: Surface;
+  usersDaily: number;
+  getAppDaily: number | null;
+  crDaily: number | null;
+  posDaily: number | null;
+  source: string;
+}
+
 export interface KwAddedManualRow {
   keyword: string;
   camp: string;
@@ -359,6 +381,9 @@ export interface SheetPayload {
   countryL365: SnapshotRow[];
   history: HistoryRow[];
   historyDaily: HistoryDailyRow[];
+  /** Per-day metrics split by country, Tier-1 markets only. Empty until the
+   *  Apps Script job has run — every reader must tolerate that. */
+  historyDailyCountry: HistoryDailyCountryRow[];
   alertLog: AlertLogRow[];
   kwAddedManual: KwAddedManualRow[];
   masterKwLookup: MasterKwRow[];

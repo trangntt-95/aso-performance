@@ -1006,6 +1006,51 @@ function daysInRange(from: string, to: string): number {
  *     Summing the rolling L7D columns across days would overcount ~7×, so rows
  *     that lack a per-day value are skipped.
  */
+/**
+ * True when a country filter can actually be honoured for this range: the
+ * Tier-1 per-day tab must carry rows for that country inside [from, to].
+ * History_Daily itself has no country column, so without this the filter would
+ * be silently dropped — the UI warns when this returns false.
+ */
+export function countryDateModeAvailable(
+  data: SheetPayload | undefined,
+  from: string,
+  to: string,
+  country: string | null | undefined,
+): boolean {
+  if (!data || !country) return false;
+  for (const r of data.historyDailyCountry ?? []) {
+    if (r.country !== country) continue;
+    const iso = isoFromSnapshot(r.snapshotDate);
+    if (iso !== null && iso >= from && iso <= to) return true;
+  }
+  return false;
+}
+
+/** Country-scoped per-day rows — the Tier-1 tab, already true-daily. */
+function countryRowsInRange(
+  data: SheetPayload,
+  from: string,
+  to: string,
+  opts: OverviewFilters,
+  catMap?: Map<string, Category>,
+): DailyKwRow[] {
+  const surface = opts.surface ?? 'all';
+  const target = surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
+  const kw = opts.keyword?.toLowerCase();
+  const out: DailyKwRow[] = [];
+  for (const r of data.historyDailyCountry ?? []) {
+    if (r.country !== opts.country) continue;
+    if (target && r.surface !== target) continue;
+    if (kw && r.searchTerm.toLowerCase() !== kw) continue;
+    if (opts.category && catMap && catMap.get(r.searchTerm.toLowerCase()) !== opts.category) continue;
+    const iso = isoFromSnapshot(r.snapshotDate);
+    if (iso === null || iso < from || iso > to) continue;
+    out.push({ keyword: r.searchTerm, surface: r.surface, users: r.usersDaily, getApp: r.getAppDaily });
+  }
+  return out;
+}
+
 function dailyRowsInRange(
   data: SheetPayload | undefined,
   from: string,
@@ -1014,6 +1059,12 @@ function dailyRowsInRange(
   catMap?: Map<string, Category>,
 ): DailyKwRow[] {
   if (!data) return [];
+  // A country focus switches the source to the Tier-1 per-day tab — but only
+  // when that tab actually covers the country and range. Otherwise fall through
+  // to the account-wide rows; the caller surfaces that the filter didn't apply.
+  if (opts.country && countryDateModeAvailable(data, from, to, opts.country)) {
+    return countryRowsInRange(data, from, to, opts, catMap);
+  }
   const singleDay = from === to;
   const surface = opts.surface ?? 'all';
   const target = surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
@@ -1074,6 +1125,25 @@ export function rangeCoverage(
   const target = surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
   const kw = opts.keyword?.toLowerCase();
   const hit = new Set<string>();
+  // Country mode reads the Tier-1 tab, so coverage must be measured there too —
+  // otherwise it would report the account-wide days and claim a completeness
+  // the country numbers don't have.
+  if (data && opts.country && countryDateModeAvailable(data, from, to, opts.country)) {
+    for (const r of data.historyDailyCountry ?? []) {
+      if (r.country !== opts.country) continue;
+      if (target && r.surface !== target) continue;
+      if (kw && r.searchTerm.toLowerCase() !== kw) continue;
+      if (opts.category && catMap && catMap.get(r.searchTerm.toLowerCase()) !== opts.category) continue;
+      const iso = isoFromSnapshot(r.snapshotDate);
+      if (iso !== null && iso >= from && iso <= to) hit.add(iso);
+    }
+    const missingC: string[] = [];
+    for (let i = 0; i < days; i++) {
+      const dd = isoAddDays(from, i);
+      if (!hit.has(dd)) missingC.push(dd);
+    }
+    return { days, covered: hit.size, coveredDates: Array.from(hit).sort(), missing: missingC };
+  }
   for (const r of dedupeDailyRows(data?.historyDaily ?? [])) {
     if (target && r.surface !== target) continue;
     if (kw && r.searchTerm.toLowerCase() !== kw) continue;
