@@ -490,10 +490,21 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               <button
                 type="button"
                 onClick={() => setCountryFocus(null)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-sky-100 text-sky-800 hover:bg-sky-200 transition"
-                title="Click to clear country filter"
+                className={cn(
+                  'inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition',
+                  // Struck through in date mode: the chip is still there, but the
+                  // date-scoped numbers ignore it (History_Daily has no country).
+                  inDateMode
+                    ? 'bg-slate-100 text-slate-400 line-through decoration-amber-500 hover:bg-slate-200'
+                    : 'bg-sky-100 text-sky-800 hover:bg-sky-200',
+                )}
+                title={
+                  inDateMode
+                    ? `Đang lọc ngày → filter nước KHÔNG áp dụng cho số bên dưới (History_Daily không có cột country). Click để bỏ.`
+                    : 'Click to clear country filter'
+                }
               >
-                {countryFocus} <span className="text-slate-500">✕</span>
+                {countryFocus} <span className={inDateMode ? 'text-amber-600' : 'text-slate-500'}>✕</span>
               </button>
             )}
             {keywordFocus && (
@@ -603,6 +614,45 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       {/* A multi-day range can only sum the TRUE per-day columns of History_Daily.
           Days that only carry the rolling L7D snapshot add nothing, so the total
           quietly covers a shorter period than the one picked — say so. */}
+      {/* Date mode sums History_Daily, which has NO country column — the only
+          per-day source is date × keyword × surface. So a country focus is
+          accepted by the UI, shown as a chip, and then silently dropped by the
+          math: kpisForRange & friends never read opts.country. Rather than let
+          the numbers quietly ignore a filter the user believes is on, say it. */}
+      {inDateMode && countryFocus && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+          <div className="space-y-0.5">
+            <div>
+              <b>Lọc ngày không cắt được theo nước</b> — các số bên dưới vẫn là{' '}
+              <b>toàn bộ nước</b>, chưa lọc <b>{countryFocus}</b>.
+            </div>
+            <div className="text-[11px] text-amber-700">
+              Nguồn dữ liệu theo ngày (<code className="text-[10px]">History_Daily</code>) chỉ có ngày × keyword ×
+              surface, không có cột country. Số theo nước chỉ tồn tại ở các tab{' '}
+              <code className="text-[10px]">Country_L*</code> theo window cố định.
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setCountryFocus(null)}
+                className="rounded border border-amber-400 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100"
+              >
+                Bỏ lọc {countryFocus}
+              </button>
+              <button
+                type="button"
+                onClick={clearDateRange}
+                className="rounded border border-amber-400 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100"
+                title={`Thoát lọc ngày, quay về window ${window} — khi đó lọc nước chạy đúng.`}
+              >
+                Giữ nước, bỏ lọc ngày (về window {window})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {coverageGaps?.pendingToday && (
         <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-slate-400 mt-0.5" />
