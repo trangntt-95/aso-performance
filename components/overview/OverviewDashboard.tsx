@@ -281,10 +281,18 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     }
     const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
     const shown = runs.slice(0, 3).map(([a, b]) => (a === b ? dm(a) : `${dm(a)} → ${dm(b)}`));
+    // The per-day backfill only ever reaches YESTERDAY — today's numbers aren't
+    // final until the day closes. A range ending today is therefore missing its
+    // last day by design, not because the pipeline broke; saying "chạy lại
+    // backfill" there would be crying wolf every single afternoon.
+    const now = new Date();
+    const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const pendingToday = missing.length === 1 && missing[0] >= todayIso;
     return {
       days,
       covered,
       comparable: dateKpi.comparable,
+      pendingToday,
       lastCovered: dateKpi.coverage.coveredDates[dateKpi.coverage.coveredDates.length - 1] ?? null,
       missingLabel: shown.join(', ') + (runs.length > 3 ? ` … (+${runs.length - 3} đoạn)` : ''),
     };
@@ -595,7 +603,18 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       {/* A multi-day range can only sum the TRUE per-day columns of History_Daily.
           Days that only carry the rolling L7D snapshot add nothing, so the total
           quietly covers a shorter period than the one picked — say so. */}
-      {coverageGaps && (
+      {coverageGaps?.pendingToday && (
+        <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-slate-400 mt-0.5" />
+          <div>
+            Hôm nay chưa chốt số (dữ liệu theo ngày chỉ có đến hết hôm qua) → khoảng này tính tới{' '}
+            <b>{coverageGaps.lastCovered ?? '—'}</b>, tức <b>{coverageGaps.covered}/{coverageGaps.days} ngày</b>.
+            {!coverageGaps.comparable && ' % so kỳ trước tạm ẩn vì kỳ này ngắn hơn kỳ trước 1 ngày.'}
+          </div>
+        </div>
+      )}
+
+      {coverageGaps && !coverageGaps.pendingToday && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
           <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
           <div className="space-y-0.5">
