@@ -977,7 +977,7 @@ function dedupeDailyRows(rows: HistoryDailyRow[]): HistoryDailyRow[] {
   return Array.from(map.values());
 }
 
-function isoAddDays(iso: string, n: number): string {
+export function isoAddDays(iso: string, n: number): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
   if (!m) return iso;
   const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) + n * 86400000;
@@ -1042,6 +1042,54 @@ function dailyRowsInRange(
   return out;
 }
 
+/**
+ * Which days inside [from, to] actually contribute to a range sum.
+ *
+ * A multi-day range can ONLY use the true per-day columns (see dailyRowsInRange),
+ * so any day whose History_Daily rows are rolling-L7D-only adds nothing — the
+ * total silently covers a shorter period than the one you picked. Callers use
+ * this to say so out loud instead of showing a number that looks complete.
+ */
+export interface RangeCoverage {
+  /** Days in the picked range (inclusive). */
+  days: number;
+  /** Days that actually contribute a value. */
+  covered: number;
+  /** Contributing days, ascending. */
+  coveredDates: string[];
+  /** Days contributing nothing, ascending. */
+  missing: string[];
+}
+
+export function rangeCoverage(
+  data: SheetPayload | undefined,
+  from: string,
+  to: string,
+  opts: OverviewFilters = {},
+): RangeCoverage {
+  const days = daysInRange(from, to);
+  const catMap = opts.category ? keywordCategoryMap(data) : undefined;
+  const singleDay = from === to;
+  const surface = opts.surface ?? 'all';
+  const target = surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
+  const kw = opts.keyword?.toLowerCase();
+  const hit = new Set<string>();
+  for (const r of dedupeDailyRows(data?.historyDaily ?? [])) {
+    if (target && r.surface !== target) continue;
+    if (kw && r.searchTerm.toLowerCase() !== kw) continue;
+    if (opts.category && catMap && catMap.get(r.searchTerm.toLowerCase()) !== opts.category) continue;
+    const iso = isoFromSnapshot(r.snapshotDate);
+    if (iso === null || iso < from || iso > to) continue;
+    if (r.usersDaily !== null || singleDay) hit.add(iso);
+  }
+  const missing: string[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = isoAddDays(from, i);
+    if (!hit.has(d)) missing.push(d);
+  }
+  return { days, covered: hit.size, coveredDates: Array.from(hit).sort(), missing };
+}
+
 /** ISO dates (asc) with per-day data under the current surface/keyword filter. */
 export function availableDailyDates(
   data: SheetPayload | undefined,
@@ -1069,6 +1117,12 @@ export interface DateKpi {
   getAppL: number | null;
   getAppDeltaPct: number | null;
   cr: number | null;
+  /** Coverage of the picked range and of the prior period it's compared against. */
+  coverage: RangeCoverage;
+  priorCoverage: RangeCoverage;
+  /** False when either period is missing days — the deltas are then withheld,
+   *  because comparing e.g. 12 covered days against 31 is meaningless. */
+  comparable: boolean;
 }
 
 function sumDailyRows(rows: DailyKwRow[]) {
@@ -1093,6 +1147,12 @@ export function kpisForRange(
   to: string,
   opts: OverviewFilters = {},
 ): DateKpi {
+  // Prior = immediately-preceding equal-length period.
+  const span = daysInRange(from, to);
+  const prevTo = isoAddDays(from, -1);
+  const prevFrom = isoAddDays(from, -span);
+  const coverage = rangeCoverage(data, from, to, opts);
+  const priorCoverage = rangeCoverage(data, prevFrom, prevTo, opts);
   const empty: DateKpi = {
     from,
     to,
@@ -1101,27 +1161,32 @@ export function kpisForRange(
     getAppL: null,
     getAppDeltaPct: null,
     cr: null,
+    coverage,
+    priorCoverage,
+    comparable: false,
   };
   if (!data) return empty;
   const catMap = opts.category ? keywordCategoryMap(data) : undefined;
   const cur = sumDailyRows(dailyRowsInRange(data, from, to, opts, catMap));
-  // Prior = immediately-preceding equal-length period.
-  const span = daysInRange(from, to);
-  const prevTo = isoAddDays(from, -1);
-  const prevFrom = isoAddDays(from, -span);
   const prev = sumDailyRows(dailyRowsInRange(data, prevFrom, prevTo, opts, catMap));
   const cr = cur.crDenom > 0 && cur.getApp !== null ? cur.getApp / cur.crDenom : null;
+  // A period missing days sums fewer days than it claims, so a delta against it
+  // measures the gap in the data, not a change in traffic. Withhold it.
+  const comparable = coverage.missing.length === 0 && priorCoverage.missing.length === 0;
   return {
     from,
     to,
     usersL: cur.users,
-    usersDeltaPct: prev.users > 0 ? (cur.users - prev.users) / prev.users : null,
+    usersDeltaPct: comparable && prev.users > 0 ? (cur.users - prev.users) / prev.users : null,
     getAppL: cur.getApp,
     getAppDeltaPct:
-      prev.getApp && prev.getApp > 0 && cur.getApp !== null
+      comparable && prev.getApp && prev.getApp > 0 && cur.getApp !== null
         ? (cur.getApp - prev.getApp) / prev.getApp
         : null,
     cr,
+    coverage,
+    priorCoverage,
+    comparable,
   };
 }
 

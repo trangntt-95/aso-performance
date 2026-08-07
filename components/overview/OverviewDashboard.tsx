@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
-import { ArrowRight, AlertCircle, Check, Link2, Megaphone, Target, Users } from 'lucide-react';
+import { ArrowRight, AlertCircle, AlertTriangle, Check, Link2, Megaphone, Target, Users } from 'lucide-react';
 import { expectedAdsInstalls, runrateAdsToMonthEnd } from '@/lib/config/ads-targets';
 import { AdsTargetTile } from './AdsTargetTile';
 import { useSheetData } from '@/lib/hooks/useSheetData';
@@ -20,6 +20,7 @@ import {
   channelSnapshotForRange,
   dailyTrend,
   availableDailyDates,
+  isoAddDays,
   kpisForRange,
   topContributorsForRange,
   categoryShareForRange,
@@ -267,6 +268,28 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   );
   // Channel mix uses date-scoped data in date mode (History_Daily has surface).
   const channelMixSnapshot = inDateMode ? channelSnapshotDate : channelSnapshot;
+  // Days inside the picked range that contribute nothing to the totals, folded
+  // into contiguous runs so the warning reads "13/07 → 31/07", not 19 dates.
+  const coverageGaps = useMemo(() => {
+    if (!dateKpi || dateKpi.coverage.missing.length === 0) return null;
+    const { days, covered, missing } = dateKpi.coverage;
+    const runs: Array<[string, string]> = [];
+    for (const d of missing) {
+      const last = runs[runs.length - 1];
+      if (last && isoAddDays(last[1], 1) === d) last[1] = d;
+      else runs.push([d, d]);
+    }
+    const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+    const shown = runs.slice(0, 3).map(([a, b]) => (a === b ? dm(a) : `${dm(a)} → ${dm(b)}`));
+    return {
+      days,
+      covered,
+      comparable: dateKpi.comparable,
+      lastCovered: dateKpi.coverage.coveredDates[dateKpi.coverage.coveredDates.length - 1] ?? null,
+      missingLabel: shown.join(', ') + (runs.length > 3 ? ` … (+${runs.length - 3} đoạn)` : ''),
+    };
+  }, [dateKpi]);
+
   // Note appended to window-based sections that can't be date-scoped.
   const winNote = inDateMode ? ` · ⚠️ theo window ${window}, chưa lọc ngày` : '';
   const dateLabel = dateRange ? (isSingleDay ? dateRange.from : `${dateRange.from} → ${dateRange.to}`) : '';
@@ -568,6 +591,35 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           </div>
         </div>
       </header>
+
+      {/* A multi-day range can only sum the TRUE per-day columns of History_Daily.
+          Days that only carry the rolling L7D snapshot add nothing, so the total
+          quietly covers a shorter period than the one picked — say so. */}
+      {coverageGaps && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+          <div className="space-y-0.5">
+            <div>
+              <b>Khoảng ngày đã chọn thiếu dữ liệu theo ngày</b> — chỉ{' '}
+              <b>
+                {coverageGaps.covered}/{coverageGaps.days} ngày
+              </b>{' '}
+              có số liệu. Thiếu: <b>{coverageGaps.missingLabel}</b>.
+            </div>
+            <div>
+              Các số bên dưới <b>chỉ cộng {coverageGaps.covered} ngày có dữ liệu</b> nên{' '}
+              <b>thấp hơn thực tế</b> — đừng đọc như tổng cả kỳ.
+              {!coverageGaps.comparable && ' % so kỳ trước đã được ẩn vì hai kỳ không cùng số ngày có dữ liệu.'}
+            </div>
+            <div className="text-[11px] text-amber-700">
+              Nguyên nhân: tab <code className="text-[10px]">History_Daily</code> chỉ có cột per-day (Users/Install theo
+              ngày) đến <b>{coverageGaps.lastCovered ?? '—'}</b>; sau đó chỉ còn dòng{' '}
+              <code className="text-[10px]">l7_snapshot</code> (rolling 7 ngày, không cộng dồn được). Cần chạy lại
+              backfill per-day trong Apps Script của Sheet để lấp khoảng trống.
+            </div>
+          </div>
+        </div>
+      )}
 
       <section
         id="sec-kpis"
