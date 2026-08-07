@@ -147,11 +147,46 @@ export function buildCampGeoIndex(campLinks: CampLinkRow[]): Map<string, CampGeo
   return index;
 }
 
-// Countries the account never advertises in (confirmed by Trang 2026-07). Two
-// uses: (1) a blank Geo cell means "all countries EXCEPT these"; (2) these are
-// never flagged as a coverage GAP — "chưa bid ở India/Vietnam" is intentional,
-// not something to alert on. Names use Country_L* canonical EN spelling.
-const NEVER_TARGET_COUNTRIES = new Set(['India', 'Pakistan', 'Vietnam']);
+/**
+ * Countries the account never advertises in (rule confirmed by Trang 2026-08).
+ *
+ * The Geo column reads: a camp naming countries targets EXACTLY those; a camp
+ * leaving Geo blank targets everything EXCEPT this list. So the list is the
+ * account-level negative geo, and it applies on top of a camp's own exclusions
+ * too ("-IN" still doesn't mean the camp runs in Nigeria).
+ *
+ * Two uses: (1) resolving what a blank-Geo camp actually covers; (2) never
+ * flagging these as a coverage GAP — "chưa bid ở India" is intentional.
+ *
+ * Spelling: the tabs disagree on the Dominican Republic ('Dominican Rep' in
+ * 'Max bid cap' vs 'Dominican Republic' in Country_L*), so both are listed —
+ * a name that matches nothing is simply inert. NB: Trang's list says
+ * "Dominica"; no tab carries that island, so this reads it as the Dominican
+ * Republic. 'Palestinian Territory, Occupied' appears in neither tab today and
+ * is kept only so the rule stays complete if it shows up later.
+ */
+export const NEVER_TARGET_COUNTRIES = new Set([
+  'India',
+  'Nigeria',
+  'Vietnam',
+  'Pakistan',
+  'South Africa',
+  'Malaysia',
+  'Palestinian Territory, Occupied',
+  'Saudi Arabia',
+  'Morocco',
+  'Kenya',
+  'Dominica',
+  'Dominican Rep',
+  'Dominican Republic',
+  'Bangladesh',
+  'Venezuela',
+]);
+
+/** True when the account never bids in this country, whatever a camp's Geo says. */
+export function isNeverTargeted(country: string): boolean {
+  return NEVER_TARGET_COUNTRIES.has(country);
+}
 
 const covers = (geo: CampGeo, country: string): boolean => {
   switch (geo.mode) {

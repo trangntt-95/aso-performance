@@ -1,5 +1,5 @@
 import type { BidCapRow, CampLinkRow, MasterKwRow, ShopifyCampRow } from '@/lib/sheets/types';
-import { buildCampGeoIndex, type CampGeo } from '@/lib/sheets/campGeo';
+import { buildCampGeoIndex, isNeverTargeted, type CampGeo } from '@/lib/sheets/campGeo';
 import { normalizeCampName, buildCampNameResolver } from '@/lib/sheets/campName';
 
 // Detect OVERBID campaigns: paid camps (from Shopify_daily) whose effective
@@ -148,6 +148,19 @@ export function assessCamps(
     list.push({ country: r.country, bid: r.bidRecommended, cpi: r.cpiActual });
     cellsByCat.set(r.category, list);
   }
+  // Same cells minus the markets the account never advertises in. This is the
+  // benchmark for camps that DON'T name their countries (blank Geo, "all", or
+  // an exclude list): they run everywhere except the account-level negative geo,
+  // so the never-targeted markets must not sit in their average. They're the
+  // cheap ones, so leaving them in dragged the allowed bid down and flagged
+  // camps as overbid against a bar they were never bidding into.
+  // A camp that DOES name its countries keeps the full list — an explicit Geo
+  // wins over the account default (Trang's rule: "nói rõ geo thì target đúng
+  // các nước đó").
+  const targetableByCat = new Map<string, Cell[]>();
+  cellsByCat.forEach((cells, cat) => {
+    targetableByCat.set(cat, cells.filter((c) => !isNeverTargeted(c.country)));
+  });
 
   // Camp_Links keeps un-annotated names, so key both the geo and URL lookups by
   // the note-stripped name and query with the same. Re-key the geo index
@@ -274,13 +287,18 @@ export function assessCamps(
     const cpi = c.installs > 0 ? c.spend / c.installs : null;
 
     // Resolve target cells from Camp_Links Geo; blank/missing geo = general.
+    // General = every country in the category EXCEPT the account-level negative
+    // geo, which is what a blank Geo cell actually means.
     const geo = geoIndex.get(campKey);
-    let targetCells: Cell[] = catCells;
+    const generalCells = targetableByCat.get(category) ?? catCells;
+    let targetCells: Cell[] = generalCells;
     let matchLevel: 'country' | 'category' = 'category';
-    let countryLabel = `general · avg ${category}`;
+    let countryLabel = `general · avg ${category} (trừ nước không target)`;
     let countries: string[] = [];
 
     if (geo && geo.mode === 'include' && geo.countries.length > 0) {
+      // Explicit Geo wins over the account default — compare against exactly
+      // the countries named, even if one of them is normally excluded.
       const set = new Set(geo.countries);
       const picked = catCells.filter((x) => set.has(x.country));
       if (picked.length > 0) {
@@ -290,8 +308,9 @@ export function assessCamps(
         countryLabel = countries.join(', ');
       }
     } else if (geo && geo.mode === 'exclude' && geo.countries.length > 0) {
+      // The camp's own exclusions stack ON TOP of the account-level ones.
       const set = new Set(geo.countries);
-      const picked = catCells.filter((x) => !set.has(x.country));
+      const picked = generalCells.filter((x) => !set.has(x.country));
       if (picked.length > 0) {
         targetCells = picked;
         matchLevel = 'country';
@@ -299,7 +318,8 @@ export function assessCamps(
         countryLabel = `trừ ${geo.countries.join(', ')}`;
       }
     }
-    // mode 'all' / 'unknown' / not-in-Camp_Links → keep general (category avg).
+    // mode 'all' / 'unknown' / not-in-Camp_Links → general (category avg minus
+    // the never-targeted markets).
 
     const targetBid = avg(targetCells, (x) => x.bid) || null;
     const targetCpi = avg(targetCells, (x) => x.cpi) || null;
