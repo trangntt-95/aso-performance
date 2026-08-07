@@ -14,6 +14,7 @@ import { PaidStatusBadge } from '@/components/shared/PaidStatusBadge';
 import { SurfaceIcon } from '@/components/shared/SurfaceIcon';
 import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
+import { buildCountryBidIndex, bidPressureFor, type BidPressureSummary } from '@/lib/market/countryBid';
 import { normKw } from '@/lib/sheets/kwNorm';
 import {
   buildPaidStatusIndex,
@@ -62,9 +63,11 @@ interface CoverageRow extends PaidStatus {
   countries: { name: string; users: number }[];
   /** Geo coverage of the camps bidding this kw (master active camps or manual). */
   coverage: CountryCoverage | null;
+  /** Per-country bid pressure: where the category pays above its Bid Rec. */
+  bidPressure: BidPressureSummary | null;
 }
 
-type StatusFilter = 'all' | 'not_in_paid' | 'not_in_paid_strict' | 'paused' | 'in_paid' | 'manual' | 'negative' | 'geo_gap';
+type StatusFilter = 'all' | 'not_in_paid' | 'not_in_paid_strict' | 'paused' | 'in_paid' | 'manual' | 'negative' | 'over_bid';
 type Win = 'l7' | 'l30' | 'l90' | 'l365';
 
 const WIN_LABEL: Record<Win, string> = { l7: 'L7', l30: 'L30', l90: 'L90', l365: 'L365' };
@@ -86,6 +89,7 @@ function buildRows(data: SheetPayload): CoverageRow[] {
     data.pausedKw ?? [],
   );
   const geoIndex = buildCampGeoIndex(data.campLinks ?? []);
+  const bidIndex = buildCountryBidIndex(data.bidCap ?? []);
 
   interface Acc {
     keyword: string;
@@ -186,6 +190,9 @@ function buildRows(data: SheetPayload): CoverageRow[] {
       coverageCamps.length > 0
         ? resolveCountryCoverage(coverageCamps, countries.map((c) => c.name), geoIndex)
         : null;
+    const bidPressure = countries.length
+      ? bidPressureFor(acc.category, countries.map((c) => c.name), bidIndex)
+      : null;
     out.push({
       keyword: acc.keyword,
       english: acc.english,
@@ -198,6 +205,7 @@ function buildRows(data: SheetPayload): CoverageRow[] {
       countriesByWin,
       countries,
       coverage,
+      bidPressure,
       ...status,
     });
   });
@@ -214,29 +222,56 @@ function WinCell({ stat }: { stat: WinStat | null }) {
   );
 }
 
-function GeoCell({ row }: { row: CoverageRow }) {
-  if (!row.coverage) {
-    return <td className="px-2 py-1.5 text-center text-slate-300">—</td>;
+const money = (n: number) => `$${n.toFixed(2)}`;
+
+function BidPressureCell({ row }: { row: CoverageRow }) {
+  const p = row.bidPressure;
+  if (!p || (p.over.length === 0 && p.under.length === 0)) {
+    return (
+      <td
+        className="px-2 py-1.5 text-center text-slate-300"
+        title="Chưa có nước nào của keyword này ghi nhận spend + clicks thật trong 'Max bid cap' (L30) để tính CPC."
+      >
+        —
+      </td>
+    );
   }
-  const { gaps } = row.coverage;
-  if (gaps.length > 0) {
+  if (p.over.length === 0) {
+    const best = p.under[0];
     return (
       <td className="px-2 py-1.5 align-top">
         <span
-          className="text-[10px] text-rose-700 font-medium"
-          title={`Có traffic nhưng KHÔNG camp nào target: ${gaps.join(', ')}`}
+          className="text-[10px] text-emerald-700"
+          title={`Mọi nước đo được đều trả dưới Bid Rec. Sát nhất: ${best.country} ${money(best.cpc)} vs ${money(best.bidRec)} (${Math.round(best.overPct * 100)}%).`}
         >
-          ⚠ Chưa bid: {gaps.slice(0, 3).join(', ')}
-          {gaps.length > 3 && ` +${gaps.length - 3}`}
+          ✓ trong ngưỡng ({p.under.length} nước)
         </span>
       </td>
     );
   }
+  const worst = p.over[0];
+  const tone = worst.overPct >= 0.5 ? 'text-rose-700' : 'text-amber-700';
+  const title = [
+    `Trả trên Bid Rec ở ${p.over.length} nước (CPC = spend/clicks L30 của Category × Country):`,
+    ...p.over.map(
+      (c) =>
+        `  ${c.country}: ${money(c.cpc)} vs Bid Rec ${money(c.bidRec)} = +${Math.round(c.overPct * 100)}% · ${c.clicksL30} clicks · $${Math.round(c.spendL30)}${c.status ? ` · ${c.status}` : ''}`,
+    ),
+    p.under.length > 0 ? `Trong ngưỡng ở ${p.under.length} nước.` : '',
+    p.unmeasured.length > 0 ? `Chưa đo được ${p.unmeasured.length} nước (không có spend L30).` : '',
+    'Độ phân giải là Category × Country, không phải theo từng keyword — sheet không có spend theo keyword.',
+  ]
+    .filter(Boolean)
+    .join('\n');
   return (
     <td className="px-2 py-1.5 align-top">
-      <span className="text-[10px] text-emerald-700" title="Mọi country có traffic đều được ≥1 camp cover (ô Geo trống = coi như target tất cả nước)">
-        ✓ đủ
+      <span className={cn('text-[10px] font-medium cursor-help', tone)} title={title}>
+        ⚠ {worst.country} +{Math.round(worst.overPct * 100)}%
+        {p.over.length > 1 && ` +${p.over.length - 1} nước`}
       </span>
+      <div className="text-[9px] text-slate-400 font-mono">
+        {money(worst.cpc)} / {money(worst.bidRec)}
+      </div>
     </td>
   );
 }
@@ -284,9 +319,9 @@ export function PaidCoverageView() {
         if (statusFilter === 'not_in_paid' && (r.inPaid || r.negative)) return false;
         // strict variant: also EXCLUDES paused camp (chưa từng được bid thật sự).
         if (statusFilter === 'not_in_paid_strict' && (r.inPaid || r.negative || r.paused)) return false;
-        if (statusFilter === 'geo_gap') {
-          if (!r.coverage || r.coverage.gaps.length === 0) return false;
-          if (countryFilter !== 'all' && !r.coverage.gaps.includes(countryFilter)) return false;
+        if (statusFilter === 'over_bid') {
+          if (!r.bidPressure || r.bidPressure.over.length === 0) return false;
+          if (countryFilter !== 'all' && !r.bidPressure.over.some((c) => c.country === countryFilter)) return false;
         } else if (countryFilter !== 'all' && !r.countries.some((c) => c.name === countryFilter)) {
           return false;
         }
@@ -370,7 +405,7 @@ export function PaidCoverageView() {
             <option value="in_paid">📌 In Paid (Master)</option>
             <option value="manual">✍️ Added (manual)</option>
             <option value="negative">🚫 Negative list</option>
-            <option value="geo_gap">🌍 In Paid nhưng thiếu country</option>
+            <option value="over_bid">💸 Trả trên Bid Rec (theo nước)</option>
             <option value="all">Status: All</option>
           </select>
           <select
@@ -494,7 +529,12 @@ export function PaidCoverageView() {
                   Countries · {WIN_LABEL[countryWin]}
                 </th>
                 <th className="px-2 py-2 text-left font-medium">Paid?</th>
-                <th className="px-2 py-2 text-left font-medium" title="Country coverage của camp active (cần Geo trong Camp_Links)">Geo</th>
+                <th
+                  className="px-2 py-2 text-left font-medium"
+                  title="CPC thực (spend/clicks L30 của Category × Country trong 'Max bid cap') so với Bid Rec ⭐ của chính nước đó. Chỉ hiện nước có spend thật; ô '—' = chưa đủ dữ liệu để nói."
+                >
+                  Bid vs Rec
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -550,7 +590,7 @@ export function PaidCoverageView() {
                         </span>
                       )}
                     </td>
-                    <GeoCell row={row} />
+                    <BidPressureCell row={row} />
                   </tr>
                 );
               })}
