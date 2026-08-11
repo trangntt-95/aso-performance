@@ -432,7 +432,7 @@ export function OverbidView() {
                 <SortHead label="Spend" col="spend" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <th
                   className="px-2 py-2 text-left font-medium min-w-[7rem]"
-                  title="Tác động thật sau khi bạn note hạ bid: CPC và impressions/ngày của camp, 14 ngày TRƯỚC note vs 14 ngày SAU (từ export Shopify theo ngày). CPC giảm mà impressions giữ = hạ bid thành công."
+                  title="Tác động thật sau khi bạn note hạ bid, 14 ngày TRƯỚC vs 14 ngày SAU (export Shopify theo ngày). Đường biểu diễn là impressions/ngày — chỉ số duy nhất đủ dày để vẽ. CPC và CPI hiện ngay dưới dạng số. Thành công = CPC/CPI giảm mà impressions giữ được."
                 >
                   Impact bid
                 </th>
@@ -535,9 +535,10 @@ export function OverbidView() {
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
             CPC = Spend/Clicks (proxy cho bid đang trả) · CPI = Spend/Installs · bid/CPI cho phép = trung bình từ Max bid cap ·
             🎯 = nước target từ Geo (Camp_Links), <span className="text-amber-600">🌐</span> = general (avg cả category) ·
-            <b> Impact bid</b> = CPC + impressions/ngày của camp, 14 ngày trước note vs 14 ngày sau (export Shopify theo ngày);
-            <span className="text-emerald-600"> CPC giảm + imp giữ = hạ bid thành công</span>,
-            <span className="text-rose-600"> imp rơi mạnh = hạ quá tay</span>, <b>?</b> = quá ít click để tin CPC ·
+            <b> Impact bid</b> = 14 ngày trước note vs 14 ngày sau (export Shopify theo ngày): đường vẽ là
+            <b> impressions/ngày</b>, kèm <b>CPC</b> và <b>CPI</b> dạng số;
+            <span className="text-emerald-600"> chi phí giảm + imp giữ = hạ bid thành công</span>,
+            <span className="text-rose-600"> imp rơi mạnh = hạ quá tay</span>, <b>?</b> = quá ít click/install để tin số đó ·
             <b> click cột để sort</b> ·{' '}
             {view === 'fixed'
               ? 'mặc định sắp theo ngày note mới nhất · * = note lưu dưới tên cũ của camp'

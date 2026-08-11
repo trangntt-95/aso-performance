@@ -51,11 +51,16 @@ export interface CampBidImpact {
   after: CampWindowStats | null;
   /** Relative change after vs before; null when either side is missing. */
   cpcDelta: number | null;
+  cpiDelta: number | null;
   impDelta: number | null;
   installDelta: number | null;
   spendDelta: number | null;
   /** False when either block is too thin for CPC to mean anything. */
   cpcReliable: boolean;
+  /** False when either block converted too few installs for CPI to mean
+   *  anything. Far stricter in practice than cpcReliable — installs are an
+   *  order of magnitude rarer than clicks here. */
+  cpiReliable: boolean;
   /** Daily impressions series for the sparkline. */
   series: { t: number; v: number | null }[];
 }
@@ -128,6 +133,8 @@ export interface BidImpactOptions {
   minAfterDays?: number;
   /** Below this many clicks in a block, CPC is not reported as reliable. Default 5. */
   minClicksForCpc?: number;
+  /** Below this many installs in a block, CPI is not reported as reliable. Default 3. */
+  minInstallsForCpi?: number;
 }
 
 /**
@@ -143,12 +150,13 @@ export function campBidImpact(
   const win = opts.windowDays ?? 14;
   const minAfter = opts.minAfterDays ?? 7;
   const minClicks = opts.minClicksForCpc ?? 5;
+  const minInstalls = opts.minInstallsForCpi ?? 3;
 
   const series = (rows ?? []).map((r) => ({ t: Date.parse(r.date), v: r.impressions }));
   const empty = {
     noteAt: noteAtMs, before: null, after: null,
-    cpcDelta: null, impDelta: null, installDelta: null, spendDelta: null,
-    cpcReliable: false, series,
+    cpcDelta: null, cpiDelta: null, impDelta: null, installDelta: null, spendDelta: null,
+    cpcReliable: false, cpiReliable: false, series,
   };
   if (!rows || rows.length === 0) return { ...empty, status: 'no-data' };
 
@@ -171,6 +179,7 @@ export function campBidImpact(
 
   const rel = (a: number, b: number): number | null => (b > 0 ? (a - b) / b : null);
   const cpcReliable = before.clicks >= minClicks && after.clicks >= minClicks;
+  const cpiReliable = before.installs >= minInstalls && after.installs >= minInstalls;
 
   return {
     status: 'measured',
@@ -178,10 +187,12 @@ export function campBidImpact(
     before,
     after,
     cpcDelta: before.cpc !== null && after.cpc !== null ? rel(after.cpc, before.cpc) : null,
+    cpiDelta: before.cpi !== null && after.cpi !== null ? rel(after.cpi, before.cpi) : null,
     impDelta: rel(after.impPerDay, before.impPerDay),
     installDelta: rel(after.installs, before.installs),
     spendDelta: rel(after.spend, before.spend),
     cpcReliable,
+    cpiReliable,
     series,
   };
 }
