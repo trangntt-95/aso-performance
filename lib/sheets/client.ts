@@ -60,7 +60,9 @@ export async function fetchTab(tabName: string): Promise<string[][]> {
  * every caller degrades to the old behaviour rather than failing the payload.
  */
 export async function fetchShopifyDailyRows(): Promise<unknown[][]> {
-  const id = process.env.GOOGLE_SHEET_ID_SHOPIFY;
+  // Trimmed: a value set through a shell pipe can carry a trailing newline,
+  // which the Sheets API rejects as a malformed spreadsheet id.
+  const id = process.env.GOOGLE_SHEET_ID_SHOPIFY?.trim();
   if (!id) return [];
   try {
     const sheets = getSheetsClient();
