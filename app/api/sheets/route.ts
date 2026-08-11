@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchAllTabs, fetchShopifyDailyRows } from '@/lib/sheets/client';
+import { normalizeCampName } from '@/lib/sheets/campName';
 import {
   parseActionQueue,
   parseAlertLog,
@@ -37,6 +38,11 @@ export async function GET() {
     // (~100k rows) and the impact read only ever looks a few weeks either side
     // of a note.
     const shopifySince = new Date(Date.now() - 200 * 86400000).toISOString().slice(0, 10);
+    // Restrict the per-day rows to the camps the dashboard actually shows.
+    const shopifyCampsParsed = parseShopifyCamps(raw['Shopify_daily'] ?? []);
+    const shopifyCampAllow = new Set(
+      shopifyCampsParsed.map((c) => normalizeCampName(c.camp).toLowerCase()),
+    );
     const masterKwLookup = parseMasterKw(raw['Master KW Lookup'] ?? []);
     const langKws = languageOnlyKeywords(masterKwLookup);
     // Language reclassify, then category fixes (brand, "profit" → Profit, tracker → Feature).
@@ -74,7 +80,7 @@ export async function GET() {
       bidCap: parseBidCap(raw['Max bid cap'] ?? []),
       shopifyCamps: parseShopifyCamps(raw['Shopify_daily'] ?? []),
       shopifyDateRange: parseShopifyDateRange(raw['Shopify_daily'] ?? []),
-      shopifyDaily: parseShopifyDaily(shopifyDailyRaw, shopifySince),
+      shopifyDaily: parseShopifyDaily(shopifyDailyRaw, shopifySince, shopifyCampAllow),
       negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
       windowDates,
       fetchedAt: new Date().toISOString(),

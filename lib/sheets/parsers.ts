@@ -1,3 +1,4 @@
+import { normalizeCampName } from './campName';
 import type {
   ActionQueueRow,
   AlertLogRow,
@@ -826,7 +827,15 @@ export function parseAlertLog(rows: string[][]): AlertLogRow[] {
  */
 const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30);
 
-export function parseShopifyDaily(rows: unknown[][], sinceIso?: string): ShopifyDailyRow[] {
+export function parseShopifyDaily(
+  rows: unknown[][],
+  sinceIso?: string,
+  /** Only keep these camps (note-stripped, lowercased). The tab covers every
+   *  campaign that ever ran — 777 of them — while the dashboard only ever asks
+   *  about the ~250 in Shopify_daily. Without this the payload grows ~6MB for
+   *  rows nothing reads. */
+  campAllow?: Set<string>,
+): ShopifyDailyRow[] {
   if (!rows || rows.length < 3) return [];
   const out: ShopifyDailyRow[] = [];
   for (let i = 0; i < rows.length; i++) {
@@ -844,13 +853,21 @@ export function parseShopifyDaily(rows: unknown[][], sinceIso?: string): Shopify
     }
     if (!dateIso) continue;
     if (sinceIso && dateIso < sinceIso) continue;
+    if (campAllow && !campAllow.has(normalizeCampName(camp).toLowerCase())) continue;
+    const impressions = num(row[2]);
+    const clicks = num(row[3]);
+    const installs = num(row[4]);
+    const spend = num(row[5]);
+    // A day the campaign did nothing carries no information for a before/after
+    // read, and there are a lot of them.
+    if (impressions === 0 && clicks === 0 && installs === 0 && spend === 0) continue;
     out.push({
       date: dateIso,
       camp,
-      impressions: num(row[2]),
-      clicks: num(row[3]),
-      installs: num(row[4]),
-      spend: num(row[5]),
+      impressions,
+      clicks,
+      installs,
+      spend,
     });
   }
   return out;
