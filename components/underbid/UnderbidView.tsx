@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Search, X, ExternalLink, AlertTriangle, ChevronDown } from 'lucide-react';
+import { Pin, AlertCircle, Search, X, ExternalLink, AlertTriangle, ChevronDown } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
@@ -131,43 +131,120 @@ function CampOne({ camp }: { camp: import('@/lib/market/underbid').UnderbidCamp 
   );
 }
 
-function CampCell({ camps, manual }: { camps: import('@/lib/market/underbid').UnderbidCamp[]; manual: boolean }) {
+function CampCell({
+  camps,
+  manual,
+  chosen,
+  onChoose,
+}: {
+  camps: import('@/lib/market/underbid').UnderbidCamp[];
+  manual: boolean;
+  /** Name of the camp the user pinned as the one they actually tune. */
+  chosen: string | null;
+  onChoose: (campName: string | null) => void;
+}) {
   const [open, setOpen] = useState(false);
+
+  if (camps.length === 0) {
+    return (
+      <td className="px-2 py-2 min-w-[12rem]">
+        <span className="text-slate-400 text-[11px]">—</span>
+        {manual && <span className="text-[10px] text-slate-400"> ✍️ added manual</span>}
+      </td>
+    );
+  }
+
+  // A keyword bid in several camps is ambiguous: which one do you actually go
+  // and change the bid on? Once picked, that choice is the only camp shown —
+  // the rest are noise on every future visit. Stored server-side (App_Notes)
+  // so it follows the user across devices, same as the notes themselves.
+  const pinned = chosen ? camps.find((c) => c.name === chosen) : undefined;
+  // A pinned camp that no longer appears (renamed, paused) must not silently
+  // hide the real camps — fall back to the full list and say why.
+  const staleChoice = chosen !== null && !pinned;
+
+  if (pinned) {
+    return (
+      <td className="px-2 py-2 min-w-[12rem]">
+        <div className="flex items-center gap-1">
+          <Pin className="h-3 w-3 shrink-0 text-indigo-500" />
+          <CampOne camp={pinned} />
+          <button
+            type="button"
+            onClick={() => onChoose(null)}
+            className="rounded px-1 text-[10px] text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            title={`Bỏ ghim. Keyword này nằm trong ${camps.length} camp — bỏ ghim để xem lại tất cả.`}
+          >
+            đổi
+          </button>
+        </div>
+        {camps.length > 1 && (
+          <div className="text-[9px] text-slate-400">đã ghim · ẩn {camps.length - 1} camp khác</div>
+        )}
+        {manual && <span className="text-[10px] text-slate-400">✍️ added manual</span>}
+      </td>
+    );
+  }
+
   const extra = camps.length - 1;
+  const single = camps.length === 1;
 
   return (
     <td className="px-2 py-2 min-w-[12rem]">
-      {camps.length === 0 ? (
-        <span className="text-slate-400 text-[11px]">—</span>
-      ) : (
-        <div className="flex flex-col gap-0.5">
-          {/* Always-visible first line + toggle for the rest */}
-          <div className="flex items-center gap-1">
-            <CampOne camp={camps[0]} />
-            {extra > 0 && (
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-1">
+          <CampOne camp={camps[0]} />
+          {!single && (
+            <button
+              type="button"
+              onClick={() => onChoose(camps[0].name)}
+              className="rounded px-1 text-[10px] text-slate-400 hover:bg-indigo-50 hover:text-indigo-700"
+              title="Ghim camp này là camp chính để chỉnh bid — các lần sau chỉ hiện camp này."
+            >
+              ghim
+            </button>
+          )}
+          {extra > 0 && (
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              title={open ? 'Thu gọn' : `Xem thêm ${extra} camp`}
+            >
+              <ChevronDown className={cn('h-3 w-3 transition-transform', open && 'rotate-180')} />
+              {open ? 'Thu gọn' : `+${extra}`}
+            </button>
+          )}
+        </div>
+        {staleChoice && (
+          <div className="text-[9px] text-amber-600" title={`Camp đã ghim ("${chosen}") không còn trong danh sách camp đang chạy của keyword này.`}>
+            ⚠️ camp đã ghim không còn chạy
+          </div>
+        )}
+        {open &&
+          camps.slice(1).map((c, i) => (
+            <div key={i} className="flex items-center gap-1 pl-0.5">
+              <CampOne camp={c} />
               <button
                 type="button"
-                onClick={() => setOpen((v) => !v)}
-                className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                title={open ? 'Thu gọn' : `Xem thêm ${extra} camp`}
+                onClick={() => onChoose(c.name)}
+                className="rounded px-1 text-[10px] text-slate-400 hover:bg-indigo-50 hover:text-indigo-700"
+                title="Ghim camp này là camp chính để chỉnh bid"
               >
-                <ChevronDown className={cn('h-3 w-3 transition-transform', open && 'rotate-180')} />
-                {open ? 'Thu gọn' : `+${extra}`}
+                ghim
               </button>
-            )}
-          </div>
-          {open &&
-            camps.slice(1).map((c, i) => (
-              <div key={i} className="pl-0.5">
-                <CampOne camp={c} />
-              </div>
-            ))}
-        </div>
-      )}
+            </div>
+          ))}
+      </div>
       {manual && <span className="text-[10px] text-slate-400">✍️ added manual</span>}
     </td>
   );
 }
+
+// Scope for the pinned-camp choice. Separate from the 'underbid' note scope so
+// pinning a camp never disturbs a note's updatedAt — that timestamp is the
+// measurement anchor for the Impact bid column.
+const CAMP_SCOPE = 'underbid-camp';
 
 export function UnderbidView() {
   const { data, isLoading, error } = useSheetData();
@@ -176,6 +253,12 @@ export function UnderbidView() {
   const loadNotes = useNotesStore((s) => s.load);
   const notesLoaded = useNotesStore((s) => s.loaded);
   const noteTimes = useNotesStore((s) => s.updatedAt);
+  const allNotes = useNotesStore((s) => s.notes);
+  const setNote = useNotesStore((s) => s.setNote);
+  const chosenCampOf = (term: string): string | null =>
+    allNotes[noteKeyOf(CAMP_SCOPE, term)] || null;
+  const chooseCamp = (term: string, campName: string | null) =>
+    setNote(CAMP_SCOPE, term, campName ?? '');
   useEffect(() => {
     loadNotes();
   }, [loadNotes]);
@@ -492,7 +575,12 @@ export function UnderbidView() {
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       <span className="font-mono text-[11px] font-semibold text-amber-700">{formatPercent(r.paidShare)}</span>
                     </td>
-                    <CampCell camps={r.camps} manual={r.inPaidSource === 'manual'} />
+                    <CampCell
+                      camps={r.camps}
+                      manual={r.inPaidSource === 'manual'}
+                      chosen={chosenCampOf(r.term)}
+                      onChoose={(name) => chooseCamp(r.term, name)}
+                    />
                     <ImpactCell impact={impactOf(r.term)} onOpen={() => openKeyword(r.term, { surface: 'paid' })} />
                     <NoteCell scope="underbid" noteId={r.term} />
                   </tr>

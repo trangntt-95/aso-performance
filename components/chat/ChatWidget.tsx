@@ -17,6 +17,7 @@ const PAGE_BY_PATH: Record<string, string> = {
   '/paid-coverage': 'Paid Coverage',
   '/underbid': 'Underbid Keywords',
   '/overbid-camps': 'Overbid Camps',
+  '/camp-health': 'Camp Health',
   '/bid-cap': 'Bid Recommendations',
 };
 

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, BookOpen, LayoutDashboard, Crosshair, DollarSign, TrendingUp, Flame } from 'lucide-react';
+import { BarChart3, BookOpen, LayoutDashboard, Crosshair, DollarSign, TrendingUp, Flame, HeartPulse } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 
@@ -20,6 +20,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/paid-coverage', label: 'Paid Coverage', Icon: Crosshair, shortLabel: 'Paid' },
   { href: '/underbid', label: 'Underbid Keywords', Icon: TrendingUp, shortLabel: 'Underbid' },
   { href: '/overbid-camps', label: 'Overbid Camps', Icon: Flame, shortLabel: 'Overbid' },
+  { href: '/camp-health', label: 'Camp Health', Icon: HeartPulse, shortLabel: 'Health' },
   { href: '/bid-cap', label: 'Bid Recommendations', Icon: DollarSign, shortLabel: 'Bids' },
 ];
 

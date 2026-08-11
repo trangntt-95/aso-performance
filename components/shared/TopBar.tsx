@@ -10,6 +10,7 @@ const TITLES: Record<string, string> = {
   '/paid-coverage': 'Paid Coverage',
   '/underbid': 'Underbid Keywords',
   '/overbid-camps': 'Overbid Camps',
+  '/camp-health': 'Camp Health',
   '/bid-cap': 'Bid Recommendations',
   '/trends': 'Trends',
 };
