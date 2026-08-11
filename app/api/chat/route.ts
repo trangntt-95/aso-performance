@@ -98,6 +98,9 @@ async function fetchPayload(): Promise<SheetPayload> {
     history: parseHistory(raw['History'] ?? []),
     historyDaily: parseHistoryDaily(raw['History_Daily'] ?? []),
     historyDailyCountry: parseHistoryDailyCountry(raw['History_Daily_Country'] ?? []),
+    // The chat context doesn't reason over per-day spend; skip the second-sheet
+    // fetch so the assistant stays fast.
+    shopifyDaily: [],
     alertLog: parseAlertLog(raw['AlertLog'] ?? []),
     kwAddedManual: parseKwAddedManual(raw['KW_Added_Manual'] ?? []),
     masterKwLookup,

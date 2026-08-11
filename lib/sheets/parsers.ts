@@ -11,6 +11,7 @@ import type {
   FunnelBreakdown,
   HistoryDailyRow,
   HistoryDailyCountryRow,
+  ShopifyDailyRow,
   HistoryRow,
   KeywordRow,
   KwAddedManualRow,
@@ -815,6 +816,46 @@ export function parseAlertLog(rows: string[][]): AlertLogRow[] {
  *          | crDaily | posDaily | source
  * Returns [] when the tab is absent — the job that writes it may not have run.
  */
+/**
+ * 'By campaign' tab of the Shopify Ads sheet → one row per campaign per day.
+ * Layout: row 1 blank, row 2 header (Date | Campaign | Impressions | Clicks |
+ * Installs | Spend), row 3+ data. Dates arrive as Excel serials.
+ *
+ * `sinceIso` trims the result to a recent window — the tab holds ~100k rows
+ * going back to 2025-01 and shipping all of it would bloat the payload.
+ */
+const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30);
+
+export function parseShopifyDaily(rows: unknown[][], sinceIso?: string): ShopifyDailyRow[] {
+  if (!rows || rows.length < 3) return [];
+  const out: ShopifyDailyRow[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length < 6) continue;
+    const rawDate = row[0];
+    const camp = str(row[1]);
+    if (!camp || camp.toLowerCase() === 'campaign') continue;
+    let dateIso: string | null = null;
+    if (typeof rawDate === 'number' && Number.isFinite(rawDate) && rawDate > 20000 && rawDate < 90000) {
+      dateIso = new Date(EXCEL_EPOCH_MS + rawDate * 86400000).toISOString().slice(0, 10);
+    } else {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(str(rawDate));
+      if (m) dateIso = m[0];
+    }
+    if (!dateIso) continue;
+    if (sinceIso && dateIso < sinceIso) continue;
+    out.push({
+      date: dateIso,
+      camp,
+      impressions: num(row[2]),
+      clicks: num(row[3]),
+      installs: num(row[4]),
+      spend: num(row[5]),
+    });
+  }
+  return out;
+}
+
 export function parseHistoryDailyCountry(rows: string[][]): HistoryDailyCountryRow[] {
   if (!rows || rows.length < 2) return [];
   return rows

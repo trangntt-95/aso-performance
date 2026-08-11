@@ -6,7 +6,7 @@ import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { CampImpactCell } from '@/components/overbid/CampImpactCell';
 import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
-import { buildCampPaidShareIndex, summarizeImpact, type CampImpactSeries, type NoteImpact } from '@/lib/market/noteImpact';
+import { buildCampDailyIndex, campBidImpact, type CampBidImpact } from '@/lib/market/campBidImpact';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -226,22 +226,14 @@ export function OverbidView() {
     return map;
   }, [overbidRows, noteSnapshot]);
 
-  // Bid-impact: after you note a camp as overbid (and hop into ASA to cut the
-  // bid), did the camp keep its paid traffic? Measured on the camp's keywords —
-  // Shopify_daily carries no daily cost, so traffic is what History_Daily can
-  // actually show. Uses the LIVE note timestamp (not the hide snapshot) so a
+  // Bid-impact: after you note a camp and cut its bid in ASA, what actually
+  // changed? Read straight from the per-day Shopify export — 14 days before the
+  // note vs 14 after. Uses the LIVE note timestamp (not the hide snapshot) so a
   // camp you just noted reads "chờ dữ liệu" straight away.
-  const campShare = useMemo(
-    () => buildCampPaidShareIndex(data?.historyDaily ?? [], data?.masterKwLookup ?? []),
-    [data?.historyDaily, data?.masterKwLookup],
-  );
-  const impactOf = (
-    r: OverbidRow,
-    noteAt: number | null,
-  ): { impact: NoteImpact | null; series: CampImpactSeries | undefined } => {
-    const series = campShare.get(r.camp);
-    if (noteAt === null) return { impact: null, series };
-    return { impact: summarizeImpact(series?.points, noteAt), series };
+  const campDaily = useMemo(() => buildCampDailyIndex(data?.shopifyDaily ?? []), [data?.shopifyDaily]);
+  const impactOf = (r: OverbidRow, noteAt: number | null): CampBidImpact | null => {
+    if (noteAt === null) return null;
+    return campBidImpact(campDaily.get(r.camp), noteAt);
   };
 
   const categoryOptions = useMemo(() => {
@@ -440,7 +432,7 @@ export function OverbidView() {
                 <SortHead label="Spend" col="spend" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <th
                   className="px-2 py-2 text-left font-medium min-w-[7rem]"
-                  title="Tác động sau khi bạn note hạ bid: paid share của các keyword thuộc camp, trước note → ~10 ngày sau. Giữ nguyên (±2đ%) = hạ bid mà không mất traffic ✅; giảm mạnh = có thể hạ quá tay."
+                  title="Tác động thật sau khi bạn note hạ bid: CPC và impressions/ngày của camp, 14 ngày TRƯỚC note vs 14 ngày SAU (từ export Shopify theo ngày). CPC giảm mà impressions giữ = hạ bid thành công."
                 >
                   Impact bid
                 </th>
@@ -531,7 +523,7 @@ export function OverbidView() {
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">{formatNumber(r.clicks, { compact: true })}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">{formatNumber(r.installs, { compact: true })}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] font-semibold text-slate-800">${formatNumber(r.spend, { compact: true })}</td>
-                    <CampImpactCell impact={imp.impact} series={imp.series} />
+                    <CampImpactCell impact={imp} />
                     {/* Edit the note where it actually lives — under the camp's
                         old name if it was renamed after you wrote it. */}
                     <NoteCell scope="overbid" noteId={alias?.name ?? r.camp} />
@@ -543,9 +535,9 @@ export function OverbidView() {
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
             CPC = Spend/Clicks (proxy cho bid đang trả) · CPI = Spend/Installs · bid/CPI cho phép = trung bình từ Max bid cap ·
             🎯 = nước target từ Geo (Camp_Links), <span className="text-amber-600">🌐</span> = general (avg cả category) ·
-            <b> Impact bid</b> = paid share các keyword của camp (Master KW Lookup × History_Daily) trước note → ~10 ngày sau;
-            <span className="text-emerald-600"> giữ nguyên = hạ bid không mất traffic</span>,
-            <span className="text-amber-600"> giảm = có thể hạ quá tay</span> ·
+            <b> Impact bid</b> = CPC + impressions/ngày của camp, 14 ngày trước note vs 14 ngày sau (export Shopify theo ngày);
+            <span className="text-emerald-600"> CPC giảm + imp giữ = hạ bid thành công</span>,
+            <span className="text-rose-600"> imp rơi mạnh = hạ quá tay</span>, <b>?</b> = quá ít click để tin CPC ·
             <b> click cột để sort</b> ·{' '}
             {view === 'fixed'
               ? 'mặc định sắp theo ngày note mới nhất · * = note lưu dưới tên cũ của camp'

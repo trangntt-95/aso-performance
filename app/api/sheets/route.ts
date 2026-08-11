@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchAllTabs } from '@/lib/sheets/client';
+import { fetchAllTabs, fetchShopifyDailyRows } from '@/lib/sheets/client';
 import {
   parseActionQueue,
   parseAlertLog,
@@ -7,6 +7,7 @@ import {
   parseHistory,
   parseHistoryDaily,
   parseHistoryDailyCountry,
+  parseShopifyDaily,
   parseKeywordTab,
   parseCampLinks,
   parseKwAddedManual,
@@ -29,7 +30,13 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const raw = await fetchAllTabs();
+    // The per-day Shopify export lives in a second spreadsheet; fetch it
+    // alongside the main tabs. It resolves to [] if unconfigured/unreadable.
+    const [raw, shopifyDailyRaw] = await Promise.all([fetchAllTabs(), fetchShopifyDailyRows()]);
+    // Only a recent window ships to the client: the tab goes back to 2025-01
+    // (~100k rows) and the impact read only ever looks a few weeks either side
+    // of a note.
+    const shopifySince = new Date(Date.now() - 200 * 86400000).toISOString().slice(0, 10);
     const masterKwLookup = parseMasterKw(raw['Master KW Lookup'] ?? []);
     const langKws = languageOnlyKeywords(masterKwLookup);
     // Language reclassify, then category fixes (brand, "profit" → Profit, tracker → Feature).
@@ -67,6 +74,7 @@ export async function GET() {
       bidCap: parseBidCap(raw['Max bid cap'] ?? []),
       shopifyCamps: parseShopifyCamps(raw['Shopify_daily'] ?? []),
       shopifyDateRange: parseShopifyDateRange(raw['Shopify_daily'] ?? []),
+      shopifyDaily: parseShopifyDaily(shopifyDailyRaw, shopifySince),
       negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
       windowDates,
       fetchedAt: new Date().toISOString(),

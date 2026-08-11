@@ -322,6 +322,22 @@ export interface ShopifyCampRow {
   spend: number;
 }
 
+/**
+ * One campaign's spend for ONE day, from the separate Shopify Ads export sheet
+ * ('By campaign' tab). This is what makes a bid change measurable: the main
+ * sheet's Shopify_daily is a single aggregate row per camp for the whole period,
+ * so it has no before/after.
+ */
+export interface ShopifyDailyRow {
+  /** ISO yyyy-mm-dd. */
+  date: string;
+  camp: string;
+  impressions: number;
+  clicks: number;
+  installs: number;
+  spend: number;
+}
+
 export interface CampLinkRow {
   category: string;
   camp: string;
@@ -398,6 +414,9 @@ export interface SheetPayload {
   shopifyCamps: ShopifyCampRow[];
   /** Date range the Shopify_daily totals cover (from cell A2), e.g. "01/03/2026 → 14/06/2026". */
   shopifyDateRange: string;
+  /** Per-DAY campaign spend from the separate Shopify Ads sheet, trimmed to a
+   *  recent window. Empty when that sheet isn't configured or readable. */
+  shopifyDaily: ShopifyDailyRow[];
   /** Keywords explicitly set as negatives (from 'Negative KW list' tab, col B). */
   negativeKw: string[];
   /** Actual date range each window (L3/L7/...) covers, parsed from tab titles. */

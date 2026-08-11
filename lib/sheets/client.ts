@@ -48,6 +48,36 @@ export async function fetchTab(tabName: string): Promise<string[][]> {
   return (res.data.values || []) as string[][];
 }
 
+/**
+ * The Shopify Ads export lives in a SECOND spreadsheet ("Trang - shopify ad
+ * daily"), whose 'By campaign' tab carries one row per campaign PER DAY —
+ * Date | Campaign | Impressions | Clicks | Installs | Spend. The main sheet only
+ * has the month-total version, which is why a bid change could never be
+ * measured before/after. Kept as a separate spreadsheet on purpose: it holds
+ * ~100k rows and the main sheet has already hit the 10M-cell ceiling once.
+ *
+ * Returns [] when GOOGLE_SHEET_ID_SHOPIFY is unset or the tab can't be read, so
+ * every caller degrades to the old behaviour rather than failing the payload.
+ */
+export async function fetchShopifyDailyRows(): Promise<unknown[][]> {
+  const id = process.env.GOOGLE_SHEET_ID_SHOPIFY;
+  if (!id) return [];
+  try {
+    const sheets = getSheetsClient();
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: id,
+      // Columns G+ hold an unrelated date-picker widget and a pivot; A:F is the
+      // actual table. Row 1 is blank, row 2 is the header.
+      range: `'By campaign'!A:F`,
+      valueRenderOption: 'UNFORMATTED_VALUE',
+    });
+    return (res.data.values || []) as unknown[][];
+  } catch (e) {
+    console.error('fetchShopifyDailyRows failed:', (e as Error).message);
+    return [];
+  }
+}
+
 export async function fetchAllTabs(): Promise<Record<string, string[][]>> {
   const sheets = getSheetsClient();
   const result: Record<string, string[][]> = {};
