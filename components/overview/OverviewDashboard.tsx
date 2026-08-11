@@ -146,6 +146,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   });
   const [rangeFrom, setRangeFrom] = useState(() => initParam('from') ?? '');
   const [rangeTo, setRangeTo] = useState(() => initParam('to') ?? '');
+  // Market Performance series: core basket, everything, or both side by side.
+  const [marketSeries, setMarketSeries] = useState<'both' | 'core' | 'all'>('both');
   const [splitMetric, setSplitMetric] = useState<'users' | 'getapp' | 'cr'>(() => {
     const m = initParam('metric');
     return m === 'getapp' || m === 'cr' ? m : 'users';
@@ -802,16 +804,43 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             {isLoading ? (
               <Skeleton className="h-56" />
             ) : (
-              <MarketTrajectoryChart
-                data={trajectory}
-                metric="usersDelta"
-                activeWindow={window}
-                onWindowClick={(w) => {
-                  if (['L3', 'L7', 'L14', 'L30', 'L90', 'L365'].includes(w)) {
-                    setWindow(w as OverviewWindow);
-                  }
-                }}
-              />
+              <>
+                <div className="mb-2 flex justify-end">
+                  <div className="inline-flex overflow-hidden rounded-md border border-slate-200 text-[11px]">
+                    {([
+                      { id: 'both' as const, label: 'Cả hai', title: 'Vẽ song song core market và toàn bộ nước' },
+                      { id: 'core' as const, label: 'Core market', title: 'Chỉ rổ keyword chính, có trọng số theo nước' },
+                      { id: 'all' as const, label: 'Toàn bộ', title: 'Mọi keyword, mọi nước' },
+                    ]).map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        title={o.title}
+                        onClick={() => setMarketSeries(o.id)}
+                        className={cn(
+                          'px-2 py-1 font-medium transition',
+                          marketSeries === o.id
+                            ? 'bg-slate-900 text-white'
+                            : 'bg-white text-slate-600 hover:bg-slate-100',
+                        )}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <MarketTrajectoryChart
+                  data={trajectory}
+                  mode={marketSeries === 'both' ? 'compare' : 'single'}
+                  metric={marketSeries === 'core' ? 'weightedDelta' : 'usersDelta'}
+                  activeWindow={window}
+                  onWindowClick={(w) => {
+                    if (['L3', 'L7', 'L14', 'L30', 'L90', 'L365'].includes(w)) {
+                      setWindow(w as OverviewWindow);
+                    }
+                  }}
+                />
+              </>
             )}
           </SectionCard>
           <SectionCard

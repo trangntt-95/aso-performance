@@ -298,9 +298,16 @@ export function channelSnapshotForWindow(
 
 export interface MarketTrajectoryPoint {
   window: string;
+  /** Every keyword in the window, all countries — from the All_L* tabs. */
   usersDelta: number;
   getAppDelta: number;
+  /** Core market: the country-weighted basket index from Market_Index. */
   weightedDelta: number;
+  /** False when weightedDelta is just a copy of usersDelta because a focus is
+   *  active — the basket index is only published unfiltered, so the two series
+   *  would be identical and plotting both would imply agreement that isn't
+   *  there. */
+  coreAvailable: boolean;
   verdict: string;
 }
 
@@ -323,6 +330,7 @@ export function marketTrajectory(
       usersDelta,
       getAppDelta,
       weightedDelta: noFocus && m ? m.deltaWeightedPct * 100 : usersDelta,
+      coreAvailable: Boolean(noFocus && m),
       verdict: m?.verdict ?? '→ STABLE',
     };
   });

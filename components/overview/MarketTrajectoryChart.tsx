@@ -21,7 +21,15 @@ interface Props {
   height?: number;
   onWindowClick?: (window: string) => void;
   activeWindow?: string;
+  /** 'single' plots `metric` alone (bars coloured by sign, as before).
+   *  'compare' plots core market and all countries side by side — there the
+   *  colour encodes WHICH SERIES, since the sign is already legible from
+   *  whether the bar sits above or below the zero line. */
+  mode?: 'single' | 'compare';
 }
+
+const COLOR_CORE = '#4f46e5';
+const COLOR_ALL = '#0d9488';
 
 const COLOR_POS = '#059669';
 const COLOR_NEG = '#e11d48';
@@ -69,8 +77,20 @@ function CustomTooltip({ active, payload, label }: TooltipProps) {
       </div>
       <dl className="space-y-1">
         <div className="flex justify-between items-baseline gap-2">
-          <dt className="text-slate-500 truncate">Δ Users</dt>
-          <dd className={`font-medium tabular-nums shrink-0 ${toneCls(p.usersDelta)}`}>{fmtPct(p.usersDelta)}</dd>
+          <dt className="truncate text-slate-500">
+            <span className="mr-1 inline-block h-2 w-2 rounded-sm align-middle" style={{ background: COLOR_CORE }} />
+            Core market
+          </dt>
+          <dd className={`shrink-0 font-medium tabular-nums ${toneCls(p.weightedDelta)}`}>
+            {p.coreAvailable ? fmtPct(p.weightedDelta) : '—'}
+          </dd>
+        </div>
+        <div className="flex justify-between items-baseline gap-2">
+          <dt className="truncate text-slate-500">
+            <span className="mr-1 inline-block h-2 w-2 rounded-sm align-middle" style={{ background: COLOR_ALL }} />
+            Δ Users (all countries)
+          </dt>
+          <dd className={`shrink-0 font-medium tabular-nums ${toneCls(p.usersDelta)}`}>{fmtPct(p.usersDelta)}</dd>
         </div>
         <div className="flex justify-between items-baseline gap-2">
           <dt className="text-slate-500 truncate">Δ Install</dt>
@@ -85,7 +105,7 @@ function CustomTooltip({ active, payload, label }: TooltipProps) {
   );
 }
 
-export function MarketTrajectoryChart({ data, metric, height = 220, onWindowClick, activeWindow }: Props) {
+export function MarketTrajectoryChart({ data, metric, height = 220, onWindowClick, activeWindow, mode = 'single' }: Props) {
   const [hoverWindow, setHoverWindow] = useState<string | null>(null);
   const handleBarClick = (entry: unknown) => {
     const win = (entry as { window?: string } | null | undefined)?.window;
@@ -147,6 +167,55 @@ export function MarketTrajectoryChart({ data, metric, height = 220, onWindowClic
             allowEscapeViewBox={{ x: false, y: false }}
             wrapperStyle={{ pointerEvents: 'none', zIndex: 50 }}
           />
+          {mode === 'compare' ? (
+            <>
+              <Bar
+                dataKey="weightedDelta"
+                name="Core market"
+                fill={COLOR_CORE}
+                radius={[5, 5, 0, 0]}
+                maxBarSize={22}
+                onClick={handleBarClick}
+                onMouseEnter={handleBarEnter}
+                onMouseLeave={() => setHoverWindow(null)}
+                style={{ cursor: onWindowClick ? 'pointer' : 'default' }}
+              >
+                {data.map((d, i) => (
+                  <Cell
+                    key={i}
+                    fill={COLOR_CORE}
+                    // A window with no published basket index renders hollow
+                    // rather than repeating the all-countries number as if it
+                    // were a second, agreeing measurement.
+                    fillOpacity={d.coreAvailable ? (d.window === hoverWindow ? 0.85 : 1) : 0.15}
+                    stroke={d.window === activeWindow ? '#312e81' : 'none'}
+                    strokeWidth={d.window === activeWindow ? 2 : 0}
+                  />
+                ))}
+              </Bar>
+              <Bar
+                dataKey="usersDelta"
+                name="All countries"
+                fill={COLOR_ALL}
+                radius={[5, 5, 0, 0]}
+                maxBarSize={22}
+                onClick={handleBarClick}
+                onMouseEnter={handleBarEnter}
+                onMouseLeave={() => setHoverWindow(null)}
+                style={{ cursor: onWindowClick ? 'pointer' : 'default' }}
+              >
+                {data.map((d, i) => (
+                  <Cell
+                    key={i}
+                    fill={COLOR_ALL}
+                    fillOpacity={d.window === hoverWindow ? 0.85 : 1}
+                    stroke={d.window === activeWindow ? '#134e4a' : 'none'}
+                    strokeWidth={d.window === activeWindow ? 2 : 0}
+                  />
+                ))}
+              </Bar>
+            </>
+          ) : (
           <Bar
             dataKey={metric}
             radius={[6, 6, 0, 0]}
@@ -171,8 +240,26 @@ export function MarketTrajectoryChart({ data, metric, height = 220, onWindowClic
               );
             })}
           </Bar>
+          )}
         </BarChart>
       </ResponsiveContainer>
+      {mode === 'compare' && (
+        <div className="-mt-1 flex flex-wrap items-center justify-center gap-3 text-[10px] text-slate-500">
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: COLOR_CORE }} />
+            Core market (rổ keyword chính, có trọng số theo nước)
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: COLOR_ALL }} />
+            Toàn bộ (mọi keyword, mọi nước)
+          </span>
+          {data.some((d) => !d.coreAvailable) && (
+            <span className="text-amber-600" title="Chỉ số rổ chính chỉ được Sheet tính khi KHÔNG lọc — cột mờ nghĩa là window đó không có số riêng để so.">
+              cột mờ = không có số Core riêng khi đang lọc
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
