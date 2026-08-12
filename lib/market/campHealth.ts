@@ -1,5 +1,5 @@
 import type { ShopifyDailyRow } from '@/lib/sheets/types';
-import { normalizeCampName } from '@/lib/sheets/campName';
+import { buildCampGrouper } from '@/lib/sheets/campGroup';
 
 // Where the ad budget is leaking, read from the per-day Shopify export.
 //
@@ -16,7 +16,8 @@ export type HealthBucket =
   | 'burning' // spend, clicks, zero installs → cut or fix
   | 'wasted-imp' // lots of impressions, almost no clicks → keyword/creative mismatch
   | 'losing-imp' // impressions collapsing vs prior period → losing the auction
-  | 'stopped' // spent last period, nothing now → budget sitting idle?
+  | 'paused' // listed in Paused_camp → genuinely switched off
+  | 'idle' // spent last period, nothing now, but NOT in Paused_camp → check
   | 'pricey' // converting, but CPI well above the median
   | 'rising' // impressions AND installs both up vs the prior period → push it
   | 'scale' // cheap CPI with steady installs → room to push
@@ -89,6 +90,13 @@ export interface CampHealthOptions {
   windowDays?: number;
   /** Ignore camps below this spend in the current window. Default 1. */
   minSpend?: number;
+  /** Camp_Links names, fed to the grouper so an annotated label can resolve to
+   *  its clean base name even when that base never appears in the spend data. */
+  canonicalNames?: string[];
+  /** Camp names from the Paused_camp tab. The ONLY reliable proof a campaign was
+   *  switched off — absence of spend is not, since a camp can simply have been
+   *  renamed or run out of budget. */
+  pausedCamps?: string[];
 }
 
 export function analyseCampHealth(
@@ -97,6 +105,17 @@ export function analyseCampHealth(
 ): CampHealthResult {
   const win = opts.windowDays ?? 30;
   const minSpend = opts.minSpend ?? 1;
+  // One campaign shows up under several labels ("… - test till Sep",
+  // "… (CPI 32)"). Group them, or the same camp is reported as several rows
+  // each holding a slice of its spend.
+  const grouper = buildCampGrouper(
+    rows.map((r) => r.camp),
+    [...(opts.canonicalNames ?? []), ...(opts.pausedCamps ?? [])],
+  );
+  // Paused_camp is the only confirmation that a campaign was switched off.
+  // Resolved through the grouper so a paused camp still matches when the spend
+  // data labels it with an extra description.
+  const pausedKeys = new Set((opts.pausedCamps ?? []).filter(Boolean).map((c) => grouper.key(c)));
   const days = Array.from(new Set(rows.map((r) => r.date))).sort();
   if (days.length === 0) {
     return { rows: [], totalSpend: 0, medianCpi: null, from: '', to: '', prevFrom: '', prevTo: '' };
@@ -115,15 +134,15 @@ export function analyseCampHealth(
   }
   const byCamp = new Map<string, Acc>();
   for (const r of rows) {
-    const key = normalizeCampName(r.camp).toLowerCase();
+    const key = grouper.key(r.camp);
     if (!key) continue;
     let a = byCamp.get(key);
     if (!a) {
       a = { camp: r.camp, cur: empty(), curDays: new Set(), prev: empty(), prevDays: new Set(), lastActive: '', series: [] };
       byCamp.set(key, a);
     }
-    // Prefer the shortest name as the label — notes only ever lengthen names.
-    if (r.camp.length < a.camp.length) a.camp = r.camp;
+    // The grouper already picked the shortest label for this campaign.
+    a.camp = grouper.label(key);
     a.series.push({ t: Date.parse(r.date), v: r.impressions });
     if (r.spend > 0 || r.clicks > 0) {
       if (r.date > a.lastActive) a.lastActive = r.date;
@@ -171,10 +190,15 @@ export function analyseCampHealth(
     // Installs this thin make CPI meaningless; flagged so the UI can say so.
     const reliable = cur.installs >= 3;
 
-    if (!spentNow && spentBefore) {
-      bucket = 'stopped';
+    const isPaused = pausedKeys.has(grouper.key(a.camp));
+    if (isPaused && !spentNow) {
+      bucket = 'paused';
+      atRisk = 0;
+      reason = `Có trong tab Paused_camp và ${win} ngày qua không tiêu gì → đã tắt thật. Kỳ trước tiêu $${Math.round(prev.spend)} (${prev.installs} install).`;
+    } else if (!spentNow && spentBefore) {
+      bucket = 'idle';
       atRisk = prev.spend;
-      reason = `Kỳ trước tiêu $${Math.round(prev.spend)} (${prev.installs} install), ${win} ngày qua không tiêu gì. Camp đã tắt hay hết ngân sách?`;
+      reason = `Kỳ trước tiêu $${Math.round(prev.spend)} (${prev.installs} install), ${win} ngày qua không tiêu gì — nhưng KHÔNG có trong Paused_camp. Kiểm tra xem hết ngân sách hay quên bật lại.`;
     } else if (cur.installs === 0 && cur.clicks >= 2) {
       bucket = 'burning';
       atRisk = cur.spend;
@@ -235,10 +259,15 @@ export const BUCKET_META: Record<HealthBucket, { label: string; short: string; c
     cls: 'bg-orange-100 text-orange-800',
     help: 'Hiển thị/ngày rơi từ 35% trở lên so với kỳ trước liền kề. Nếu tiền lại tăng thì gần như chắc chắn đang bị đẩy giá trong đấu giá.',
   },
-  stopped: {
-    label: '⏹ Đã dừng', short: 'Đã dừng',
-    cls: 'bg-slate-200 text-slate-700',
-    help: 'Kỳ trước có tiêu tiền, kỳ này không tiêu gì. Có thể đã tắt chủ động — hoặc ngân sách đang bỏ trống ngoài ý muốn.',
+  paused: {
+    label: '⏸ Đã tắt', short: 'Đã tắt',
+    cls: 'bg-slate-200 text-slate-600',
+    help: 'Có tên trong tab Paused_camp VÀ kỳ này không tiêu gì — đã tắt thật, không cần làm gì.',
+  },
+  idle: {
+    label: '⏹ Ngừng chi', short: 'Ngừng chi',
+    cls: 'bg-slate-300 text-slate-800',
+    help: 'Kỳ trước có tiêu, kỳ này không — nhưng KHÔNG có trong Paused_camp, nên chưa xác nhận là đã tắt. Thường là hết ngân sách hoặc quên bật lại; đáng kiểm tra.',
   },
   pricey: {
     label: '💸 CPI cao', short: 'CPI cao',

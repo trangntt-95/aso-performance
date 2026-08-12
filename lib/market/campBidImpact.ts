@@ -1,5 +1,5 @@
 import type { ShopifyDailyRow } from '@/lib/sheets/types';
-import { normalizeCampName, buildCampNameResolver } from '@/lib/sheets/campName';
+import { buildCampGrouper } from '@/lib/sheets/campGroup';
 
 // Measure what a bid change ACTUALLY did to a campaign, from the per-day
 // Shopify Ads export.
@@ -71,34 +71,28 @@ export interface CampDailyIndex {
   size: number;
 }
 
-export function buildCampDailyIndex(rows: ShopifyDailyRow[]): CampDailyIndex {
+export function buildCampDailyIndex(
+  rows: ShopifyDailyRow[],
+  canonicalNames: string[] = [],
+): CampDailyIndex {
+  // Group first, then bucket. Storing by raw/normalised name would split a
+  // campaign's history across its labels — "X" and "X - test till Sep" would
+  // each hold part of the series, and a before/after read would silently
+  // measure only one slice.
+  const grouper = buildCampGrouper(rows.map((r) => r.camp), canonicalNames);
   const byCamp = new Map<string, ShopifyDailyRow[]>();
-  const canonical = new Map<string, string>();
   for (const r of rows) {
     if (!r.camp) continue;
-    const base = normalizeCampName(r.camp);
-    if (!base) continue;
-    const lc = base.toLowerCase();
-    let list = byCamp.get(lc);
-    if (!list) {
-      list = [];
-      byCamp.set(lc, list);
-      canonical.set(lc, base);
-    }
-    list.push(r);
+    const k = grouper.key(r.camp);
+    if (!k) continue;
+    const list = byCamp.get(k);
+    if (list) list.push(r);
+    else byCamp.set(k, [r]);
   }
   byCamp.forEach((list) => list.sort((a, b) => a.date.localeCompare(b.date)));
-  // Same resolver the overbid table uses, so a Shopify_daily name carrying a
-  // "(CPI 41)" tag still finds its rows here.
-  const resolver = buildCampNameResolver(Array.from(canonical.values()));
   return {
     size: byCamp.size,
-    get(camp) {
-      const direct = byCamp.get(normalizeCampName(camp).toLowerCase());
-      if (direct) return direct;
-      const base = resolver.resolve(camp);
-      return base ? byCamp.get(base.toLowerCase()) : undefined;
-    },
+    get: (camp) => byCamp.get(grouper.key(camp)),
   };
 }
 

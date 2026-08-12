@@ -4,19 +4,31 @@ import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
 
 // Editable note cell auto-saved to the App_Notes sheet tab (server-side, shared
 // across users). Optimistic + debounced; shows a tiny "lưu…" while in flight.
-// `scope` groups notes by page ('underbid' / 'overbid'); `noteId` is the row key
-// (keyword term, camp name).
+// `scope` groups notes by page ('underbid' / 'camp' / …); `noteId` is the row key
+// (keyword term, campaign id).
 export function NoteCell({
   scope,
   noteId,
   className,
+  fallbackKeys,
 }: {
   scope: string;
   noteId: string;
   className?: string;
+  /** Already-composed note keys to read from when `scope||noteId` is empty.
+   *  Used for camp notes, which used to live under per-page scopes: the old
+   *  text still shows, and the first edit rewrites it to the unified key. */
+  fallbackKeys?: string[];
 }) {
   const composite = noteKeyOf(scope, noteId);
-  const note = useNotesStore((s) => s.notes[composite] ?? '');
+  const note = useNotesStore((s) => {
+    const primary = s.notes[composite];
+    if (primary) return primary;
+    for (const k of fallbackKeys ?? []) {
+      if (s.notes[k]) return s.notes[k];
+    }
+    return '';
+  });
   const saving = useNotesStore((s) => !!s.saving[composite]);
   const setNote = useNotesStore((s) => s.setNote);
   return (

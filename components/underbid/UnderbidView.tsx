@@ -279,7 +279,10 @@ export function UnderbidView() {
   const shareIndex = useMemo(() => buildPaidShareIndex(data?.historyDaily ?? []), [data?.historyDaily]);
   // Per-camp spend series, so a pinned camp can be measured on its own rather
   // than through the keyword-level paid-share proxy.
-  const campDaily = useMemo(() => buildCampDailyIndex(data?.shopifyDaily ?? []), [data?.shopifyDaily]);
+  const campDaily = useMemo(
+    () => buildCampDailyIndex(data?.shopifyDaily ?? [], (data?.campLinks ?? []).map((c) => c.camp)),
+    [data?.shopifyDaily, data?.campLinks],
+  );
   const perCampImpact = (term: string, camps: string[]): PerCampImpact[] => {
     const ts = noteTimes[noteKeyOf('underbid', term)];
     if (!ts) return [];

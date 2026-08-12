@@ -5,7 +5,8 @@ import { AlertCircle, Search, X, ExternalLink, Flame } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { CampImpactCell } from '@/components/overbid/CampImpactCell';
-import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
+import { useNotesStore } from '@/lib/store/notesStore';
+import { CAMP_NOTE_SCOPE, campNoteId, legacyCampNoteKeys, readCampNoteAt } from '@/lib/store/campNotes';
 import { buildCampDailyIndex, campBidImpact, type CampBidImpact } from '@/lib/market/campBidImpact';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -189,15 +190,11 @@ export function OverbidView() {
   // as in Shopify_daily and keep the newest.
   const noteAliasOf = useMemo(() => {
     return (r: OverbidRow): { name: string; at: number } | null => {
-      let best: { name: string; at: number } | null = null;
-      for (const n of [r.camp, ...r.mergedNames, ...r.pausedNames]) {
-        const ts = noteTimes[noteKeyOf('overbid', n)];
-        if (!ts) continue;
-        const at = new Date(ts).getTime();
-        if (!Number.isFinite(at)) continue;
-        if (!best || at > best.at) best = { name: n, at };
-      }
-      return best;
+      // Notes are now stored per CAMPAIGN under one shared key, so a note left
+      // on the Camp Health page counts here too. Legacy per-page keys (and the
+      // camp's other names) are still consulted so older notes keep working.
+      const at = readCampNoteAt(noteTimes, r.camp, [...r.mergedNames, ...r.pausedNames]);
+      return at === null ? null : { name: r.camp, at };
     };
   }, [noteTimes]);
 
@@ -216,10 +213,8 @@ export function OverbidView() {
     if (!noteSnapshot) return map;
     const now = Date.now();
     for (const r of overbidRows) {
-      const ts = noteSnapshot[noteKeyOf('overbid', r.camp)];
-      if (!ts) continue;
-      const noted = new Date(ts).getTime();
-      if (!Number.isFinite(noted)) continue;
+      const noted = readCampNoteAt(noteSnapshot, r.camp, [...r.mergedNames, ...r.pausedNames]);
+      if (noted === null) continue;
       const until = noted + HIDE_DAYS * DAY_MS;
       if (until > now) map.set(r.camp, until);
     }
@@ -230,7 +225,10 @@ export function OverbidView() {
   // changed? Read straight from the per-day Shopify export — 14 days before the
   // note vs 14 after. Uses the LIVE note timestamp (not the hide snapshot) so a
   // camp you just noted reads "chờ dữ liệu" straight away.
-  const campDaily = useMemo(() => buildCampDailyIndex(data?.shopifyDaily ?? []), [data?.shopifyDaily]);
+  const campDaily = useMemo(
+    () => buildCampDailyIndex(data?.shopifyDaily ?? [], (data?.campLinks ?? []).map((c) => c.camp)),
+    [data?.shopifyDaily, data?.campLinks],
+  );
   const impactOf = (r: OverbidRow, noteAt: number | null): CampBidImpact | null => {
     if (noteAt === null) return null;
     return campBidImpact(campDaily.get(r.camp), noteAt);
@@ -524,9 +522,13 @@ export function OverbidView() {
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">{formatNumber(r.installs, { compact: true })}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] font-semibold text-slate-800">${formatNumber(r.spend, { compact: true })}</td>
                     <CampImpactCell impact={imp} />
-                    {/* Edit the note where it actually lives — under the camp's
-                        old name if it was renamed after you wrote it. */}
-                    <NoteCell scope="overbid" noteId={alias?.name ?? r.camp} />
+                    {/* One note per campaign, shared with the Camp Health
+                        table; older per-page notes are read as a fallback. */}
+                    <NoteCell
+                      scope={CAMP_NOTE_SCOPE}
+                      noteId={campNoteId(r.camp)}
+                      fallbackKeys={legacyCampNoteKeys(r.camp, [...r.mergedNames, ...r.pausedNames])}
+                    />
                   </tr>
                 );
               })}

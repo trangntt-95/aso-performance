@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatNumber } from '@/lib/utils/format';
 import { analyseCampHealth, BUCKET_META, type CampHealthRow, type HealthBucket } from '@/lib/market/campHealth';
 import { buildCampUrlIndex } from '@/lib/sheets/campUrl';
+import { CAMP_NOTE_SCOPE, campNoteId, legacyCampNoteKeys } from '@/lib/store/campNotes';
 import { cn } from '@/lib/utils';
 
 // Where the ad budget leaks. The overbid table asks whether a camp pays more per
@@ -63,7 +64,7 @@ function SortHead({
   );
 }
 
-const ORDER: HealthBucket[] = ['burning', 'wasted-imp', 'losing-imp', 'pricey', 'stopped', 'rising', 'scale', 'ok'];
+const ORDER: HealthBucket[] = ['burning', 'wasted-imp', 'losing-imp', 'pricey', 'idle', 'paused', 'rising', 'scale', 'ok'];
 
 const WINDOWS = [7, 14, 30, 60, 90];
 
@@ -95,8 +96,13 @@ export function CampHealthView() {
   const [windowDays, setWindowDays] = useState(30);
 
   const result = useMemo(
-    () => analyseCampHealth(data?.shopifyDaily ?? [], { windowDays }),
-    [data?.shopifyDaily, windowDays],
+    () =>
+      analyseCampHealth(data?.shopifyDaily ?? [], {
+        windowDays,
+        canonicalNames: (data?.campLinks ?? []).map((c) => c.camp),
+        pausedCamps: (data?.pausedKw ?? []).map((r) => r.camp),
+      }),
+    [data?.shopifyDaily, data?.campLinks, data?.pausedKw, windowDays],
   );
   const campUrl = useMemo(() => buildCampUrlIndex(data?.campLinks ?? []), [data?.campLinks]);
 
@@ -114,7 +120,11 @@ export function CampHealthView() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const out = result.rows.filter((r) => {
-      if (bucketFilter === 'problems' && (r.bucket === 'ok' || r.bucket === 'scale' || r.bucket === 'rising')) return false;
+      if (
+        bucketFilter === 'problems' &&
+        (r.bucket === 'ok' || r.bucket === 'scale' || r.bucket === 'rising' || r.bucket === 'paused')
+      )
+        return false;
       if (bucketFilter !== 'all' && bucketFilter !== 'problems' && r.bucket !== bucketFilter) return false;
       if (q && !r.camp.toLowerCase().includes(q)) return false;
       return true;
@@ -152,7 +162,10 @@ export function CampHealthView() {
   }, [result.rows, search, bucketFilter, sortKey, sortDir]);
 
   const totalRisk = useMemo(
-    () => result.rows.filter((r) => r.bucket !== 'ok' && r.bucket !== 'scale' && r.bucket !== 'rising').reduce((s, r) => s + r.atRisk, 0),
+    () =>
+      result.rows
+        .filter((r) => !['ok', 'scale', 'rising', 'paused'].includes(r.bucket))
+        .reduce((s, r) => s + r.atRisk, 0),
     [result.rows],
   );
 
@@ -461,7 +474,12 @@ export function CampHealthView() {
                       </div>
                     </td>
                     <td className="px-2 py-2 text-[10px] leading-snug text-slate-600">{r.reason}</td>
-                    <NoteCell scope="camp-health" noteId={r.camp} />
+                    {/* Same campaign note the Overbid table edits. */}
+                    <NoteCell
+                      scope={CAMP_NOTE_SCOPE}
+                      noteId={campNoteId(r.camp)}
+                      fallbackKeys={legacyCampNoteKeys(r.camp)}
+                    />
                   </tr>
                 );
               })}
