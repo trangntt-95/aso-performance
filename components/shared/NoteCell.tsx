@@ -11,6 +11,7 @@ export function NoteCell({
   noteId,
   className,
   fallbackKeys,
+  extra,
 }: {
   scope: string;
   noteId: string;
@@ -19,6 +20,9 @@ export function NoteCell({
    *  Used for camp notes, which used to live under per-page scopes: the old
    *  text still shows, and the first edit rewrites it to the unified key. */
   fallbackKeys?: string[];
+  /** Rendered under the textarea — used to surface related notes that must stay
+   *  read-only (a keyword note can't be edited from a campaign row). */
+  extra?: React.ReactNode;
 }) {
   const composite = noteKeyOf(scope, noteId);
   const note = useNotesStore((s) => {
@@ -41,6 +45,7 @@ export function NoteCell({
         className="w-40 min-w-[9rem] resize-y rounded border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500"
       />
       {saving && <span className="text-[9px] text-slate-400">lưu…</span>}
+      {extra}
     </td>
   );
 }

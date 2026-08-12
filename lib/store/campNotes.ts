@@ -92,3 +92,47 @@ export function readCampNoteAt(
   }
   return best;
 }
+
+/**
+ * Keyword notes that belong to a campaign, via the camps pinned on the Underbid
+ * page.
+ *
+ * Underbid notes are keyed by KEYWORD, so they can't be merged into the campaign
+ * note — one keyword usually runs in several campaigns, and a campaign collects
+ * many keywords. But once a keyword has a camp pinned, the link is explicit, and
+ * that context belongs next to the campaign: "raised the bid on this keyword"
+ * explains what a camp's numbers did afterwards.
+ *
+ * Read-only and shown BESIDE the campaign note rather than merged into it —
+ * they're different statements, and writing them into one box would have each
+ * overwrite the other.
+ */
+export interface KeywordNoteForCamp {
+  keyword: string;
+  note: string;
+}
+
+const UNDERBID_CAMP_SCOPE = 'underbid-camp';
+const UNDERBID_SCOPE = 'underbid';
+const SEP = '||';
+
+export function buildKeywordNotesByCamp(
+  notes: Record<string, string>,
+): Map<string, KeywordNoteForCamp[]> {
+  const out = new Map<string, KeywordNoteForCamp[]>();
+  const prefix = UNDERBID_CAMP_SCOPE + SEP;
+  for (const [key, value] of Object.entries(notes)) {
+    if (!key.startsWith(prefix) || !value) continue;
+    const keyword = key.slice(prefix.length);
+    if (!keyword) continue;
+    const note = notes[UNDERBID_SCOPE + SEP + keyword] ?? '';
+    for (const camp of value.split('\n').map((c) => c.trim()).filter(Boolean)) {
+      const id = campNoteId(camp);
+      const list = out.get(id);
+      if (list) list.push({ keyword, note });
+      else out.set(id, [{ keyword, note }]);
+    }
+  }
+  out.forEach((list) => list.sort((a, b) => a.keyword.localeCompare(b.keyword)));
+  return out;
+}

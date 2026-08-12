@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ExternalLink, HeartPulse, Search, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
@@ -11,7 +11,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatNumber } from '@/lib/utils/format';
 import { analyseCampHealth, BUCKET_META, type CampHealthRow, type HealthBucket } from '@/lib/market/campHealth';
 import { buildCampUrlIndex } from '@/lib/sheets/campUrl';
-import { CAMP_NOTE_SCOPE, campNoteId, legacyCampNoteKeys } from '@/lib/store/campNotes';
+import { CAMP_NOTE_SCOPE, buildKeywordNotesByCamp, campNoteId, legacyCampNoteKeys } from '@/lib/store/campNotes';
+import { KeywordNotesForCamp } from '@/components/shared/KeywordNotesForCamp';
+import { useNotesStore } from '@/lib/store/notesStore';
 import { cn } from '@/lib/utils';
 
 // Where the ad budget leaks. The overbid table asks whether a camp pays more per
@@ -105,6 +107,13 @@ export function CampHealthView() {
     [data?.shopifyDaily, data?.campLinks, data?.pausedKw, windowDays],
   );
   const campUrl = useMemo(() => buildCampUrlIndex(data?.campLinks ?? []), [data?.campLinks]);
+  // Keyword notes reach a campaign through the camps pinned on Underbid.
+  const loadNotes = useNotesStore((st) => st.load);
+  const allNotes = useNotesStore((st) => st.notes);
+  useEffect(() => {
+    loadNotes();
+  }, [loadNotes]);
+  const kwNotesByCamp = useMemo(() => buildKeywordNotesByCamp(allNotes), [allNotes]);
 
   const counts = useMemo(() => {
     const m = new Map<HealthBucket, { n: number; risk: number }>();
@@ -479,6 +488,7 @@ export function CampHealthView() {
                       scope={CAMP_NOTE_SCOPE}
                       noteId={campNoteId(r.camp)}
                       fallbackKeys={legacyCampNoteKeys(r.camp)}
+                      extra={<KeywordNotesForCamp items={kwNotesByCamp.get(campNoteId(r.camp)) ?? []} />}
                     />
                   </tr>
                 );

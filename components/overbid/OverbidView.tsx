@@ -6,7 +6,14 @@ import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { CampImpactCell } from '@/components/overbid/CampImpactCell';
 import { useNotesStore } from '@/lib/store/notesStore';
-import { CAMP_NOTE_SCOPE, campNoteId, legacyCampNoteKeys, readCampNoteAt } from '@/lib/store/campNotes';
+import {
+  CAMP_NOTE_SCOPE,
+  buildKeywordNotesByCamp,
+  campNoteId,
+  legacyCampNoteKeys,
+  readCampNoteAt,
+} from '@/lib/store/campNotes';
+import { KeywordNotesForCamp } from '@/components/shared/KeywordNotesForCamp';
 import { buildCampDailyIndex, campBidImpact, type CampBidImpact } from '@/lib/market/campBidImpact';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -126,6 +133,9 @@ export function OverbidView() {
   const loadNotes = useNotesStore((s) => s.load);
   const notesLoaded = useNotesStore((s) => s.loaded);
   const noteTimes = useNotesStore((s) => s.updatedAt);
+  const allNotes = useNotesStore((s) => s.notes);
+  // Keyword notes reach a campaign through the camps pinned on Underbid.
+  const kwNotesByCamp = useMemo(() => buildKeywordNotesByCamp(allNotes), [allNotes]);
   useEffect(() => {
     loadNotes();
   }, [loadNotes]);
@@ -528,6 +538,7 @@ export function OverbidView() {
                       scope={CAMP_NOTE_SCOPE}
                       noteId={campNoteId(r.camp)}
                       fallbackKeys={legacyCampNoteKeys(r.camp, [...r.mergedNames, ...r.pausedNames])}
+                      extra={<KeywordNotesForCamp items={kwNotesByCamp.get(campNoteId(r.camp)) ?? []} />}
                     />
                   </tr>
                 );
