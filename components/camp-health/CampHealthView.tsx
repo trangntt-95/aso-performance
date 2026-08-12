@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { AlertCircle, HeartPulse, Search, X } from 'lucide-react';
+import { AlertCircle, ExternalLink, HeartPulse, Search, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { Sparkline } from '@/components/shared/Sparkline';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatNumber } from '@/lib/utils/format';
 import { analyseCampHealth, BUCKET_META, type CampHealthRow, type HealthBucket } from '@/lib/market/campHealth';
+import { buildCampUrlIndex } from '@/lib/sheets/campUrl';
 import { cn } from '@/lib/utils';
 
 // Where the ad budget leaks. The overbid table asks whether a camp pays more per
@@ -20,7 +21,47 @@ import { cn } from '@/lib/utils';
 const money = (n: number | null) => (n == null ? '—' : `$${n.toFixed(2)}`);
 const pct = (n: number | null) => (n == null ? '—' : `${n >= 0 ? '+' : ''}${Math.round(n * 100)}%`);
 
-type SortKey = 'atRisk' | 'spend' | 'installs' | 'cpi' | 'imp' | 'camp';
+type SortKey = 'atRisk' | 'spend' | 'prevSpend' | 'installs' | 'cpi' | 'cpc' | 'imp' | 'clicks' | 'ctr' | 'impDelta' | 'camp' | 'bucket';
+type SortDir = 'asc' | 'desc';
+
+function SortHead({
+  label,
+  col,
+  sortKey,
+  sortDir,
+  onSort,
+  align = 'left',
+  extra,
+  title,
+}: {
+  label: string;
+  col: SortKey;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (k: SortKey) => void;
+  align?: 'left' | 'right';
+  extra?: string;
+  title?: string;
+}) {
+  const active = sortKey === col;
+  return (
+    <th
+      onClick={() => onSort(col)}
+      title={title}
+      className={cn(
+        'cursor-pointer select-none px-2 py-2 font-medium hover:text-slate-900',
+        align === 'right' ? 'text-right' : 'text-left',
+        active && 'text-indigo-700',
+        extra,
+      )}
+    >
+      <span className={cn('inline-flex items-center gap-0.5', align === 'right' && 'flex-row-reverse')}>
+        {label}
+        <span className="w-2 text-[9px] text-indigo-600">{active ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+      </span>
+    </th>
+  );
+}
 
 const ORDER: HealthBucket[] = ['burning', 'wasted-imp', 'losing-imp', 'pricey', 'stopped', 'rising', 'scale', 'ok'];
 
@@ -40,6 +81,15 @@ export function CampHealthView() {
   const [search, setSearch] = useState('');
   const [bucketFilter, setBucketFilter] = useState<HealthBucket | 'all' | 'problems'>('problems');
   const [sortKey, setSortKey] = useState<SortKey>('atRisk');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const toggleSort = (k: SortKey) => {
+    if (k === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else {
+      setSortKey(k);
+      // Text columns read best A→Z; every metric reads best worst-first.
+      setSortDir(k === 'camp' || k === 'bucket' ? 'asc' : 'desc');
+    }
+  };
   // Comparison window, user-chosen. Everything (buckets, deltas, the four
   // headline cards) recomputes against the equal-length window before it.
   const [windowDays, setWindowDays] = useState(30);
@@ -48,6 +98,7 @@ export function CampHealthView() {
     () => analyseCampHealth(data?.shopifyDaily ?? [], { windowDays }),
     [data?.shopifyDaily, windowDays],
   );
+  const campUrl = useMemo(() => buildCampUrlIndex(data?.campLinks ?? []), [data?.campLinks]);
 
   const counts = useMemo(() => {
     const m = new Map<HealthBucket, { n: number; risk: number }>();
@@ -68,22 +119,37 @@ export function CampHealthView() {
       if (q && !r.camp.toLowerCase().includes(q)) return false;
       return true;
     });
-    const val = (r: CampHealthRow): number | string => {
+    const val = (r: CampHealthRow): number | string | null => {
       switch (sortKey) {
         case 'spend': return r.cur.spend;
+        case 'prevSpend': return r.prev.spend;
         case 'installs': return r.cur.installs;
-        case 'cpi': return r.cur.cpi ?? -1;
+        case 'cpi': return r.cur.cpi;
+        case 'cpc': return r.cur.cpc;
         case 'imp': return r.cur.impressions;
+        case 'clicks': return r.cur.clicks;
+        case 'ctr': return r.cur.ctr;
+        case 'impDelta': return r.impDelta;
         case 'camp': return r.camp.toLowerCase();
+        case 'bucket': return ORDER.indexOf(r.bucket);
         default: return r.atRisk;
       }
     };
+    const dir = sortDir === 'asc' ? 1 : -1;
     return [...out].sort((a, b) => {
       const va = val(a), vb = val(b);
-      if (typeof va === 'string' || typeof vb === 'string') return String(va).localeCompare(String(vb));
-      return vb - va;
+      // Rows with no value for the sorted column sink to the bottom either way,
+      // so flipping the direction never promotes a blank above a real number.
+      if (va === null && vb === null) return 0;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      const base =
+        typeof va === 'string' || typeof vb === 'string'
+          ? String(va).localeCompare(String(vb))
+          : (va as number) - (vb as number);
+      return base * dir || b.atRisk - a.atRisk;
     });
-  }, [result.rows, search, bucketFilter, sortKey]);
+  }, [result.rows, search, bucketFilter, sortKey, sortDir]);
 
   const totalRisk = useMemo(
     () => result.rows.filter((r) => r.bucket !== 'ok' && r.bucket !== 'scale' && r.bucket !== 'rising').reduce((s, r) => s + r.atRisk, 0),
@@ -256,20 +322,13 @@ export function CampHealthView() {
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm camp…" className="pl-7 h-7 text-xs" />
           </div>
-          <select
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value as SortKey)}
-            className="h-7 rounded border border-slate-200 bg-white px-2 text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          >
-            <option value="atRisk">Sắp theo: tiền có vấn đề</option>
-            <option value="spend">Sắp theo: chi kỳ này</option>
-            <option value="installs">Sắp theo: installs</option>
-            <option value="cpi">Sắp theo: CPI</option>
-            <option value="imp">Sắp theo: impressions</option>
-            <option value="camp">Sắp theo: tên camp</option>
-          </select>
           {(search || bucketFilter !== 'problems') && (
-            <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => { setSearch(''); setBucketFilter('problems'); }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 text-xs"
+              onClick={() => { setSearch(''); setBucketFilter('problems'); setSortKey('atRisk'); setSortDir('desc'); }}
+            >
               <X className="h-3 w-3" />
               Reset
             </Button>
@@ -291,15 +350,34 @@ export function CampHealthView() {
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
               <tr>
-                <th className="px-3 py-2 text-left font-medium min-w-[15rem]">Camp</th>
-                <th className="px-2 py-2 text-left font-medium">Nhóm</th>
-                <th className="px-2 py-2 text-right font-medium" title="Số tiền đang gặp vấn đề ở camp này">$ có vấn đề</th>
-                <th className="px-2 py-2 text-right font-medium">Chi kỳ này</th>
-                <th className="px-2 py-2 text-right font-medium">Imp</th>
-                <th className="px-2 py-2 text-right font-medium">Clicks</th>
-                <th className="px-2 py-2 text-right font-medium">Inst</th>
-                <th className="px-2 py-2 text-right font-medium">CPI</th>
-                <th className="px-2 py-2 text-left font-medium min-w-[7rem]" title="Impressions theo ngày">Xu hướng imp</th>
+                <SortHead label="Camp" col="camp" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} extra="px-3 min-w-[15rem]" />
+                <SortHead label="Nhóm" col="bucket" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="Sắp theo mức nghiêm trọng của nhóm" />
+                <SortHead label="$ có vấn đề" col="atRisk" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="Số tiền đang gặp vấn đề ở camp này" />
+                <SortHead
+                  label="Spend"
+                  col="spend"
+                  align="right"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={toggleSort}
+                  title="Chi tiêu trong kỳ đang chọn, kèm % thay đổi so với kỳ trước liền kề"
+                />
+                <SortHead
+                  label="Spend kỳ trước"
+                  col="prevSpend"
+                  align="right"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={toggleSort}
+                  title="Chi tiêu ở kỳ trước liền kề, để so trực tiếp"
+                />
+                <SortHead label="Imp" col="imp" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortHead label="Clicks" col="clicks" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortHead label="CTR" col="ctr" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="Clicks / Impressions trong kỳ" />
+                <SortHead label="Inst" col="installs" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortHead label="CPC" col="cpc" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="Chi / clicks trong kỳ" />
+                <SortHead label="CPI" col="cpi" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="Chi / installs trong kỳ" />
+                <SortHead label="Xu hướng imp" col="impDelta" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} extra="min-w-[7rem]" title="Impressions/ngày so với kỳ trước" />
                 <th className="px-2 py-2 text-left font-medium min-w-[18rem]">Vấn đề &amp; nên làm gì</th>
                 <th className="px-2 py-2 text-left font-medium min-w-[9rem]">Note</th>
               </tr>
@@ -307,11 +385,29 @@ export function CampHealthView() {
             <tbody>
               {filtered.map((r) => {
                 const meta = BUCKET_META[r.bucket];
+                const url = campUrl.get(r.camp);
                 const impTone = r.impDelta == null ? '' : r.impDelta <= -0.35 ? 'text-rose-600' : r.impDelta < 0 ? 'text-amber-600' : 'text-emerald-600';
                 return (
                   <tr key={r.camp} className="border-t align-top hover:bg-slate-50">
                     <td className="px-3 py-2">
-                      <div className="text-[12px] font-medium text-slate-800">{r.camp}</div>
+                      {url ? (
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-start gap-1 text-[12px] font-medium text-indigo-600 hover:underline"
+                        >
+                          {r.camp}
+                          <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
+                        </a>
+                      ) : (
+                        <span
+                          className="text-[12px] font-medium text-slate-800"
+                          title="Camp này chưa có URL trong Camp_Links"
+                        >
+                          {r.camp}
+                        </span>
+                      )}
                       {r.lastActive && (
                         <div className="text-[10px] text-slate-400">hoạt động cuối {r.lastActive}</div>
                       )}
@@ -324,10 +420,32 @@ export function CampHealthView() {
                     <td className="px-2 py-2 text-right font-mono text-[11px] font-semibold text-rose-700">
                       {r.atRisk > 0 ? `$${Math.round(r.atRisk)}` : '—'}
                     </td>
-                    <td className="px-2 py-2 text-right font-mono text-[11px] text-slate-700">${Math.round(r.cur.spend)}</td>
+                    <td className="px-2 py-2 text-right font-mono text-[11px] whitespace-nowrap">
+                      <span className="font-semibold text-slate-800">${formatNumber(Math.round(r.cur.spend))}</span>
+                      {r.spendDelta !== null && (
+                        <span
+                          className={cn(
+                            'block text-[9px]',
+                            // Spend moving is neither good nor bad on its own —
+                            // it only means something next to what it bought,
+                            // which is the columns beside it. Colour it neutral.
+                            Math.abs(r.spendDelta) < 0.1 ? 'text-slate-400' : 'text-slate-500',
+                          )}
+                        >
+                          {pct(r.spendDelta)} vs kỳ trước
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 text-right font-mono text-[11px] text-slate-500">
+                      {r.prev.spend > 0 ? `$${formatNumber(Math.round(r.prev.spend))}` : '—'}
+                    </td>
                     <td className="px-2 py-2 text-right font-mono text-[11px] text-slate-600">{formatNumber(Math.round(r.cur.impressions), { compact: true })}</td>
                     <td className="px-2 py-2 text-right font-mono text-[11px] text-slate-600">{r.cur.clicks}</td>
+                    <td className="px-2 py-2 text-right font-mono text-[11px] text-slate-600">
+                      {r.cur.ctr === null ? '—' : `${(r.cur.ctr * 100).toFixed(2)}%`}
+                    </td>
                     <td className="px-2 py-2 text-right font-mono text-[11px] text-slate-800">{r.cur.installs}</td>
+                    <td className="px-2 py-2 text-right font-mono text-[11px] text-slate-700">{money(r.cur.cpc)}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px]">
                       <span className={r.cur.cpi === null ? 'text-slate-300' : r.reliable ? 'text-slate-800' : 'text-slate-400'}>
                         {money(r.cur.cpi)}
@@ -352,7 +470,8 @@ export function CampHealthView() {
           <div className="border-t px-3 py-2 text-[10px] text-slate-400">
             Mỗi camp chỉ vào <b>một nhóm</b> — vấn đề tốn tiền nhất thắng. Cột <b>$ có vấn đề</b>: nhóm đốt tiền / hiển
             thị phí / mất hiển thị tính bằng toàn bộ chi kỳ này; nhóm CPI cao chỉ tính phần vượt so với CPI trung vị.
-            Dấu <b>?</b> = dưới 3 install nên CPI chưa đáng tin.
+            Dấu <b>?</b> = dưới 3 install nên CPI chưa đáng tin. <b>Click tiêu đề cột để sắp xếp</b> — bấm lần nữa
+            để đảo chiều; ô trống luôn nằm cuối. Tên camp bấm được để mở thẳng Shopify Ads.
           </div>
         </div>
       )}

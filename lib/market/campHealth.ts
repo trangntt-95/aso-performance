@@ -43,6 +43,10 @@ export interface CampHealthRow {
   impDelta: number | null;
   /** Relative change in installs vs the prior window. */
   installDelta: number | null;
+  /** Relative change in spend vs the prior window. Reading spend without this
+   *  is ambiguous: $60 means something different depending on whether the camp
+   *  spent $20 or $200 in the period before. */
+  spendDelta: number | null;
   /** Money at stake for this row — what ranks the table. */
   atRisk: number;
   /** Plain-language reason + what to do. */
@@ -153,6 +157,7 @@ export function analyseCampHealth(
 
     const impDelta = prev.impPerDay > 0 ? (cur.impPerDay - prev.impPerDay) / prev.impPerDay : null;
     const installDelta = prev.installs > 0 ? (cur.installs - prev.installs) / prev.installs : null;
+    const spendDelta = prev.spend > 0 ? (cur.spend - prev.spend) / prev.spend : null;
     // Growing on BOTH sides of the funnel — more eyes and more installs than the
     // period before. Checked ahead of the CPI test on purpose: a camp whose
     // installs are climbing is working, and CPI off a couple of installs is too
@@ -203,7 +208,7 @@ export function analyseCampHealth(
     }
 
     out.push({
-      camp: a.camp, bucket, cur, prev, impDelta, installDelta, atRisk, reason, reliable,
+      camp: a.camp, bucket, cur, prev, impDelta, installDelta, spendDelta, atRisk, reason, reliable,
       lastActive: a.lastActive,
       series: a.series.sort((x, y) => x.t - y.t),
     });
