@@ -11,7 +11,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatNumber } from '@/lib/utils/format';
 import { analyseCampHealth, BUCKET_META, type CampHealthRow, type HealthBucket } from '@/lib/market/campHealth';
 import { buildCampUrlIndex } from '@/lib/sheets/campUrl';
-import { CAMP_NOTE_SCOPE, buildKeywordNotesByCamp, campNoteId, legacyCampNoteKeys } from '@/lib/store/campNotes';
+import {
+  CAMP_NOTE_SCOPE,
+  buildKeywordNotesByCamp,
+  campNoteId,
+  legacyCampNoteKeys,
+  readCampNoteAt,
+} from '@/lib/store/campNotes';
 import { KeywordNotesForCamp } from '@/components/shared/KeywordNotesForCamp';
 import { useNotesStore } from '@/lib/store/notesStore';
 import { cn } from '@/lib/utils';
@@ -70,6 +76,19 @@ const ORDER: HealthBucket[] = ['burning', 'wasted-imp', 'losing-imp', 'pricey', 
 
 const WINDOWS = [7, 14, 30, 60, 90];
 
+// Once a camp is noted it drops out of the working list for this many days so
+// the list only shows what still needs doing — then it comes back so the fix
+// gets checked. Same rule as the Overbid and Underbid tables.
+const HIDE_DAYS = 5;
+const DAY_MS = 86_400_000;
+
+const dmy = (ms: number) => {
+  const d = new Date(ms);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
+type NoteView = 'active' | 'handled';
+
 // The four questions worth a headline. Each is one bucket, promoted out of the
 // chip row into its own card so the number is visible without filtering first.
 const CARDS: { bucket: HealthBucket; title: string; sub: string; accent: string }[] = [
@@ -115,6 +134,32 @@ export function CampHealthView() {
   }, [loadNotes]);
   const kwNotesByCamp = useMemo(() => buildKeywordNotesByCamp(allNotes), [allNotes]);
 
+  const notesLoaded = useNotesStore((st) => st.loaded);
+  const noteTimes = useNotesStore((st) => st.updatedAt);
+  // Snapshot the timestamps once when they first load: a camp noted in THIS
+  // session must stay on screen while you're typing, and only drop out on the
+  // next visit. Without this the row vanishes mid-sentence.
+  const [noteSnapshot, setNoteSnapshot] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    if (notesLoaded && noteSnapshot === null) setNoteSnapshot(noteTimes);
+  }, [notesLoaded, noteSnapshot, noteTimes]);
+
+  const [noteView, setNoteView] = useState<NoteView>('active');
+
+  // camp id → when it comes back into the working list.
+  const hiddenUntil = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!noteSnapshot) return map;
+    const now = Date.now();
+    for (const r of result.rows) {
+      const at = readCampNoteAt(noteSnapshot, r.camp);
+      if (at === null) continue;
+      const until = at + HIDE_DAYS * DAY_MS;
+      if (until > now) map.set(campNoteId(r.camp), until);
+    }
+    return map;
+  }, [result.rows, noteSnapshot]);
+
   const counts = useMemo(() => {
     const m = new Map<HealthBucket, { n: number; risk: number }>();
     result.rows.forEach((r) => {
@@ -129,6 +174,10 @@ export function CampHealthView() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const out = result.rows.filter((r) => {
+      const hidden = hiddenUntil.has(campNoteId(r.camp));
+      // "Đã xử lý" is the mirror of the working list: exactly the camps sitting
+      // inside their post-note window.
+      if (noteView === 'handled' ? !hidden : hidden) return false;
       if (
         bucketFilter === 'problems' &&
         (r.bucket === 'ok' || r.bucket === 'scale' || r.bucket === 'rising' || r.bucket === 'paused')
@@ -168,14 +217,15 @@ export function CampHealthView() {
           : (va as number) - (vb as number);
       return base * dir || b.atRisk - a.atRisk;
     });
-  }, [result.rows, search, bucketFilter, sortKey, sortDir]);
+  }, [result.rows, search, bucketFilter, sortKey, sortDir, noteView, hiddenUntil]);
 
   const totalRisk = useMemo(
     () =>
       result.rows
         .filter((r) => !['ok', 'scale', 'rising', 'paused'].includes(r.bucket))
+        .filter((r) => !hiddenUntil.has(campNoteId(r.camp)))
         .reduce((s, r) => s + r.atRisk, 0),
-    [result.rows],
+    [result.rows, hiddenUntil],
   );
 
   if (error) {
@@ -217,6 +267,42 @@ export function CampHealthView() {
           </div>
         </div>
       </div>
+
+      {/* Working list vs the camps already noted */}
+      {!isLoading && (
+        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
+          {([
+            {
+              id: 'active' as NoteView,
+              label: '🔧 Cần xử lý',
+              n: result.rows.length - hiddenUntil.size,
+              title: `Camp chưa note, hoặc đã note quá ${HIDE_DAYS} ngày nên quay lại để kiểm tra.`,
+            },
+            {
+              id: 'handled' as NoteView,
+              label: '✅ Đã xử lý',
+              n: hiddenUntil.size,
+              title: `Camp bạn vừa ghi note — tạm ẩn ${HIDE_DAYS} ngày để bạn sửa, sau đó tự quay lại danh sách cần xử lý.`,
+            },
+          ]).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setNoteView(t.id)}
+              title={t.title}
+              className={cn(
+                'rounded-md px-2.5 py-1 font-medium transition',
+                noteView === t.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100',
+              )}
+            >
+              {t.label}
+              <span className={cn('ml-1 text-[10px]', noteView === t.id ? 'text-slate-300' : 'text-slate-400')}>
+                {t.n}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Window selector — the whole page recomputes against it */}
       {!isLoading && (
@@ -380,7 +466,9 @@ export function CampHealthView() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-lg border bg-white py-16 text-center text-sm text-slate-500">
-          Không có camp nào khớp bộ lọc.
+          {noteView === 'handled'
+            ? `Chưa có camp nào đang trong thời gian tạm ẩn. Ghi note vào một camp ở tab 🔧 Cần xử lý, nó sẽ chuyển sang đây ${HIDE_DAYS} ngày.`
+            : 'Không có camp nào khớp bộ lọc.'}
         </div>
       ) : (
         <div className="max-h-[75vh] overflow-auto rounded-lg border bg-white">
@@ -423,6 +511,7 @@ export function CampHealthView() {
               {filtered.map((r) => {
                 const meta = BUCKET_META[r.bucket];
                 const url = campUrl.get(r.camp);
+                const hideTs = hiddenUntil.get(campNoteId(r.camp));
                 const impTone = r.impDelta == null ? '' : r.impDelta <= -0.35 ? 'text-rose-600' : r.impDelta < 0 ? 'text-amber-600' : 'text-emerald-600';
                 return (
                   <tr key={r.camp} className="border-t align-top hover:bg-slate-50">
@@ -444,6 +533,14 @@ export function CampHealthView() {
                         >
                           {r.camp}
                         </span>
+                      )}
+                      {hideTs && (
+                        <div
+                          className="mt-0.5 inline-block rounded bg-amber-100 px-1 text-[9px] font-semibold leading-[1.4] text-amber-700"
+                          title={`Đã ghi note → tạm ẩn khỏi danh sách cần xử lý. Tự hiện lại ngày ${dmy(hideTs)} để kiểm tra thay đổi.`}
+                        >
+                          ẩn → hiện lại {dmy(hideTs)}
+                        </div>
                       )}
                       {r.lastActive && (
                         <div className="text-[10px] text-slate-400">hoạt động cuối {r.lastActive}</div>
@@ -513,7 +610,8 @@ export function CampHealthView() {
           <div className="border-t px-3 py-2 text-[10px] text-slate-400">
             Mỗi camp chỉ vào <b>một nhóm</b> — vấn đề tốn tiền nhất thắng. Cột <b>$ có vấn đề</b>: nhóm đốt tiền / hiển
             thị phí / mất hiển thị tính bằng toàn bộ chi kỳ này; nhóm CPI cao chỉ tính phần vượt so với CPI trung vị.
-            Dấu <b>?</b> = dưới 3 install nên CPI chưa đáng tin. <b>Click tiêu đề cột để sắp xếp</b> — bấm lần nữa
+            Camp đã ghi note tạm chuyển sang <b>✅ Đã xử lý</b> trong {HIDE_DAYS} ngày, sau đó tự quay lại{' '}
+            <b>🔧 Cần xử lý</b> để bạn kiểm tra kết quả. Dấu <b>?</b> = dưới 3 install nên CPI chưa đáng tin. <b>Click tiêu đề cột để sắp xếp</b> — bấm lần nữa
             để đảo chiều; ô trống luôn nằm cuối. Tên camp bấm được để mở thẳng Shopify Ads.
           </div>
         </div>
