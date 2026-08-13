@@ -250,50 +250,67 @@ export function analyseCampHealth(
   return { rows: out, totalSpend, medianCpi, from, to, prevFrom, prevTo };
 }
 
-export const BUCKET_META: Record<HealthBucket, { label: string; short: string; cls: string; help: string }> = {
+/**
+ * Three tones instead of nine colours: 'bad' = money to cut now, 'warn' = worth
+ * a look, 'good' = an opportunity, 'neutral' = nothing to do. The bucket name
+ * carries the detail; colour only has to carry urgency.
+ */
+export type BucketTone = 'bad' | 'warn' | 'good' | 'neutral';
+
+export const TONE_CLS: Record<BucketTone, string> = {
+  bad: 'bg-rose-100 text-rose-800',
+  warn: 'bg-amber-100 text-amber-800',
+  good: 'bg-emerald-100 text-emerald-800',
+  neutral: 'bg-slate-100 text-slate-600',
+};
+
+export const BUCKET_META: Record<
+  HealthBucket,
+  { label: string; short: string; tone: BucketTone; help: string }
+> = {
   burning: {
     label: '🔥 Đốt tiền', short: 'Đốt tiền',
-    cls: 'bg-rose-100 text-rose-800',
+    tone: 'bad',
     help: 'Có click, có tiêu tiền, nhưng 0 install trong kỳ đang chọn. Nhóm này đáng tin nhất — 0 install là 0 install, không phụ thuộc mẫu lớn nhỏ.',
   },
   'wasted-imp': {
     label: '👁 Hiển thị phí', short: 'Hiển thị phí',
-    cls: 'bg-amber-100 text-amber-800',
+    tone: 'warn',
     help: 'Từ 500 lượt hiển thị trở lên nhưng CTR dưới 0,1%. Không tốn nhiều tiền, nhưng là traffic bị bỏ phí — keyword hoặc creative lệch nhu cầu.',
   },
   'losing-imp': {
     label: '📉 Mất hiển thị', short: 'Mất hiển thị',
-    cls: 'bg-orange-100 text-orange-800',
+    tone: 'warn',
     help: 'Hiển thị/ngày rơi từ 35% trở lên so với kỳ trước liền kề. Nếu tiền lại tăng thì gần như chắc chắn đang bị đẩy giá trong đấu giá.',
   },
   paused: {
     label: '⏸ Đã tắt', short: 'Đã tắt',
-    cls: 'bg-slate-200 text-slate-600',
+    tone: 'neutral',
     help: 'Có tên trong tab Paused_camp → camp đã tắt, không cần làm gì. Nhãn này thắng mọi nhãn khác: camp tắt giữa kỳ vẫn còn spend của những ngày trước đó, nhưng đó không phải việc cần sửa.',
   },
   idle: {
     label: '⏹ Ngừng chi', short: 'Ngừng chi',
-    cls: 'bg-slate-300 text-slate-800',
+    tone: 'warn',
     help: 'Kỳ trước có tiêu, kỳ này không — nhưng KHÔNG có trong Paused_camp, nên chưa xác nhận là đã tắt. Thường là hết ngân sách hoặc quên bật lại; đáng kiểm tra.',
   },
   pricey: {
     label: '💸 CPI cao', short: 'CPI cao',
-    cls: 'bg-yellow-100 text-yellow-800',
+    tone: 'warn',
     help: 'CPI cao hơn 1,5× mức trung vị. Cảnh báo: camp ở đây thường chỉ có 1–2 install, mà CPI tính từ 1 install là nhiễu — dòng nào có dấu ? thì đọc tham khảo thôi.',
   },
   rising: {
     label: '📈 Đang lên', short: 'Đang lên',
-    cls: 'bg-teal-100 text-teal-800',
+    tone: 'good',
     help: 'Hiển thị/ngày tăng từ 25% trở lên VÀ install nhiều hơn kỳ trước (tối thiểu 2 install). Cả hai đầu phễu cùng lên — đây là chỗ đáng nới ngân sách trước tiên.',
   },
   scale: {
     label: '🚀 CPI rẻ', short: 'CPI rẻ',
-    cls: 'bg-emerald-100 text-emerald-800',
+    tone: 'good',
     help: 'CPI rẻ hơn trung vị và có ít nhất 2 install. Đây là chỗ đáng đổ thêm tiền.',
   },
   ok: {
     label: '✓ Ổn', short: 'Ổn',
-    cls: 'bg-slate-100 text-slate-500',
+    tone: 'neutral',
     help: 'Không rơi vào nhóm vấn đề nào.',
   },
 };
