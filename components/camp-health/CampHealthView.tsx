@@ -363,7 +363,7 @@ export function CampHealthView() {
                 {top.length > 0 ? (
                   <div className="mt-1 space-y-0.5 border-t border-slate-100 pt-1">
                     {top.map((r) => (
-                      <div key={r.camp} className="truncate text-[9px] text-slate-500" title={r.camp}>
+                      <div key={r.camp} className="truncate whitespace-nowrap text-[9px] text-slate-500" title={r.camp}>
                         {r.camp}
                       </div>
                     ))}
@@ -446,7 +446,7 @@ export function CampHealthView() {
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
               <tr>
-                <SortHead label="Camp" col="camp" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} extra="px-3 min-w-[15rem]" />
+                <SortHead label="Camp" col="camp" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} extra="px-3 whitespace-nowrap" />
                 <SortHead label="Nhóm" col="bucket" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="Sắp theo mức nghiêm trọng của nhóm" />
                 <SortHead label="$ có vấn đề" col="atRisk" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="Số tiền đang gặp vấn đề ở camp này" />
                 <SortHead
@@ -486,13 +486,13 @@ export function CampHealthView() {
                 const impTone = r.impDelta == null ? '' : r.impDelta <= -0.35 ? 'text-rose-600' : r.impDelta < 0 ? 'text-amber-600' : 'text-emerald-600';
                 return (
                   <tr key={r.camp} className="border-t align-top hover:bg-slate-50">
-                    <td className="px-3 py-2">
+                    <td className="whitespace-nowrap px-3 py-2">
                       {url ? (
                         <a
                           href={url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-start gap-1 text-[12px] font-medium text-indigo-600 hover:underline"
+                          className="inline-flex items-center gap-1 text-[12px] font-medium text-indigo-600 hover:underline"
                         >
                           {r.camp}
                           <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />

@@ -121,13 +121,13 @@ function CampOne({ camp }: { camp: import('@/lib/market/underbid').UnderbidCamp 
       href={camp.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:underline"
+      className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] text-indigo-600 hover:underline"
     >
       {camp.name}
       <ExternalLink className="h-3 w-3 shrink-0" />
     </a>
   ) : (
-    <span className="text-[11px] text-slate-600" title="Camp này chưa có URL trong Camp_Links">
+    <span className="whitespace-nowrap text-[11px] text-slate-600" title="Camp này chưa có URL trong Camp_Links">
       {camp.name}
     </span>
   );
@@ -149,7 +149,7 @@ function CampCell({
 
   if (camps.length === 0) {
     return (
-      <td className="px-2 py-2 min-w-[12rem]">
+      <td className="whitespace-nowrap px-2 py-2">
         <span className="text-[11px] text-slate-400">—</span>
         {manual && <span className="text-[10px] text-slate-400"> ✍️ added manual</span>}
       </td>
@@ -170,7 +170,7 @@ function CampCell({
   const hidden = camps.length - shown.length;
 
   return (
-    <td className="px-2 py-2 min-w-[12rem]">
+    <td className="whitespace-nowrap px-2 py-2">
       <div className="flex flex-col gap-0.5">
         {shown.map((c) => {
           const isPinned = pinnedSet.has(c.name);

@@ -420,7 +420,7 @@ export function OverbidView() {
           <table className="w-full text-xs">
             <thead className="bg-slate-50 text-slate-600 sticky top-0 z-10 shadow-sm [&_th]:bg-slate-50">
               <tr>
-                <SortHead label="Camp" col="camp" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} extra="px-3 min-w-[15rem]" />
+                <SortHead label="Camp" col="camp" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} extra="px-3 whitespace-nowrap" />
                 {view === 'fixed' && (
                   <SortHead
                     label="Trạng thái"
@@ -456,8 +456,8 @@ export function OverbidView() {
                 const tag = r.verdict === 'overbid' ? null : VERDICT_TAG[r.verdict];
                 return (
                   <tr key={r.url ?? r.camp} className={cn('border-t hover:bg-slate-50 align-top', hiddenTs && 'bg-slate-50/60 text-slate-400')}>
-                    <td className="px-3 py-2">
-                      <span className="inline-flex items-start gap-1">
+                    <td className="whitespace-nowrap px-3 py-2">
+                      <span className="inline-flex items-center gap-1">
                         {r.url ? (
                           <a href={r.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-start gap-1 font-medium text-[12px] text-indigo-600 hover:underline">
                             {r.camp}

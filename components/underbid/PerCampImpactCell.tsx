@@ -21,16 +21,12 @@ export interface PerCampImpact {
   impact: CampBidImpact;
 }
 
-function shortCamp(name: string): string {
-  // Camp names are long and share a prefix; the tail is what distinguishes them.
-  const parts = name.split(/\s+-\s+/);
-  return parts.length > 2 ? parts.slice(-2).join(' - ') : name;
-}
-
 function OneCamp({ camp, impact }: PerCampImpact) {
+  // Full name on one line — the shared prefix makes a trimmed tail ambiguous
+  // between geo variants of the same campaign.
   const label = (
-    <div className="truncate text-[9px] font-medium text-slate-500" style={{ maxWidth: '12rem' }} title={camp}>
-      {shortCamp(camp)}
+    <div className="whitespace-nowrap text-[9px] font-medium text-slate-500" title={camp}>
+      {camp}
     </div>
   );
 

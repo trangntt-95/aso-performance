@@ -610,7 +610,7 @@ export function CategoryDrilldown({ category }: { category?: string }) {
             <thead className="bg-slate-50 text-slate-600 sticky top-0 z-10 shadow-sm [&_th]:bg-slate-50">
               <tr>
                 {allMode && <th className="px-3 py-2 text-left font-medium min-w-[7rem]">Category</th>}
-                <th className="px-3 py-2 text-left font-medium min-w-[14rem]">Keyword</th>
+                <th className="whitespace-nowrap px-3 py-2 text-left font-medium">Keyword</th>
                 <th className="px-2 py-2 text-left font-medium">L7</th>
                 <th className="px-2 py-2 text-left font-medium">L30</th>
                 <th className="px-2 py-2 text-left font-medium">L90</th>
@@ -646,12 +646,12 @@ export function CategoryDrilldown({ category }: { category?: string }) {
                       </span>
                     </td>
                   )}
-                  <td className="px-3 py-1.5 align-top">
-                    <div className="flex items-center gap-2 min-w-0">
+                  <td className="whitespace-nowrap px-3 py-1.5 align-top">
+                    <div className="flex items-center gap-2 whitespace-nowrap">
                       <SurfaceIcon surface={row.surface} />
                       <KeywordLink
                         keyword={row.searchTerm}
-                        className="font-medium text-sm truncate block"
+                        className="block whitespace-nowrap text-sm font-medium"
                       />
                       {row.noImpressions && (
                         <span
@@ -664,14 +664,14 @@ export function CategoryDrilldown({ category }: { category?: string }) {
                     </div>
                     {showTranslation && (
                       <div
-                        className="text-[10px] text-slate-500 italic mt-0.5 truncate"
+                        className="mt-0.5 whitespace-nowrap text-[10px] italic text-slate-500"
                         title={english}
                       >
                         → {english}
                       </div>
                     )}
                     {row.countries.length > 0 && (
-                      <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                      <div className="mt-0.5 whitespace-nowrap text-[10px] text-slate-500">
                         {row.countries.slice(0, 6).join(', ')}
                         {row.countries.length > 6 && ` +${row.countries.length - 6}`}
                       </div>
