@@ -325,6 +325,21 @@ export function CampHealthView() {
               </button>
             );
           })}
+          {(counts.get('paused')?.n ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => setBucketFilter(bucketFilter === 'paused' ? 'problems' : 'paused')}
+              title={BUCKET_META.paused.help}
+              className={cn(
+                'rounded-md px-2.5 py-1 text-xs font-medium transition',
+                bucketFilter === 'paused'
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-200 text-slate-600 hover:bg-slate-300',
+              )}
+            >
+              ⏸ Đã tắt <span className="opacity-70">{counts.get('paused')?.n ?? 0}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setBucketFilter('all')}

@@ -190,11 +190,18 @@ export function analyseCampHealth(
     // Installs this thin make CPI meaningless; flagged so the UI can say so.
     const reliable = cur.installs >= 3;
 
+    // Presence in Paused_camp settles it: the campaign is off, so nothing about
+    // it is actionable. Checked FIRST and without regard to spend — a camp
+    // paused midway still shows spend for the days before it was switched off,
+    // and flagging that as "burning money" would send you to fix something
+    // already fixed.
     const isPaused = pausedKeys.has(grouper.key(a.camp));
-    if (isPaused && !spentNow) {
+    if (isPaused) {
       bucket = 'paused';
       atRisk = 0;
-      reason = `Có trong tab Paused_camp và ${win} ngày qua không tiêu gì → đã tắt thật. Kỳ trước tiêu $${Math.round(prev.spend)} (${prev.installs} install).`;
+      reason = spentNow
+        ? `Có trong tab Paused_camp → đã tắt. Vẫn thấy $${Math.round(cur.spend)} trong kỳ vì camp chạy một phần trước khi tắt.`
+        : `Có trong tab Paused_camp và ${win} ngày qua không tiêu gì → đã tắt. Kỳ trước tiêu $${Math.round(prev.spend)} (${prev.installs} install).`;
     } else if (!spentNow && spentBefore) {
       bucket = 'idle';
       atRisk = prev.spend;
@@ -262,7 +269,7 @@ export const BUCKET_META: Record<HealthBucket, { label: string; short: string; c
   paused: {
     label: '⏸ Đã tắt', short: 'Đã tắt',
     cls: 'bg-slate-200 text-slate-600',
-    help: 'Có tên trong tab Paused_camp VÀ kỳ này không tiêu gì — đã tắt thật, không cần làm gì.',
+    help: 'Có tên trong tab Paused_camp → camp đã tắt, không cần làm gì. Nhãn này thắng mọi nhãn khác: camp tắt giữa kỳ vẫn còn spend của những ngày trước đó, nhưng đó không phải việc cần sửa.',
   },
   idle: {
     label: '⏹ Ngừng chi', short: 'Ngừng chi',
