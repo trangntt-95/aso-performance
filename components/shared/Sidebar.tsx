@@ -29,7 +29,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { href: '/', label: 'Overview', Icon: LayoutDashboard, shortLabel: 'Home' },
   { href: '/market-index', label: 'Market Health', Icon: BarChart3, shortLabel: 'Market' },
-  { href: '/categories', label: 'Dictionary', Icon: BookOpen, shortLabel: 'Dict' },
+  { href: '/categories', label: 'Search Terms', Icon: BookOpen, shortLabel: 'Terms' },
   { href: '/paid-coverage', label: 'Paid Coverage', Icon: Crosshair, shortLabel: 'Paid' },
   { href: '/underbid', label: 'Underbid Keywords', Icon: TrendingUp, shortLabel: 'Underbid' },
   { href: '/overbid-camps', label: 'Overbid Camps', Icon: Flame, shortLabel: 'Overbid' },

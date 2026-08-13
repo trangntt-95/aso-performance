@@ -24,6 +24,7 @@ import type {
   SurfaceLabel,
 } from '@/lib/sheets/types';
 import { buildPaidStatusIndex, resolvePaidStatus, type PaidStatus } from '@/lib/sheets/paidStatus';
+import { normKw } from '@/lib/sheets/kwNorm';
 
 interface KeywordSummary extends PaidStatus {
   category: string;
@@ -35,6 +36,40 @@ interface KeywordSummary extends PaidStatus {
   /** L365 snapshot — catches long-tail keywords with no traffic in the last 90d. */
   l365: SnapshotRow | null;
   countries: string[];
+  /** True for a keyword that is being bid but has drawn NO traffic in any
+   *  window. It has no GA4 row at all, so every metric cell is empty — the row
+   *  exists to say the keyword is bought and silent, which is itself the
+   *  finding. */
+  noImpressions: boolean;
+}
+
+// Master KW Lookup labels categories with its own vocabulary, which does not
+// match the one the All_L* tabs use. Verified live: Master says "Brandname"
+// where GA4 says "Brand", and "Others & Test" where GA4 splits Others / Test.
+// Left unmapped, a bid keyword lands in a category page that shows no traffic
+// while its traffic sits on a different page under a near-identical name.
+const MASTER_CATEGORY_ALIASES: Record<string, Category> = {
+  brandname: 'Brand',
+  brand: 'Brand',
+  'others & test': 'Others',
+  'others and test': 'Others',
+  other: 'Others',
+  others: 'Others',
+  competitor: 'Competitor',
+  profit: 'Profit',
+  feature: 'Feature',
+  language: 'Language',
+  cpm: 'CPM',
+  noise: 'Noise',
+  test: 'Test',
+  category: 'Category',
+  catepage: 'CatePage',
+};
+
+function masterCategory(raw: string): Category {
+  const k = (raw ?? '').trim().toLowerCase();
+  if (!k) return 'Unknown';
+  return MASTER_CATEGORY_ALIASES[k] ?? 'Unknown';
 }
 
 function buildSummaries(
@@ -72,6 +107,7 @@ function buildSummaries(
         l90: null,
         l365: null,
         countries: [],
+        noImpressions: false,
         ...resolvePaidStatus(term, paidIndex),
       });
     }
@@ -95,6 +131,28 @@ function buildSummaries(
     ensure(r.searchTerm, surface, r.category).l365 = r;
   });
 
+  // Every keyword in the bid list that produced no traffic in ANY window still
+  // belongs here: this table is "what am I buying and what did it show", and a
+  // keyword bought in silence is the more actionable half of that. They arrive
+  // with no GA4 row, so their metric cells stay blank and they carry the
+  // noImpressions flag.
+  //
+  // Category comes from Master KW Lookup itself — these keywords never appear in
+  // the All_L* tabs, so there is no GA4-derived category to inherit.
+  const seenTerms = new Set(Array.from(keyMap.values()).map((v) => normKw(v.searchTerm)));
+  const addedSilent = new Set<string>();
+  const seedSilent = (keyword: string, cat: string) => {
+    const k = normKw(keyword);
+    if (!k || seenTerms.has(k) || addedSilent.has(k)) return;
+    if (category !== null && cat !== category) return;
+    addedSilent.add(k);
+    // Bid keywords are a paid-side concept; nothing organic exists to report.
+    const row = ensure(keyword, 'paid', cat);
+    row.noImpressions = true;
+  };
+  masterKwLookup.forEach((r) => seedSilent(r.keyword, masterCategory(r.category)));
+  kwAddedManual.forEach((r) => seedSilent(r.keyword, 'Unknown'));
+
   const countriesByTerm = new Map<string, Set<string>>();
   inCategory(countryL7).forEach((r) => {
     if (!r.country) return;
@@ -109,9 +167,13 @@ function buildSummaries(
   });
 
   return Array.from(keyMap.values()).sort((a, b) => {
+    // Keywords that never showed have no numbers to rank by, so they sit below
+    // everything that did rather than mixing into the zero-traffic tail.
+    if (a.noImpressions !== b.noImpressions) return a.noImpressions ? 1 : -1;
     const ua = a.l7?.usersL ?? a.l30?.usersL ?? a.l90?.usersL ?? a.l365?.users ?? 0;
     const ub = b.l7?.usersL ?? b.l30?.usersL ?? b.l90?.usersL ?? b.l365?.users ?? 0;
-    return ub - ua;
+    if (ub !== ua) return ub - ua;
+    return a.searchTerm.localeCompare(b.searchTerm);
   });
 }
 
@@ -184,6 +246,9 @@ function MetricsCell({ row, metrics }: { row: KeywordRow | null; metrics: Set<Me
 
 type SurfaceFilter = 'all' | 'organic' | 'paid';
 type PaidFilter = 'all' | 'in_paid' | 'manual' | 'paused' | 'not_in_paid';
+// Traffic is now a dimension of its own: the table holds both search terms
+// that appeared and bid keywords that never did.
+type ShownFilter = 'all' | 'shown' | 'silent';
 type MetricWindow = 'l7' | 'l30' | 'l90' | 'l365';
 
 // Unified {users, install, pos} for the chosen threshold window. L7/L30/L90 are
@@ -209,6 +274,11 @@ export function CategoryDrilldown({ category }: { category?: string }) {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [surfaceFilter, setSurfaceFilter] = useState<SurfaceFilter>('all');
   const [paidFilter, setPaidFilter] = useState<PaidFilter>('all');
+  // Opens on the terms that actually showed. The bid list adds ~8k rows and this
+  // table renders every row, so making it the default would make the page crawl
+  // for a list that is mostly silent long tail. The count sits next to the
+  // filter so it is one click, not hidden.
+  const [shownFilter, setShownFilter] = useState<ShownFilter>('shown');
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [metricWindow, setMetricWindow] = useState<MetricWindow>('l7');
   const [metrics, setMetrics] = useState<Set<MetricKey>>(
@@ -245,6 +315,8 @@ export function CategoryDrilldown({ category }: { category?: string }) {
     );
   }, [data, category]);
 
+  const silentCount = useMemo(() => summaries.filter((r) => r.noImpressions).length, [summaries]);
+
   const countries = useMemo(() => {
     const set = new Set<string>();
     summaries.forEach((r) => r.countries.forEach((c) => set.add(c)));
@@ -268,6 +340,8 @@ export function CategoryDrilldown({ category }: { category?: string }) {
     const maxP = maxPos.trim() === '' ? null : Number(maxPos);
     return summaries.filter((r) => {
       if (allMode && categoryFilter !== 'all' && r.category !== categoryFilter) return false;
+      if (shownFilter === 'shown' && r.noImpressions) return false;
+      if (shownFilter === 'silent' && !r.noImpressions) return false;
       if (surfaceFilter !== 'all' && r.surface !== surfaceFilter) return false;
       if (paidFilter === 'in_paid' && r.source !== 'master') return false;
       if (paidFilter === 'manual' && r.source !== 'manual') return false;
@@ -294,7 +368,7 @@ export function CategoryDrilldown({ category }: { category?: string }) {
       }
       return true;
     });
-  }, [summaries, search, allMode, categoryFilter, surfaceFilter, paidFilter, countryFilter, metricWindow, minUsers, minInstall, maxPos]);
+  }, [summaries, shownFilter, search, allMode, categoryFilter, surfaceFilter, paidFilter, countryFilter, metricWindow, minUsers, minInstall, maxPos]);
 
   const dirty =
     search !== '' ||
@@ -403,6 +477,26 @@ export function CategoryDrilldown({ category }: { category?: string }) {
             <option value="paused">⏸ Paused camp</option>
             <option value="not_in_paid">❌ Not in Paid (gồm ⏸)</option>
           </select>
+          <select
+            value={shownFilter}
+            onChange={(e) => setShownFilter(e.target.value as ShownFilter)}
+            className="h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            title="Có hiển thị hay không"
+          >
+            <option value="all">Hiển thị: All</option>
+            <option value="shown">👁 Có hiển thị</option>
+            <option value="silent">🔇 Đang bid, chưa hiển thị</option>
+          </select>
+          {silentCount > 0 && shownFilter === 'shown' && (
+            <button
+              type="button"
+              onClick={() => setShownFilter('silent')}
+              className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:border-slate-400 hover:text-slate-900"
+              title="Keyword đang bid nhưng chưa ghi nhận lượt hiển thị nào — bấm để xem"
+            >
+              🔇 {formatNumber(silentCount)} kw đang bid chưa hiển thị
+            </button>
+          )}
           {countries.length > 0 && (
             <select
               value={countryFilter}
@@ -559,6 +653,14 @@ export function CategoryDrilldown({ category }: { category?: string }) {
                         keyword={row.searchTerm}
                         className="font-medium text-sm truncate block"
                       />
+                      {row.noImpressions && (
+                        <span
+                          className="shrink-0 rounded bg-slate-100 px-1 text-[9px] font-medium text-slate-500"
+                          title="Keyword này đang được bid nhưng chưa ghi nhận lượt hiển thị nào trong mọi window — không có số để hiện."
+                        >
+                          🔇 chưa hiển thị
+                        </span>
+                      )}
                     </div>
                     {showTranslation && (
                       <div
