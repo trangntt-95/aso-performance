@@ -16,7 +16,13 @@ import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
 import { useStatusStore } from '@/lib/store/statusStore';
 import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
 import { keywordPaidShare, summarizeImpact, type ImpactPoint } from '@/lib/market/noteImpact';
-import type { ActionQueueRow, HistoryRow, KeywordRow, SheetPayload } from '@/lib/sheets/types';
+import type {
+  ActionQueueRow,
+  HistoryRow,
+  KeywordRow,
+  SheetPayload,
+  SnapshotRow,
+} from '@/lib/sheets/types';
 import { formatDeltaPct, formatNumber, formatPercent, formatPos, deltaTone } from '@/lib/utils/format';
 import { shouldShowTranslation } from '@/lib/utils/translation';
 import { cn } from '@/lib/utils';
@@ -363,6 +369,75 @@ export function KeywordTrendSheet() {
     }
   };
 
+  /**
+   * Everything known about this keyword over the whole record, so clicking it
+   * answers "how has this done overall" before the per-window detail.
+   *
+   * Two sources, deliberately shown side by side rather than merged:
+   *  - All_L365: the sheet's own 365-day snapshot per keyword × surface.
+   *  - History_Daily: the day-by-day series, which reaches further back than
+   *    365 days for some keywords and is what the charts below are drawn from.
+   * They rarely agree exactly (GA4 withholds low-volume rows differently at each
+   * grain), so presenting one as "the" total would be a false precision.
+   */
+  const allTime = useMemo(() => {
+    if (!keyword || !data) return null;
+    const kwLower = keyword.toLowerCase();
+    const wantSurface = surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
+
+    let orgUsers = 0, orgInstall = 0, paidUsers = 0, paidInstall = 0;
+    let posSum = 0, posWeight = 0;
+    for (const r of (data.allL365 ?? []) as SnapshotRow[]) {
+      if (r.searchTerm.toLowerCase() !== kwLower) continue;
+      if (wantSurface && r.surface !== wantSurface) continue;
+      if (r.surface === 'search_ad') {
+        paidUsers += r.users;
+        paidInstall += r.getApp;
+      } else {
+        orgUsers += r.users;
+        orgInstall += r.getApp;
+      }
+      if (r.pos !== null && r.users > 0) {
+        posSum += r.pos * r.users;
+        posWeight += r.users;
+      }
+    }
+
+    // Day-by-day span. Only the TRUE per-day column can be summed across days —
+    // the L7D rolling one would multiply everything by roughly seven.
+    let dailyUsers = 0, dailyInstall = 0;
+    const days = new Set<string>();
+    let first = '', last = '';
+    for (const r of data.historyDaily ?? []) {
+      if (r.searchTerm.toLowerCase() !== kwLower) continue;
+      if (wantSurface && r.surface !== wantSurface) continue;
+      const iso = typeof r.snapshotDate === 'number'
+        ? new Date(Date.UTC(1899, 11, 30) + r.snapshotDate * 86400000).toISOString().slice(0, 10)
+        : String(r.snapshotDate).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+      if (!first || iso < first) first = iso;
+      if (!last || iso > last) last = iso;
+      if (r.usersDaily === null) continue;
+      dailyUsers += r.usersDaily;
+      dailyInstall += r.getAppDaily ?? 0;
+      days.add(iso);
+    }
+
+    const totalUsers = orgUsers + paidUsers;
+    const totalInstall = orgInstall + paidInstall;
+    if (totalUsers === 0 && dailyUsers === 0 && !first) return null;
+    return {
+      orgUsers, orgInstall, paidUsers, paidInstall,
+      totalUsers, totalInstall,
+      cr: totalUsers > 0 ? totalInstall / totalUsers : null,
+      pos: posWeight > 0 ? posSum / posWeight : null,
+      paidShare: totalUsers > 0 ? paidUsers / totalUsers : null,
+      dailyUsers, dailyInstall,
+      dailyDays: days.size,
+      first, last,
+    };
+  }, [keyword, data, surface]);
+
   const trendData = useMemo(() => {
     if (!keyword || !data) return null;
     const surfaceTarget =
@@ -450,6 +525,49 @@ export function KeywordTrendSheet() {
                   <span><span className="font-semibold">Lang:</span> {trendData.meta.lang}</span>
                 )}
               </div>
+            )}
+
+            {allTime && (
+              <section className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  Toàn thời gian
+                </h3>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {([
+                    ['Users', formatNumber(allTime.totalUsers), `Organic ${formatNumber(allTime.orgUsers)} · Paid ${formatNumber(allTime.paidUsers)}`],
+                    ['Install', formatNumber(allTime.totalInstall), `Organic ${formatNumber(allTime.orgInstall)} · Paid ${formatNumber(allTime.paidInstall)}`],
+                    ['CR', allTime.cr === null ? '—' : formatPercent(allTime.cr), 'install / users'],
+                    ['Pos (organic+paid)', allTime.pos === null ? '—' : allTime.pos.toFixed(2), 'bình quân theo users'],
+                  ] as const).map(([label, value, hint]) => (
+                    <div key={label} className="rounded border border-slate-200 bg-white p-2">
+                      <div className="text-[10px] text-slate-500">{label}</div>
+                      <div className="font-mono text-sm font-semibold text-slate-900">{value}</div>
+                      <div className="text-[9px] text-slate-400">{hint}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-[10px] leading-snug text-slate-500">
+                  Số trên lấy từ <code className="text-[9px]">All_L365</code> (ảnh chụp 365 ngày).
+                  {allTime.paidShare !== null && (
+                    <> Paid chiếm <b>{formatPercent(allTime.paidShare)}</b> lượng users.</>
+                  )}
+                  {allTime.first && (
+                    <>
+                      {' '}Lịch sử theo ngày có từ <b>{allTime.first}</b> đến <b>{allTime.last}</b>
+                      {allTime.dailyDays > 0 ? (
+                        <>
+                          {' '}— cộng {allTime.dailyDays} ngày có số thật được{' '}
+                          <b>{formatNumber(allTime.dailyUsers)}</b> users /{' '}
+                          <b>{formatNumber(allTime.dailyInstall)}</b> install.
+                        </>
+                      ) : (
+                        <> — nhưng chưa ngày nào có số per-day nên không cộng dồn được.</>
+                      )}
+                    </>
+                  )}
+                  {' '}Hai nguồn không khớp tuyệt đối vì GA4 ẩn dòng volume thấp khác nhau ở mỗi độ mịn.
+                </div>
+              </section>
             )}
 
             {bidImpact && (
