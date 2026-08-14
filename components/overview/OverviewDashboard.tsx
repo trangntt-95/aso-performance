@@ -34,6 +34,8 @@ import { WindowSelector } from './WindowSelector';
 import { DownloadMenu } from '@/components/shared/DownloadMenu';
 import { buildOverviewSheets } from '@/lib/export/overviewExport';
 import { ChannelMixCards } from './ChannelMixCards';
+import { ChannelComparisonCard } from './ChannelComparison';
+import { compareChannels } from '@/lib/market/crossChannel';
 import { MarketTrajectoryChart } from './MarketTrajectoryChart';
 import { ChannelSplitChart } from './ChannelSplitChart';
 import { DailyTrendChart } from './DailyTrendChart';
@@ -311,6 +313,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   // Note appended to window-based sections that can't be date-scoped.
   const winNote = inDateMode ? ` · ⚠️ theo window ${window}, chưa lọc ngày` : '';
   const dateLabel = dateRange ? (isSingleDay ? dateRange.from : `${dateRange.from} → ${dateRange.to}`) : '';
+
+  // Paid channels side by side. Returns null until both sources have data, so
+  // the section simply doesn't render on a dashboard without Google Ads wired up.
+  const channelCompare = useMemo(() => compareChannels(data), [data]);
 
   const openCategoryDetail = useCategoryDetailStore((s) => s.openCategory);
 
@@ -789,6 +795,21 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           />
         )}
       </section>
+
+      {channelCompare && !channelCompare.noOverlap && (
+        <SectionCard
+          title="Kênh trả phí · App Store Ads vs Google Ads"
+          hint="Cùng một khoảng thời gian, đặt cạnh nhau. Chi phí quy về USD; install giữ nguyên cách đếm riêng của từng kênh."
+          cta={embedded ? undefined : 'Chi tiết Google Ads'}
+          href={embedded ? undefined : '/google-ads'}
+          anchorId="sec-channels"
+          highlighted={highlightKey === 'channels'}
+          onCopyLink={embedded ? undefined : () => copyLink('channels')}
+          copied={copiedKey === 'channels'}
+        >
+          <ChannelComparisonCard data={channelCompare} />
+        </SectionCard>
+      )}
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <SectionCard

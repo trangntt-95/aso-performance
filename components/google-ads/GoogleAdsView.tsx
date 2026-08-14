@@ -14,6 +14,7 @@ import {
   type CampaignRow,
   type ShareVerdict,
 } from '@/lib/market/googleAdsReport';
+import { BrandDemandTable } from './BrandDemandTable';
 import { cn } from '@/lib/utils';
 
 // Google Ads — a separate channel, reported on its own terms.
@@ -428,6 +429,9 @@ export function GoogleAdsView() {
           <b> Click tiêu đề cột để sắp xếp.</b>
         </div>
       </div>
+
+      {/* Same phrase on both surfaces — the cross-channel view. */}
+      <BrandDemandTable />
 
       {/* Search terms */}
       <div className="max-h-[60vh] overflow-auto rounded-lg border bg-white">
