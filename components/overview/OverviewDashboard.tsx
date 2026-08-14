@@ -149,7 +149,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const [rangeFrom, setRangeFrom] = useState(() => initParam('from') ?? '');
   const [rangeTo, setRangeTo] = useState(() => initParam('to') ?? '');
   // Market Performance series: core basket, everything, or both side by side.
-  const [marketSeries, setMarketSeries] = useState<'both' | 'core' | 'all'>('both');
+  const [marketSeries, setMarketSeries] = useState<'core' | 'all'>('all');
   const [splitMetric, setSplitMetric] = useState<'users' | 'getapp' | 'cr'>(() => {
     const m = initParam('metric');
     return m === 'getapp' || m === 'cr' ? m : 'users';
@@ -453,7 +453,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     : totalCr !== null && totalCrPrior !== null && totalCrPrior > 0
     ? totalCr / totalCrPrior - 1
     : null;
-  const kpiHelper = inDateMode ? 'vs kỳ trước cùng độ dài' : `vs prior ${days}d`;
+  const kpiHelper = 'vs kỳ trước';
   const kpiSuffix = inDateMode ? dateLabel : window;
 
   if (error) {
@@ -736,7 +736,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               label={`CR Total · ${kpiSuffix}`}
               value={dispCr !== null ? formatPercent(dispCr) : '—'}
               deltaPct={dispCrDelta}
-              helper={inDateMode ? 'install / users (kỳ này)' : `paid + organic · vs prior ${days}d`}
+              helper="paid + organic"
               Icon={Megaphone}
             />
             <AdsTargetTile
@@ -774,7 +774,6 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Channel mix · {kpiSuffix}</h2>
             <p className="text-[11px] text-slate-500">
-              Click a card to filter the whole page by that surface.
             </p>
           </div>
           {!embedded && (
@@ -799,7 +798,6 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       {channelCompare && !channelCompare.noOverlap && (
         <SectionCard
           title="Kênh trả phí · App Store Ads vs Google Ads"
-          hint="Cùng một khoảng thời gian, đặt cạnh nhau. Chi phí quy về USD; install giữ nguyên cách đếm riêng của từng kênh."
           cta={embedded ? undefined : 'Chi tiết Google Ads'}
           href={embedded ? undefined : '/google-ads'}
           anchorId="sec-channels"
@@ -814,7 +812,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <SectionCard
           title="Market Performance · all windows"
-          hint={`Click a window to focus the whole page.${winNote}`}
+          hint={winNote.trim() || undefined}
           cta={embedded ? undefined : 'Drill into Market Index'}
           href={embedded ? undefined : '/market-index'}
           anchorId="sec-market-performance"
@@ -829,9 +827,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                 <div className="mb-2 flex justify-end">
                   <div className="inline-flex overflow-hidden rounded-md border border-slate-200 text-[11px]">
                     {([
-                      { id: 'both' as const, label: 'Cả hai', title: 'Vẽ song song core market và toàn bộ nước' },
-                      { id: 'core' as const, label: 'Core market', title: 'Chỉ rổ keyword chính, có trọng số theo nước' },
                       { id: 'all' as const, label: 'Toàn bộ', title: 'Mọi keyword, mọi nước' },
+                      { id: 'core' as const, label: 'Core market', title: 'Chỉ rổ keyword chính, có trọng số theo nước' },
                     ]).map((o) => (
                       <button
                         key={o.id}
@@ -852,7 +849,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                 </div>
                 <MarketTrajectoryChart
                   data={trajectory}
-                  mode={marketSeries === 'both' ? 'compare' : 'single'}
+                  mode="single"
                   metric={marketSeries === 'core' ? 'weightedDelta' : 'usersDelta'}
                   activeWindow={window}
                   onWindowClick={(w) => {
@@ -922,7 +919,6 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
       <SectionCard
         title="Daily trend (rolling 7 ngày)"
-        hint="Users / Install / CR — mỗi điểm là tổng/giá trị rolling 7 ngày (đồng nhất, hết spike)."
         anchorId="sec-daily-trend"
         highlighted={highlightKey === 'daily-trend'}
         onCopyLink={embedded ? undefined : () => copyLink('daily-trend')}
@@ -948,8 +944,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           title={`Top countries · ${countryWin}`}
           hint={
             countryWin !== window
-              ? `Country lấy theo ${countryWin} (dùng chung mọi window — phân bố nước gần như không đổi). Click a country to filter.`
-              : `Click a country to filter the whole page.${winNote}`
+              ? `Country lấy theo ${countryWin} (dùng chung mọi window — phân bố nước gần như không đổi).`
+              : winNote.trim()
           }
           anchorId="sec-top-countries"
           highlighted={highlightKey === 'top-countries'}
@@ -976,7 +972,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           hint={
             inDateMode
               ? 'Theo ngày đã ghim. Category suy ra từ keyword (data per-ngày không có cột category).'
-              : 'Toggle Users / Install at the top right. Click a slice to filter the whole page + open details.'
+              : undefined
           }
           anchorId="sec-category-share"
           highlighted={highlightKey === 'category-share'}
@@ -1014,8 +1010,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
         title={`Top contribution · ${kpiSuffix}`}
         hint={
           inDateMode
-            ? `Tất cả keywords theo ${isSingleDay ? 'ngày' : 'khoảng'} đã chọn (per-day). Không có Δ. Chuột phải để tải CSV.`
-            : 'Tất cả keywords theo Users và Installs, kèm share %. Chuột phải để tải CSV.'
+            ? `Theo ${isSingleDay ? 'ngày' : 'khoảng'} đã chọn (per-day) — không có Δ.`
+            : undefined
         }
         anchorId="sec-top-contribution"
         highlighted={highlightKey === 'top-contribution'}

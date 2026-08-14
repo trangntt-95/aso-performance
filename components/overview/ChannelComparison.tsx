@@ -1,7 +1,7 @@
 'use client';
 
 import { formatNumber, formatPercent } from '@/lib/utils/format';
-import { FX_NOTE } from '@/lib/config/fx';
+import { FX_NOTE, VND_PER_USD } from '@/lib/config/fx';
 import type { ChannelComparison as Comparison } from '@/lib/market/crossChannel';
 import { cn } from '@/lib/utils';
 
@@ -32,8 +32,8 @@ export function ChannelComparisonCard({ data }: { data: Comparison }) {
 
   return (
     <div className="space-y-2">
-      <div className="text-[11px] text-slate-500">
-        {data.from} → {data.to} ({data.days} ngày — khoảng mà <b>cả hai</b> kênh đều có dữ liệu). {FX_NOTE}
+      <div className="text-[11px] text-slate-500" title={`Khoảng mà cả hai kênh đều có dữ liệu. ${FX_NOTE}`}>
+        {data.from} → {data.to} · {data.days} ngày · {VND_PER_USD.toLocaleString('vi-VN')}₫ = $1
       </div>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -84,7 +84,7 @@ export function ChannelComparisonCard({ data }: { data: Comparison }) {
                     {c.installs % 1 === 0 ? c.installs : c.installs.toFixed(1)}
                   </div>
                   <div className="cursor-help text-[9px] text-slate-400" title={c.installBasis}>
-                    cách đếm riêng ⓘ
+                    ⓘ
                   </div>
                 </div>
               </div>
@@ -93,12 +93,16 @@ export function ChannelComparisonCard({ data }: { data: Comparison }) {
         })}
       </div>
 
-      <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-2 text-[10px] leading-snug text-amber-900">
-        <b>Không cộng hai cột install lại.</b> App Store chỉ đếm lượt vào listing có tham số{' '}
-        <code className="text-[9px]">surface_type=</code> (tức từ App Store search) — traffic do Google Ads đưa sang
-        không mang tham số đó. Google Ads thì đếm theo attribution click của chính nó. Hai con số đo hai thứ khác nhau,
-        phần lớn rời nhau, nhưng cùng đọc một sự kiện GA4 <code className="text-[9px]">shopify_app_install</code> nên
-        vẫn có thể chồng lấn ở mức tổng.
+      <div
+        className="cursor-help text-[10px] text-amber-700"
+        title={
+          'App Store chỉ đếm lượt vào listing có tham số surface_type= (tức từ App Store search) — traffic do ' +
+          'Google Ads đưa sang không mang tham số đó. Google Ads đếm theo attribution click của chính nó. Hai con ' +
+          'số đo hai thứ khác nhau, phần lớn rời nhau, nhưng cùng đọc một sự kiện GA4 shopify_app_install nên vẫn ' +
+          'có thể chồng lấn ở mức tổng.'
+        }
+      >
+        Không cộng hai cột install lại ⓘ
       </div>
     </div>
   );

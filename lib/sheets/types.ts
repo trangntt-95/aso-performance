@@ -273,6 +273,18 @@ export interface MasterKwRow {
  * One recommended bid per Country × Category, fully computed in the 'Max bid cap'
  * sheet tab (Apps Script). The dashboard only reads + filters — no recompute.
  */
+/** One row of the 'PerGeo_CPI_Cap' tab — the CPI ceiling set per country. */
+export interface PerGeoCpiCapRow {
+  country: string;
+  /** Revenue rank of the country (1 = biggest). null when the cell is blank. */
+  rank: number | null;
+  /** Max CPI we're willing to pay in this country, in USD. */
+  cap: number;
+  /** 'Tier 1 Market?' column — the countries worth defending. */
+  tier1: boolean;
+  note: string;
+}
+
 export interface BidCapRow {
   tier: string;
   country: string;
@@ -412,6 +424,10 @@ export interface SheetPayload {
   campLinks: CampLinkRow[];
   /** Recommended bid per Country × Category ('Max bid cap' tab). */
   bidCap: BidCapRow[];
+  /** CPI ceiling + revenue rank per country ('PerGeo_CPI_Cap' tab). This is the
+   *  config the bid recommendations are derived FROM, so it's carried
+   *  separately to let the UI show intent next to outcome. */
+  perGeoCpiCap: PerGeoCpiCapRow[];
   /** Per-campaign aggregate paid spend ('Shopify_daily' tab) — for overbid detection. */
   shopifyCamps: ShopifyCampRow[];
   /** Date range the Shopify_daily totals cover (from cell A2), e.g. "01/03/2026 → 14/06/2026". */

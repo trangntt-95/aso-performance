@@ -110,6 +110,7 @@ async function fetchPayload(): Promise<SheetPayload> {
     pausedKw: parsePausedCamp(raw['Paused_camp'] ?? []),
     campLinks: parseCampLinks(raw['Camp_Links'] ?? []),
     bidCap: parseBidCap(raw['Max bid cap'] ?? []),
+    perGeoCpiCap: [],
     shopifyCamps: parseShopifyCamps(raw['Shopify_daily'] ?? []),
     shopifyDateRange: parseShopifyDateRange(raw['Shopify_daily'] ?? []),
     negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),

@@ -5,6 +5,7 @@ import type {
   AlertType,
   BidAction,
   BidCapRow,
+  PerGeoCpiCapRow,
   CampLinkRow,
   Category,
   DynamicBasketItem,
@@ -583,6 +584,70 @@ export function parseMasterKw(rows: string[][]): MasterKwRow[] {
 //   Bid p75 | CR used % | Max Allowed | Bid Rec ⭐ | Est Pos @ Rec | Ceil Blk |
 //   Action
 // ---------------------------------------------------------------------------
+
+/**
+ * 'PerGeo_CPI_Cap' — Country | Country Rank | CPI Cap ($) | Tier 1 Market? | Note.
+ *
+ * The tab carries an unrelated RAW DATA block further right (columns J+), so
+ * columns are located by header rather than by position, and any row without a
+ * country in the located column is dropped. Returns [] when the tab is absent.
+ */
+export function parsePerGeoCpiCap(rows: string[][]): PerGeoCpiCapRow[] {
+  if (!rows || rows.length < 2) return [];
+  const norm = (c: unknown): string => str(c).trim().toLowerCase();
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const r = (rows[i] ?? []).map(norm);
+    if (r.some((h) => h === 'country') && r.some((h) => h.startsWith('cpi cap'))) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return [];
+  const header = (rows[headerIdx] ?? []).map(norm);
+  const find = (...cands: string[]): number => {
+    for (const c of cands) {
+      const i = header.indexOf(c);
+      if (i >= 0) return i;
+    }
+    for (const c of cands) {
+      const i = header.findIndex((h) => h.startsWith(c));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const ci = {
+    // 'country rank' also starts with 'country', so the exact match for
+    // 'country' has to be found before any prefix search runs.
+    country: find('country'),
+    rank: find('country rank', 'revenue rank', 'rank'),
+    cap: find('cpi cap ($)', 'cpi cap', 'cap'),
+    tier1: find('tier 1 market?', 'tier 1 market', 'tier 1', 'tier1'),
+    note: find('note'),
+  };
+  if (ci.country < 0 || ci.cap < 0) return [];
+
+  const out: PerGeoCpiCapRow[] = [];
+  const seen = new Set<string>();
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const r = rows[i] ?? [];
+    const country = str(r[ci.country]).trim();
+    if (!country) continue;
+    const key = country.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const rank = ci.rank >= 0 ? num(r[ci.rank]) : 0;
+    const flag = ci.tier1 >= 0 ? str(r[ci.tier1]).trim().toLowerCase() : '';
+    out.push({
+      country,
+      rank: rank > 0 ? rank : null,
+      cap: ci.cap >= 0 ? num(r[ci.cap]) : 0,
+      tier1: flag === 'true' || flag === 'yes' || flag === 'y' || flag === '1',
+      note: ci.note >= 0 ? str(r[ci.note]).trim() : '',
+    });
+  }
+  return out;
+}
 
 export function parseBidCap(rows: string[][]): BidCapRow[] {
   if (!rows || rows.length < 2) return [];

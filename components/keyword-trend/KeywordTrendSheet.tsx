@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { TrendChart } from './TrendChart';
 import { BidImpactChart } from './BidImpactChart';
 import { useSheetData } from '@/lib/hooks/useSheetData';
+import { normKw } from '@/lib/sheets/kwNorm';
 import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
 import { useStatusStore } from '@/lib/store/statusStore';
 import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
@@ -382,14 +383,15 @@ export function KeywordTrendSheet() {
    */
   const allTime = useMemo(() => {
     if (!keyword || !data) return null;
-    const kwLower = keyword.toLowerCase();
-    const wantSurface = surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
+    // "Toàn thời gian" reports organic AND paid side by side, so it must not be
+    // narrowed by the surface the panel was opened with — opening from Underbid
+    // (paid) would otherwise zero the organic column of a keyword that has one.
+    const kwKey = normKw(keyword);
 
     let orgUsers = 0, orgInstall = 0, paidUsers = 0, paidInstall = 0;
     let posSum = 0, posWeight = 0;
     for (const r of (data.allL365 ?? []) as SnapshotRow[]) {
-      if (r.searchTerm.toLowerCase() !== kwLower) continue;
-      if (wantSurface && r.surface !== wantSurface) continue;
+      if (normKw(r.searchTerm) !== kwKey) continue;
       if (r.surface === 'search_ad') {
         paidUsers += r.users;
         paidInstall += r.getApp;
@@ -409,8 +411,7 @@ export function KeywordTrendSheet() {
     const days = new Set<string>();
     let first = '', last = '';
     for (const r of data.historyDaily ?? []) {
-      if (r.searchTerm.toLowerCase() !== kwLower) continue;
-      if (wantSurface && r.surface !== wantSurface) continue;
+      if (normKw(r.searchTerm) !== kwKey) continue;
       const iso = typeof r.snapshotDate === 'number'
         ? new Date(Date.UTC(1899, 11, 30) + r.snapshotDate * 86400000).toISOString().slice(0, 10)
         : String(r.snapshotDate).slice(0, 10);
@@ -442,16 +443,20 @@ export function KeywordTrendSheet() {
     if (!keyword || !data) return null;
     const surfaceTarget =
       surface === 'paid' ? 'search_ad' : surface === 'organic' ? 'search' : null;
-    const kwLower = keyword.toLowerCase();
-    const matchKw = (r: { searchTerm: string }) => r.searchTerm.toLowerCase() === kwLower;
+    const kwKey = normKw(keyword);
+    const matchKw = (r: { searchTerm: string }) => normKw(r.searchTerm) === kwKey;
     const matchSurface = (r: { surface: string }) =>
       surfaceTarget ? r.surface === surfaceTarget : true;
     const matchCountry = (r: { country?: string }) => (country ? r.country === country : true);
 
-    const history: HistoryRow[] = data.history.filter((h) => matchKw(h) && matchSurface(h));
+    // Trend series: keyword only, BOTH surfaces. The charts plot organic and
+    // paid as separate lines, so surface-filtering here would erase one line and
+    // blank the chart entirely for keywords with no paid history (219 of 649
+    // paid keywords have no History row on either surface at all).
+    const history: HistoryRow[] = data.history.filter(matchKw);
     // Install trend comes from History_Daily (getAppL7D). It has no country column,
     // so this series is global per keyword — same as the users/pos trend above.
-    const historyDaily = (data.historyDaily ?? []).filter((h) => matchKw(h) && matchSurface(h));
+    const historyDaily = (data.historyDaily ?? []).filter(matchKw);
 
     // When country filter is active, prefer Country_L_* (those have the country column).
     const pickL = (allTab: KeywordRow[], countryTab: KeywordRow[]) =>
@@ -464,7 +469,7 @@ export function KeywordTrendSheet() {
     const inL90 = pickL(data.allL90, data.countryL90);
 
     const actionRows: ActionQueueRow[] = data.actionQueue.filter((r) => {
-      if (r.keyword.toLowerCase() !== kwLower) return false;
+      if (normKw(r.keyword) !== kwKey) return false;
       if (country && r.country !== country) return false;
       if (surface !== 'all' && r.surface !== surface) return false;
       return true;
@@ -639,6 +644,15 @@ export function KeywordTrendSheet() {
                   </div>
                 )}
               </section>
+            )}
+
+            {trendData.history.length === 0 && trendData.historyDaily.length === 0 && (
+              <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-snug text-slate-600">
+                Keyword này <b>chưa có dòng nào trong History / History_Daily</b> — nên ba biểu đồ bên dưới trống.
+                Không phải lỗi dashboard: GA4 giấu bớt hàng ở mức ngày với keyword lượng thấp, nên keyword chỉ xuất
+                hiện ở cửa sổ dài (L365) thường không có chuỗi theo ngày. Số ở phần <b>Toàn thời gian</b> và{' '}
+                <b>Snapshot</b> phía dưới vẫn đúng.
+              </div>
             )}
 
             <section className="space-y-2">

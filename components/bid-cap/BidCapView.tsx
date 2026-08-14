@@ -16,6 +16,7 @@ import { buildCampLinkIndex } from '@/lib/market/campLink';
 import { findCampBidConflicts } from '@/lib/market/campBidConflicts';
 import { normalizeCampName } from '@/lib/sheets/campName';
 import { normKw } from '@/lib/sheets/kwNorm';
+import { CpiCapOverview } from './CpiCapOverview';
 
 // The campaign shown on a row: a name + optional URL (clickable when known).
 // `fromSheet` = came from the hand-maintained 'Link campaign' column.
@@ -296,6 +297,9 @@ export function BidCapView() {
 
   return (
     <div className="space-y-3">
+      {/* Trần CPI theo nước — bối cảnh cho toàn bộ bảng bên dưới. */}
+      <CpiCapOverview />
+
       <div className="text-xs text-slate-500">
         Mức bid <strong>recommend</strong> cho từng <strong>Country × Category</strong> (tính sẵn trong sheet{' '}
         <code className="text-[10px]">Max bid cap</code>). <strong>Bid rec</strong> = mức nên set;{' '}
