@@ -1,6 +1,7 @@
 import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from 'ai';
 import { google } from '@ai-sdk/google';
 import { fetchAllTabs } from '@/lib/sheets/client';
+import { EMPTY_GOOGLE_ADS } from '@/lib/sheets/googleAdsTypes';
 import {
   parseActionQueue,
   parseAlertLog,
@@ -101,6 +102,8 @@ async function fetchPayload(): Promise<SheetPayload> {
     // The chat context doesn't reason over per-day spend; skip the second-sheet
     // fetch so the assistant stays fast.
     shopifyDaily: [],
+    // The chat context doesn't reason over the Google Ads channel yet.
+    googleAds: EMPTY_GOOGLE_ADS,
     alertLog: parseAlertLog(raw['AlertLog'] ?? []),
     kwAddedManual: parseKwAddedManual(raw['KW_Added_Manual'] ?? []),
     masterKwLookup,

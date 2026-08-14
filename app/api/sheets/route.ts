@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchAllTabs, fetchShopifyDailyRows } from '@/lib/sheets/client';
+import { fetchGoogleAdsTabs, parseGoogleAds } from '@/lib/sheets/googleAds';
 import { normalizeCampName } from '@/lib/sheets/campName';
 import {
   parseActionQueue,
@@ -33,7 +34,11 @@ export async function GET() {
   try {
     // The per-day Shopify export lives in a second spreadsheet; fetch it
     // alongside the main tabs. It resolves to [] if unconfigured/unreadable.
-    const [raw, shopifyDailyRaw] = await Promise.all([fetchAllTabs(), fetchShopifyDailyRows()]);
+    const [raw, shopifyDailyRaw, gadsRaw] = await Promise.all([
+      fetchAllTabs(),
+      fetchShopifyDailyRows(),
+      fetchGoogleAdsTabs(),
+    ]);
     // Only a recent window ships to the client: the tab goes back to 2025-01
     // (~100k rows) and the impact read only ever looks a few weeks either side
     // of a note.
@@ -81,6 +86,7 @@ export async function GET() {
       shopifyCamps: parseShopifyCamps(raw['Shopify_daily'] ?? []),
       shopifyDateRange: parseShopifyDateRange(raw['Shopify_daily'] ?? []),
       shopifyDaily: parseShopifyDaily(shopifyDailyRaw, shopifySince, shopifyCampAllow),
+      googleAds: parseGoogleAds(gadsRaw),
       negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
       windowDates,
       fetchedAt: new Date().toISOString(),

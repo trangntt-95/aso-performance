@@ -2,6 +2,8 @@
 // Core enums
 // ============================================================================
 
+import type { GoogleAdsPayload } from './googleAdsTypes';
+
 export type Priority = 'P0' | 'P1' | 'P2' | 'P3';
 
 export type Window = 'L3' | 'L7' | 'L14' | 'L30' | 'L90' | 'L365' | 'L90+L30';
@@ -417,6 +419,10 @@ export interface SheetPayload {
   /** Per-DAY campaign spend from the separate Shopify Ads sheet, trimmed to a
    *  recent window. Empty when that sheet isn't configured or readable. */
   shopifyDaily: ShopifyDailyRow[];
+  /** Google Ads export — a different channel in a different currency, so it
+   *  gets its own page rather than joining the ASO tables. Empty when that
+   *  sheet isn't configured. */
+  googleAds: GoogleAdsPayload;
   /** Keywords explicitly set as negatives (from 'Negative KW list' tab, col B). */
   negativeKw: string[];
   /** Actual date range each window (L3/L7/...) covers, parsed from tab titles. */

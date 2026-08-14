@@ -11,6 +11,7 @@ const TITLES: Record<string, string> = {
   '/underbid': 'Underbid Keywords',
   '/overbid-camps': 'Overbid Camps',
   '/camp-health': 'Camp Health',
+  '/google-ads': 'Google Ads',
   '/bid-cap': 'Bid Recommendations',
   '/trends': 'Trends',
 };

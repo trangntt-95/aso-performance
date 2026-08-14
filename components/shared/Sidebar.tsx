@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Flame,
   HeartPulse,
+  Megaphone,
   GripVertical,
   RotateCcw,
   Eye,
@@ -38,6 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/underbid', label: 'Underbid Keywords', Icon: TrendingUp, shortLabel: 'Underbid' },
   { href: '/overbid-camps', label: 'Overbid Camps', Icon: Flame, shortLabel: 'Overbid' },
   { href: '/camp-health', label: 'Camp Health', Icon: HeartPulse, shortLabel: 'Health' },
+  { href: '/google-ads', label: 'Google Ads', Icon: Megaphone, shortLabel: 'GAds' },
   { href: '/bid-cap', label: 'Bid Recommendations', Icon: DollarSign, shortLabel: 'Bids' },
 ];
 
