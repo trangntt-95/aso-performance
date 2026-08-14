@@ -117,6 +117,7 @@ export function CampHealthView() {
   const { data, isLoading, error } = useSheetData();
   const [search, setSearch] = useState('');
   const [bucketFilter, setBucketFilter] = useState<HealthBucket | 'all' | 'problems'>('problems');
+  const [linkFilter, setLinkFilter] = useState<'all' | 'no-url'>('all');
   const [sortKey, setSortKey] = useState<SortKey>('atRisk');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const toggleSort = (k: SortKey) => {
@@ -141,6 +142,13 @@ export function CampHealthView() {
     [data?.shopifyDaily, data?.campLinks, data?.pausedKw, windowDays],
   );
   const campUrl = useMemo(() => buildCampUrlIndex(data?.campLinks ?? []), [data?.campLinks]);
+  // Camps the spend data knows about but Camp_Links doesn't. Not a fault of the
+  // camp — it just means the row is missing from the sheet, which also costs it
+  // its Geo, so it can't be checked against the exclude list either.
+  const noUrlCount = useMemo(
+    () => result.rows.filter((r) => !campUrl.get(r.camp)).length,
+    [result.rows, campUrl],
+  );
   // Keyword notes reach a campaign through the camps pinned on Underbid.
   const loadNotes = useNotesStore((st) => st.load);
   const allNotes = useNotesStore((st) => st.notes);
@@ -199,6 +207,7 @@ export function CampHealthView() {
       )
         return false;
       if (bucketFilter !== 'all' && bucketFilter !== 'problems' && r.bucket !== bucketFilter) return false;
+      if (linkFilter === 'no-url' && campUrl.get(r.camp)) return false;
       if (q && !r.camp.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -232,7 +241,7 @@ export function CampHealthView() {
           : (va as number) - (vb as number);
       return base * dir || b.atRisk - a.atRisk;
     });
-  }, [result.rows, search, bucketFilter, sortKey, sortDir, noteView, hiddenUntil]);
+  }, [result.rows, search, bucketFilter, linkFilter, campUrl, sortKey, sortDir, noteView, hiddenUntil]);
 
   const problemCount = useMemo(
     () =>
@@ -405,6 +414,15 @@ export function CampHealthView() {
             })}
           </select>
           <select
+            value={linkFilter}
+            onChange={(e) => setLinkFilter(e.target.value as 'all' | 'no-url')}
+            className="h-7 rounded border border-slate-200 bg-white px-2 text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            title="Camp chưa có URL trong Camp_Links: không mở thẳng sang Apple Ads được, và cũng không có Geo để đối chiếu"
+          >
+            <option value="all">Mọi camp</option>
+            <option value="no-url">Chưa có URL ({noUrlCount})</option>
+          </select>
+          <select
             value={windowDays}
             onChange={(e) => setWindowDays(Number(e.target.value))}
             className="h-7 rounded border border-slate-200 bg-white px-2 text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -416,12 +434,12 @@ export function CampHealthView() {
               </option>
             ))}
           </select>
-          {(search || bucketFilter !== 'problems') && (
+          {(search || bucketFilter !== 'problems' || linkFilter !== 'all') && (
             <Button
               variant="ghost"
               size="sm"
               className="h-7 gap-1 text-xs"
-              onClick={() => { setSearch(''); setBucketFilter('problems'); setSortKey('atRisk'); setSortDir('desc'); }}
+              onClick={() => { setSearch(''); setBucketFilter('problems'); setLinkFilter('all'); setSortKey('atRisk'); setSortDir('desc'); }}
             >
               <X className="h-3 w-3" />
               Reset
@@ -498,11 +516,14 @@ export function CampHealthView() {
                           <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
                         </a>
                       ) : (
-                        <span
-                          className="text-[12px] font-medium text-slate-800"
-                          title="Camp này chưa có URL trong Camp_Links"
-                        >
-                          {r.camp}
+                        <span className="inline-flex items-baseline gap-1">
+                          <span className="text-[12px] font-medium text-slate-800">{r.camp}</span>
+                          <span
+                            className="cursor-help rounded bg-slate-100 px-1 text-[9px] font-medium text-slate-500"
+                            title="Chưa có dòng URL trong Camp_Links → không mở thẳng sang Apple Ads được, và cũng không có cột Geo để đối chiếu với danh sách exclude."
+                          >
+                            chưa có URL
+                          </span>
                         </span>
                       )}
                       {hideTs && (

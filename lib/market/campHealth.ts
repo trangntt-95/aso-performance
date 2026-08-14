@@ -108,9 +108,16 @@ export function analyseCampHealth(
   // One campaign shows up under several labels ("… - test till Sep",
   // "… (CPI 32)"). Group them, or the same camp is reported as several rows
   // each holding a slice of its spend.
+  //
+  // Only Camp_Links is authoritative. Paused_camp names used to be passed in
+  // here too, which backfired: a paused entry carrying a longer description
+  // ("… Low bid 09 (-IN)", "… Test potential KW Apr - test till Sep") became a
+  // campaign identity of its own, so the shorter running label could no longer
+  // fold onto it and never got recognised as switched off. Left out, those
+  // names fall through to the leftover pass and fold onto the spend label.
   const grouper = buildCampGrouper(
     rows.map((r) => r.camp),
-    [...(opts.canonicalNames ?? []), ...(opts.pausedCamps ?? [])],
+    opts.canonicalNames ?? [],
   );
   // Paused_camp is the only confirmation that a campaign was switched off.
   // Resolved through the grouper so a paused camp still matches when the spend
