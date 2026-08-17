@@ -850,24 +850,70 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
 // it don't break parsing.
 // ---------------------------------------------------------------------------
 
+/**
+ * Campaign totals from a Shopify Ads export.
+ *
+ * Two layouts exist in the wild and both must parse:
+ *   A) the main sheet's 'Shopify_daily' tab — camp name in column 0, then
+ *      Impressions | Clicks | Installs | Spend
+ *   B) the separate Shopify spreadsheet's range export — column 0 blank, a
+ *      'Campaign' header in column 1, and 'From'/'To' rows above it
+ *
+ * Columns are therefore located by header text, not by position. Assuming
+ * position is what made layout B parse to zero rows: every camp name landed in
+ * a blank column 0 and the whole table was silently dropped, taking Overbid
+ * Camps down with it.
+ */
 export function parseShopifyCamps(rows: string[][]): ShopifyCampRow[] {
   if (!rows || rows.length < 2) return [];
-  let headerIdx = rows.findIndex((r) => (r ?? []).some((c) => /impression/i.test(str(c))));
-  if (headerIdx < 0) headerIdx = 0; // no recognizable header — assume data starts at row 1
-  return rows
-    .slice(headerIdx + 1)
-    .map((row): ShopifyCampRow | null => {
-      const camp = str(row?.[0]).trim();
-      if (!camp) return null;
-      return {
-        camp,
-        impressions: num(row?.[1]),
-        clicks: num(row?.[2]),
-        installs: num(row?.[3]),
-        spend: num(row?.[4]),
-      };
-    })
-    .filter((r): r is ShopifyCampRow => r !== null);
+  const headerIdx = rows.findIndex((r) => (r ?? []).some((c) => /impression/i.test(str(c))));
+  if (headerIdx < 0) return [];
+  const header = (rows[headerIdx] ?? []).map((c) => str(c).trim().toLowerCase());
+
+  const col = (...names: string[]): number => {
+    for (const n of names) {
+      const i = header.findIndex((h) => h === n);
+      if (i >= 0) return i;
+    }
+    for (const n of names) {
+      const i = header.findIndex((h) => h.startsWith(n));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+
+  const impressions = col('impressions', 'impression', 'imp');
+  // The campaign column is only labelled in layout B. In layout A the name sits
+  // in the column left of Impressions, which is where the date range label also
+  // lives — so fall back to that position rather than guessing a header.
+  let campCol = col('campaign', 'camp');
+  if (campCol < 0) campCol = Math.max(0, impressions - 1);
+
+  const ci = {
+    camp: campCol,
+    impressions,
+    clicks: col('clicks', 'click'),
+    installs: col('installs', 'install'),
+    spend: col('spend', 'cost'),
+  };
+  if (ci.impressions < 0) return [];
+
+  const out: ShopifyCampRow[] = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i] ?? [];
+    const camp = str(row[ci.camp]).trim();
+    if (!camp) continue;
+    // A totals row repeats the metric labels or carries no name worth keeping.
+    if (/^(total|tổng|grand total)$/i.test(camp)) continue;
+    out.push({
+      camp,
+      impressions: num(row[ci.impressions]),
+      clicks: ci.clicks >= 0 ? num(row[ci.clicks]) : 0,
+      installs: ci.installs >= 0 ? num(row[ci.installs]) : 0,
+      spend: ci.spend >= 0 ? num(row[ci.spend]) : 0,
+    });
+  }
+  return out;
 }
 
 // The date range the Shopify_daily totals cover lives in cell A2 (the header
@@ -875,6 +921,30 @@ export function parseShopifyCamps(rows: string[][]): ShopifyCampRow[] {
 // dd/mm/yyyy", or the raw trimmed text if it can't find two ISO dates, or ''.
 export function parseShopifyDateRange(rows: string[][]): string {
   if (!rows || rows.length < 2) return '';
+
+  // Layout B puts the range in two labelled rows above the table, as Excel
+  // serials rather than text.
+  const serialToDmy = (v: unknown): string => {
+    const n = typeof v === 'number' ? v : Number(str(v));
+    if (!Number.isFinite(n) || n < 20000 || n > 90000) return '';
+    const d = new Date(Date.UTC(1899, 11, 30) + n * 86400000);
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}/${d.getUTCFullYear()}`;
+  };
+  const labelled = (want: RegExp): string => {
+    for (const r of rows.slice(0, 6)) {
+      if (!r || !want.test(str(r[0]).trim())) continue;
+      for (const cell of r.slice(1)) {
+        const s = serialToDmy(cell);
+        if (s) return s;
+      }
+    }
+    return '';
+  };
+  const from = labelled(/^from$/i);
+  const to = labelled(/^to$/i);
+  if (from && to) return `${from} → ${to}`;
   const headerIdx = rows.findIndex((r) => (r ?? []).some((c) => /impression/i.test(str(c))));
   const cell = str(rows[headerIdx >= 0 ? headerIdx : 1]?.[0]).trim();
   if (!cell) return '';

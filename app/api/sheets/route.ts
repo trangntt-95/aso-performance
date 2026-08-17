@@ -45,12 +45,25 @@ export async function GET() {
     // (~100k rows) and the impact read only ever looks a few weeks either side
     // of a note.
     const shopifySince = new Date(Date.now() - 200 * 86400000).toISOString().slice(0, 10);
-    // Restrict the per-day rows to the camps the dashboard actually shows.
-    const shopifyCampsParsed = parseShopifyCamps(raw['Shopify_daily'] ?? []);
+    // Campaign totals: the main sheet's tab first, the separate Shopify
+    // spreadsheet as a fallback. The tab was emptied at the source, and with no
+    // fallback that silently blanked the whole Overbid screen.
+    const mainShopify = parseShopifyCamps(raw['Shopify_daily'] ?? []);
+    const fromMainSheet = mainShopify.length > 0;
+    const shopifyCampRows = fromMainSheet
+      ? mainShopify
+      : parseShopifyCamps(shopifyDailyRaw as string[][]);
+    const shopifyRange = fromMainSheet
+      ? parseShopifyDateRange(raw['Shopify_daily'] ?? [])
+      : parseShopifyDateRange(shopifyDailyRaw as string[][]);
+    // Restrict the per-day rows to the camps the dashboard actually shows. Built
+    // from the RESOLVED camp list — building it from the (now empty) main tab
+    // would filter every per-day row away.
     const shopifyCampAllow = new Set(
-      shopifyCampsParsed.map((c) => normalizeCampName(c.camp).toLowerCase()),
+      shopifyCampRows.map((c) => normalizeCampName(c.camp).toLowerCase()),
     );
     const masterKwLookup = parseMasterKw(raw['Master KW Lookup'] ?? []);
+
     // Parsed once: the revenue block yields both the rows and the period label.
     const perGeoRevenue = parsePerGeoRevenue(raw['PerGeo_CPI_Cap'] ?? []);
     const langKws = languageOnlyKeywords(masterKwLookup);
@@ -90,8 +103,8 @@ export async function GET() {
       perGeoCpiCap: parsePerGeoCpiCap(raw['PerGeo_CPI_Cap'] ?? []),
       perGeoRevenue: perGeoRevenue.rows,
       perGeoRevenuePeriod: perGeoRevenue.period,
-      shopifyCamps: parseShopifyCamps(raw['Shopify_daily'] ?? []),
-      shopifyDateRange: parseShopifyDateRange(raw['Shopify_daily'] ?? []),
+      shopifyCamps: shopifyCampRows,
+      shopifyDateRange: shopifyRange,
       shopifyDaily: parseShopifyDaily(shopifyDailyRaw, shopifySince, shopifyCampAllow),
       googleAds: parseGoogleAds(gadsRaw),
       negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
