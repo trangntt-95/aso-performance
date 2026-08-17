@@ -15,6 +15,7 @@ import {
   type ShareVerdict,
 } from '@/lib/market/googleAdsReport';
 import { BrandDemandTable } from './BrandDemandTable';
+import { GoogleAdsDeepSections } from './GoogleAdsDeepSections';
 import { cn } from '@/lib/utils';
 
 // Google Ads — a separate channel, reported on its own terms.
@@ -431,6 +432,9 @@ export function GoogleAdsView() {
       </div>
 
       {/* Same phrase on both surfaces — the cross-channel view. */}
+      {/* Năm tab chẩn đoán: nước, Quality Score, chiến lược bid, thiết bị, asset. */}
+      <GoogleAdsDeepSections />
+
       <BrandDemandTable />
 
       {/* Search terms */}
