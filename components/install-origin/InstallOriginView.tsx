@@ -20,6 +20,62 @@ import { cn } from '@/lib/utils';
 
 type SortKey = 'installs' | 'users' | 'cr' | 'position' | 'bid' | 'keyword' | 'country';
 
+/** Which slice of the table the headline cards are focusing. */
+type Lens = 'all' | 'with-installs' | 'ambiguous' | 'negative';
+
+/**
+ * A headline number that is also the control for it.
+ *
+ * The four numbers already describe subsets of the same table, so making them
+ * inert and adding separate filters would mean maintaining two vocabularies for
+ * one idea. Clicking a card narrows the table to exactly what the card counts;
+ * clicking the active one clears it.
+ */
+function StatCard({
+  label,
+  value,
+  sub,
+  tone,
+  lens,
+  active,
+  onPick,
+  title,
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub: string;
+  tone?: string;
+  lens?: Lens;
+  active?: boolean;
+  onPick?: (l: Lens) => void;
+  title?: string;
+}) {
+  const clickable = !!lens && !!onPick;
+  const Tag = clickable ? 'button' : 'div';
+  return (
+    <Tag
+      {...(clickable
+        ? { type: 'button' as const, onClick: () => onPick!(active ? 'all' : lens!) }
+        : {})}
+      title={title ?? (clickable ? 'Bấm để lọc bảng theo con số này' : undefined)}
+      className={cn(
+        'rounded border p-2 text-left transition',
+        active
+          ? 'border-indigo-400 bg-indigo-50/60 ring-1 ring-indigo-300'
+          : 'border-slate-200 bg-white',
+        clickable && !active && 'hover:border-slate-400 hover:bg-slate-50',
+      )}
+    >
+      <div className="flex items-baseline gap-1">
+        <span className="text-[10px] uppercase tracking-wide text-slate-500">{label}</span>
+        {active && <span className="text-[9px] font-semibold text-indigo-600">đang lọc</span>}
+      </div>
+      <div className={cn('text-lg font-semibold', tone ?? 'text-slate-900')}>{value}</div>
+      <div className="text-[10px] text-slate-500">{sub}</div>
+    </Tag>
+  );
+}
+
 function SortHead({
   label,
   col,
@@ -57,6 +113,13 @@ function SortHead({
     </th>
   );
 }
+
+const LENS_LABEL: Record<Lens, string> = {
+  all: 'Tất cả',
+  'with-installs': 'Chỉ cặp có install',
+  ambiguous: 'Chưa rõ camp',
+  negative: 'Đang là negative',
+};
 
 /** Position is the only column where a small number is the good one. */
 function posTone(pos: number | null): string {
@@ -159,7 +222,7 @@ export function InstallOriginView() {
 
   const [search, setSearch] = useState('');
   const [countryFilter, setCountryFilter] = useState('all');
-  const [onlyNegative, setOnlyNegative] = useState(false);
+  const [lens, setLens] = useState<Lens>('all');
   const [sortKey, setSortKey] = useState<SortKey>('installs');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -183,7 +246,9 @@ export function InstallOriginView() {
     if (!report) return [];
     const q = search.trim().toLowerCase();
     const out = report.rows.filter((r) => {
-      if (onlyNegative && !r.negative) return false;
+      if (lens === 'with-installs' && r.installs <= 0) return false;
+      if (lens === 'ambiguous' && !r.campAmbiguous) return false;
+      if (lens === 'negative' && !r.negative) return false;
       if (countryFilter !== 'all' && r.country !== countryFilter) return false;
       if (!q) return true;
       return (
@@ -210,7 +275,7 @@ export function InstallOriginView() {
       if (typeof x === 'string' || typeof y === 'string') return dir * String(x).localeCompare(String(y));
       return dir * (x - y);
     });
-  }, [report, search, countryFilter, onlyNegative, sortKey, sortDir]);
+  }, [report, search, countryFilter, lens, sortKey, sortDir]);
 
   if (error) {
     return <div className="py-10 text-center text-sm text-rose-600">{(error as Error).message}</div>;
@@ -235,43 +300,59 @@ export function InstallOriginView() {
           <b>camp</b> nào, với <b>bid</b> bao nhiêu. Ghép từ <code className="text-[10px]">Country_L30</code> (keyword ×
           nước × vị trí × install) với <code className="text-[10px]">Master KW Lookup</code> (keyword → camp + max bid).
         </div>
-        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <div className="rounded border border-slate-200 p-2">
-            <div className="text-[10px] uppercase tracking-wide text-slate-500">Install truy được</div>
-            <div className="text-lg font-semibold text-slate-900">{report.installs}</div>
-            <div className="text-[10px] text-slate-500">
-              {covered === null
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+          <StatCard
+            label="Install truy được"
+            value={report.installs}
+            sub={
+              covered === null
                 ? `${report.rows.length} dòng`
-                : `${formatPercent(covered)} của ${report.installsAllGrain} install paid (L30)`}
-            </div>
-          </div>
-          <div className="rounded border border-slate-200 p-2">
-            <div className="text-[10px] uppercase tracking-wide text-slate-500">Keyword × nước</div>
-            <div className="text-lg font-semibold text-slate-900">
-              {report.keywords}
-              <span className="text-xs font-normal text-slate-400"> × {report.countries}</span>
-            </div>
-            <div className="text-[10px] text-slate-500">{report.rows.length} cặp có install</div>
-          </div>
-          <div className="rounded border border-slate-200 p-2">
-            <div className="text-[10px] uppercase tracking-wide text-slate-500">Chưa rõ camp</div>
-            <div className="text-lg font-semibold text-amber-700">{report.ambiguousRows}</div>
-            <div className="text-[10px] text-slate-500">keyword nằm ở nhiều camp đang chạy</div>
-          </div>
-          <div className="rounded border border-slate-200 p-2">
-            <div className="text-[10px] uppercase tracking-wide text-slate-500">Đang là negative</div>
-            <div className={cn('text-lg font-semibold', report.negativeRows > 0 ? 'text-rose-600' : 'text-slate-900')}>
-              {report.negativeRows}
-            </div>
-            <div className="text-[10px] text-slate-500">
-              {report.negativeInstalls > 0 ? `${report.negativeInstalls} install từ cụm đáng lẽ bị loại` : 'cặp keyword × nước'}
-            </div>
-          </div>
-          <div className="rounded border border-slate-200 p-2">
-            <div className="text-[10px] uppercase tracking-wide text-slate-500">Kỳ</div>
-            <div className="text-[12px] font-semibold text-slate-900">{report.window}</div>
-            <div className="text-[10px] text-slate-500">theo tab Country_L30</div>
-          </div>
+                : `${formatPercent(covered)} của ${report.installsAllGrain} install paid (L30)`
+            }
+            lens="with-installs"
+            active={lens === 'with-installs'}
+            onPick={setLens}
+            title="Bấm để chỉ hiện những cặp keyword × nước thực sự có install"
+          />
+          <StatCard
+            label="Keyword × nước"
+            value={
+              <>
+                {report.keywords}
+                <span className="text-xs font-normal text-slate-400"> × {report.countries}</span>
+              </>
+            }
+            sub={`${report.rows.length} cặp có install`}
+            lens="all"
+            active={lens === 'all'}
+            onPick={setLens}
+            title="Bấm để bỏ mọi bộ lọc theo nhóm"
+          />
+          <StatCard
+            label="Chưa rõ camp"
+            value={report.ambiguousRows}
+            sub="keyword nằm ở nhiều camp đang chạy"
+            tone="text-amber-700"
+            lens="ambiguous"
+            active={lens === 'ambiguous'}
+            onPick={setLens}
+            title="Bấm để chỉ hiện những dòng chưa quy được về một camp"
+          />
+          <StatCard
+            label="Đang là negative"
+            value={report.negativeRows}
+            sub={
+              report.negativeInstalls > 0
+                ? `${report.negativeInstalls} install từ cụm đáng lẽ bị loại`
+                : 'cặp keyword × nước'
+            }
+            tone={report.negativeRows > 0 ? 'text-rose-600' : undefined}
+            lens="negative"
+            active={lens === 'negative'}
+            onPick={setLens}
+            title="Bấm để chỉ hiện cụm nằm trong Negative KW list mà vẫn có traffic paid"
+          />
+          <StatCard label="Kỳ" value={<span className="text-[12px]">{report.window}</span>} sub="theo tab Country_L30" />
         </div>
         {covered !== null && covered < 0.95 && (
           <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] leading-snug text-amber-900">
@@ -305,22 +386,15 @@ export function InstallOriginView() {
             </option>
           ))}
         </select>
-        {report.negativeRows > 0 && (
-          <button
-            type="button"
-            onClick={() => setOnlyNegative((v) => !v)}
-            className={cn(
-              'h-7 shrink-0 rounded border px-2 text-[11px] font-medium transition',
-              onlyNegative
-                ? 'border-rose-300 bg-rose-50 text-rose-700'
-                : 'border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-900',
-            )}
-            title="Cụm nằm trong Negative KW list nhưng vẫn có traffic paid trong kỳ này"
-          >
-            Chỉ cụm đang là negative ({report.negativeRows})
-          </button>
+        {lens !== 'all' && (
+          <span className="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-indigo-300 bg-indigo-50 px-2 text-[11px] font-medium text-indigo-700">
+            {LENS_LABEL[lens]}
+            <button type="button" onClick={() => setLens('all')} className="text-indigo-500 hover:text-indigo-800">
+              <X className="h-3 w-3" />
+            </button>
+          </span>
         )}
-        {(search || countryFilter !== 'all' || onlyNegative) && (
+        {(search || countryFilter !== 'all' || lens !== 'all') && (
           <Button
             variant="ghost"
             size="sm"
@@ -328,7 +402,7 @@ export function InstallOriginView() {
             onClick={() => {
               setSearch('');
               setCountryFilter('all');
-              setOnlyNegative(false);
+              setLens('all');
             }}
           >
             <X className="h-3 w-3" />

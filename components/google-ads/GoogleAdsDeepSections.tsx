@@ -19,6 +19,10 @@ import { cn } from '@/lib/utils';
 
 const usd = (n: number | null) => (n === null ? '—' : `$${n < 10 ? n.toFixed(2) : Math.round(n)}`);
 
+type CountryFilter = 'spending' | 'all' | 'excluded' | 'uncapped' | 'no-revenue';
+type QsFilter = 'weak' | 'low-qs' | 'all';
+type BidFilter = 'all' | 'over-target' | 'no-target';
+
 function Section({
   title,
   hint,
@@ -60,13 +64,50 @@ function Section({
   );
 }
 
-function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
+/**
+ * A headline number that doubles as the filter for it.
+ *
+ * Each of these counts a subset of the table right below it, so leaving them
+ * inert forced the reader to re-express the number as a dropdown choice.
+ * `onPick` receives the value to apply; passing the value already active is
+ * treated by the caller as "clear".
+ */
+function Stat<T extends string>({
+  label,
+  value,
+  sub,
+  tone,
+  pick,
+  active,
+  onPick,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: string;
+  pick?: T;
+  active?: boolean;
+  onPick?: (v: T) => void;
+}) {
+  const clickable = pick !== undefined && !!onPick;
+  const Tag = clickable ? 'button' : 'div';
   return (
-    <div className="rounded border border-slate-200 p-2">
-      <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+    <Tag
+      {...(clickable ? { type: 'button' as const, onClick: () => onPick!(pick as T) } : {})}
+      title={clickable ? 'Bấm để lọc bảng theo con số này' : undefined}
+      className={cn(
+        'rounded border p-2 text-left transition',
+        active ? 'border-indigo-400 bg-indigo-50/60 ring-1 ring-indigo-300' : 'border-slate-200',
+        clickable && !active && 'hover:border-slate-400 hover:bg-slate-50',
+      )}
+    >
+      <div className="flex items-baseline gap-1">
+        <span className="text-[10px] uppercase tracking-wide text-slate-500">{label}</span>
+        {active && <span className="text-[9px] font-semibold text-indigo-600">đang lọc</span>}
+      </div>
       <div className={cn('text-lg font-semibold', tone ?? 'text-slate-900')}>{value}</div>
       {sub && <div className="text-[10px] text-slate-500">{sub}</div>}
-    </div>
+    </Tag>
   );
 }
 
@@ -110,10 +151,14 @@ function QsBadge({ value }: { value: string }) {
 export function GoogleAdsDeepSections() {
   const { data } = useSheetData();
   const deep = useMemo(() => buildGoogleAdsDeep(data), [data]);
-  const [qsFilter, setQsFilter] = useState<'weak' | 'all'>('weak');
-  const [countryFilter, setCountryFilter] = useState<
-    'spending' | 'all' | 'excluded' | 'uncapped' | 'no-revenue'
-  >('spending');
+  const [qsFilter, setQsFilter] = useState<QsFilter>('weak');
+  const [bidFilter, setBidFilter] = useState<BidFilter>('all');
+  // Re-picking the active value clears back to the widest view, so a card is a
+  // toggle rather than a one-way trip.
+  const pickQs = (v: QsFilter) => setQsFilter((cur) => (cur === v ? 'all' : v));
+  const pickBid = (v: BidFilter) => setBidFilter((cur) => (cur === v ? 'all' : v));
+  const pickCountry = (v: CountryFilter) => setCountryFilter((cur) => (cur === v ? 'all' : v));
+  const [countryFilter, setCountryFilter] = useState<CountryFilter>('spending');
 
   const countryRows = useMemo<GadsCountryRow[]>(() => {
     const rs = deep.country?.rows ?? [];
@@ -129,8 +174,17 @@ export function GoogleAdsDeepSections() {
 
   const qsRows = useMemo<GadsKeywordRow[]>(() => {
     const rs = deep.quality?.rows ?? [];
-    return qsFilter === 'weak' ? rs.filter((r) => r.weakParts.length > 0 || (r.qs !== null && r.qs < 5)) : rs;
+    if (qsFilter === 'low-qs') return rs.filter((r) => r.qs !== null && r.qs < 5);
+    if (qsFilter === 'weak') return rs.filter((r) => r.weakParts.length > 0 || (r.qs !== null && r.qs < 5));
+    return rs;
   }, [deep.quality, qsFilter]);
+
+  const bidRows = useMemo(() => {
+    const rs = deep.bidding?.rows ?? [];
+    if (bidFilter === 'over-target') return rs.filter((r) => r.vsTarget !== null && r.vsTarget > 0);
+    if (bidFilter === 'no-target') return rs.filter((r) => r.targetCpaUsd === null && r.costUsd > 0);
+    return rs;
+  }, [deep.bidding, bidFilter]);
 
   if (!deep.country && !deep.quality && !deep.bidding && deep.devices.length === 0 && !deep.assets) {
     return null;
@@ -150,24 +204,36 @@ export function GoogleAdsDeepSections() {
               label="Tổng chi"
               value={usd(deep.country.totalCostUsd)}
               sub={`${deep.country.rows.filter((r) => r.costUsd > 0).length} nước có chi`}
+              pick="spending"
+              active={countryFilter === 'spending'}
+              onPick={pickCountry}
             />
             <Stat
               label="Vào nước đang exclude"
               value={usd(deep.country.excludedCostUsd)}
               sub="danh sách exclude bên App Store"
               tone={deep.country.excludedCostUsd > 0 ? 'text-rose-600' : 'text-slate-900'}
+              pick="excluded"
+              active={countryFilter === 'excluded'}
+              onPick={pickCountry}
             />
             <Stat
               label="Chưa có trần CPI"
               value={usd(deep.country.uncappedCostUsd)}
               sub={`${deep.country.uncappedCount} nước không có trong PerGeo_CPI_Cap`}
               tone={deep.country.uncappedCount > 0 ? 'text-amber-700' : 'text-slate-900'}
+              pick="uncapped"
+              active={countryFilter === 'uncapped'}
+              onPick={pickCountry}
             />
             <Stat
               label="Vào nước không ra doanh thu"
               value={usd(deep.country.noRevenueCostUsd)}
               sub={`${deep.country.noRevenueCount} nước, $0 doanh thu ghi nhận`}
               tone={deep.country.noRevenueCostUsd > 0 ? 'text-rose-600' : 'text-slate-900'}
+              pick="no-revenue"
+              active={countryFilter === 'no-revenue'}
+              onPick={pickCountry}
             />
           </div>
 
@@ -307,10 +373,16 @@ export function GoogleAdsDeepSections() {
               value={String(deep.quality.lowQsCount)}
               sub={`trên ${deep.quality.rows.length} keyword`}
               tone={deep.quality.lowQsCount > 0 ? 'text-rose-600' : 'text-slate-900'}
+              pick="low-qs"
+              active={qsFilter === 'low-qs'}
+              onPick={pickQs}
             />
             <Stat
               label="Chi vào keyword yếu"
               value={usd(deep.quality.weakCostUsd)}
+              pick="weak"
+              active={qsFilter === 'weak'}
+              onPick={pickQs}
               sub={
                 deep.quality.totalCostUsd > 0
                   ? `${formatPercent(deep.quality.weakCostUsd / deep.quality.totalCostUsd)} tổng chi keyword`
@@ -343,10 +415,11 @@ export function GoogleAdsDeepSections() {
           <div className="flex items-center gap-2">
             <select
               value={qsFilter}
-              onChange={(e) => setQsFilter(e.target.value as 'weak' | 'all')}
+              onChange={(e) => setQsFilter(e.target.value as QsFilter)}
               className="h-7 rounded border border-slate-200 bg-white px-2 text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
               <option value="weak">Chỉ keyword có điểm yếu</option>
+              <option value="low-qs">Chỉ keyword QS dưới 5</option>
               <option value="all">Tất cả keyword</option>
             </select>
             <span className="text-[10px] text-slate-500">{qsRows.length} keyword</span>
@@ -421,14 +494,26 @@ export function GoogleAdsDeepSections() {
               value={String(deep.bidding.overTargetCount)}
               sub="camp trả cao hơn target của chính nó"
               tone={deep.bidding.overTargetCount > 0 ? 'text-rose-600' : 'text-slate-900'}
+              pick="over-target"
+              active={bidFilter === 'over-target'}
+              onPick={pickBid}
             />
             <Stat
               label="Không đặt target"
               value={String(deep.bidding.noTargetCount)}
               sub={`camp · ${usd(deep.bidding.noTargetCostUsd)}`}
               tone={deep.bidding.noTargetCount > 0 ? 'text-amber-700' : 'text-slate-900'}
+              pick="no-target"
+              active={bidFilter === 'no-target'}
+              onPick={pickBid}
             />
-            <Stat label="Tổng camp" value={String(deep.bidding.rows.length)} />
+            <Stat
+              label="Tổng camp"
+              value={String(deep.bidding.rows.length)}
+              pick="all"
+              active={bidFilter === 'all'}
+              onPick={pickBid}
+            />
           </div>
           <div className="max-h-[40vh] overflow-auto rounded border border-slate-200">
             <table className="w-full text-xs">
@@ -447,7 +532,7 @@ export function GoogleAdsDeepSections() {
                 </tr>
               </thead>
               <tbody>
-                {deep.bidding.rows.map((r) => (
+                {bidRows.map((r) => (
                   <tr key={r.campaignName} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="whitespace-nowrap px-2 py-1.5 text-[11px] font-medium text-slate-800">
                       {r.campaignName}

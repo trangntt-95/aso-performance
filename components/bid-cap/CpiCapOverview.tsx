@@ -34,16 +34,64 @@ const VERDICT_CLS: Record<CapVerdict, string> = {
   idle: 'bg-slate-50 text-slate-400 border-slate-200',
 };
 
-type Lens = 'all' | 'over' | 'cap-above-value' | 'tier1' | 'silent' | 'idle';
+type Lens = 'all' | 'over' | 'cap-above-value' | 'tier1' | 'tier1-silent' | 'silent' | 'idle';
 
 const LENS_LABEL: Record<Lens, string> = {
   all: 'Tất cả nước có cấu hình',
   over: 'Đang vượt trần CPI',
   'cap-above-value': 'Trần đặt cao hơn giá trị 1 install',
   tier1: 'Tier 1',
+  'tier1-silent': 'Tier 1 chưa có install nào',
   silent: 'Rank cao nhưng chưa có install',
   idle: 'Chưa tiêu đồng nào',
 };
+
+/**
+ * A headline number that is also the control for it.
+ *
+ * These numbers already describe subsets of the table below, so leaving them
+ * inert meant the reader had to translate "10 nước vượt trần" into a dropdown
+ * choice by hand. Clicking narrows to exactly what the number counts; clicking
+ * the active card clears it.
+ */
+function StatCard({
+  label,
+  value,
+  sub,
+  tone,
+  lens,
+  active,
+  onPick,
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub: React.ReactNode;
+  tone?: string;
+  lens?: Lens;
+  active?: boolean;
+  onPick?: (l: Lens) => void;
+}) {
+  const clickable = !!lens && !!onPick;
+  const Tag = clickable ? 'button' : 'div';
+  return (
+    <Tag
+      {...(clickable ? { type: 'button' as const, onClick: () => onPick!(active ? 'all' : lens!) } : {})}
+      title={clickable ? `Bấm để lọc bảng: ${LENS_LABEL[lens!]}` : undefined}
+      className={cn(
+        'rounded border p-2 text-left transition',
+        active ? 'border-indigo-400 bg-indigo-50/60 ring-1 ring-indigo-300' : 'border-slate-200',
+        clickable && !active && 'hover:border-slate-400 hover:bg-slate-50',
+      )}
+    >
+      <div className="flex items-baseline gap-1">
+        <span className="text-[10px] uppercase tracking-wide text-slate-500">{label}</span>
+        {active && <span className="text-[9px] font-semibold text-indigo-600">đang lọc</span>}
+      </div>
+      <div className={cn('text-lg font-semibold', tone ?? 'text-slate-800')}>{value}</div>
+      <div className="text-[10px] text-slate-500">{sub}</div>
+    </Tag>
+  );
+}
 
 /** Horizontal bar: measured CPI against its ceiling, one row per country. */
 function CapBar({ row, maxScale }: { row: CountryCapRow; maxScale: number }) {
@@ -85,6 +133,8 @@ export function CpiCapOverview() {
         return r.filter((x) => x.capHeadroom !== null && x.capHeadroom < 0);
       case 'tier1':
         return r.filter((x) => x.tier1);
+      case 'tier1-silent':
+        return r.filter((x) => x.tier1 && x.installs === 0);
       case 'silent':
         return r.filter((x) => x.rank !== null && x.rank <= 20 && x.installs === 0);
       case 'idle':
@@ -121,37 +171,52 @@ export function CpiCapOverview() {
       {open && (
         <div className="space-y-3 border-t border-slate-200 p-3">
           {/* Headline numbers. */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="rounded border border-slate-200 p-2">
-              <div className="text-[10px] uppercase tracking-wide text-slate-500">Vượt trần</div>
-              <div className="text-lg font-semibold text-rose-600">{t.overCount}</div>
-              <div className="text-[10px] text-slate-500">trên {t.withInstalls} nước có install</div>
-            </div>
-            <div className="rounded border border-slate-200 p-2">
-              <div className="text-[10px] uppercase tracking-wide text-slate-500">Chi vượt trần</div>
-              <div className="text-lg font-semibold text-rose-600">{money(t.overspend)}</div>
-              <div className="text-[10px] text-slate-500">
-                trên {money(t.spend)} tổng chi ({t.spend > 0 ? Math.round((t.overspend / t.spend) * 100) : 0}%)
-              </div>
-            </div>
-            <div className="rounded border border-slate-200 p-2">
-              <div className="text-[10px] uppercase tracking-wide text-slate-500">CPI trung bình</div>
-              <div className="text-lg font-semibold text-slate-800">{t.cpi === null ? '—' : money2(t.cpi)}</div>
-              <div className="text-[10px] text-slate-500">{t.installs} install / L30</div>
-            </div>
-            <div className="rounded border border-slate-200 p-2">
-              <div className="text-[10px] uppercase tracking-wide text-slate-500">Trần &gt; giá trị install</div>
-              <div className="text-lg font-semibold text-rose-600">{t.capAboveValue}</div>
-              <div className="text-[10px] text-slate-500">nước lỗ ngay ở mức trần</div>
-            </div>
-            <div className="rounded border border-slate-200 p-2">
-              <div className="text-[10px] uppercase tracking-wide text-slate-500">Tier 1 im lặng</div>
-              <div className="text-lg font-semibold text-slate-800">
-                {t.tier1Silent}
-                <span className="text-xs font-normal text-slate-400">/{t.tier1}</span>
-              </div>
-              <div className="text-[10px] text-slate-500">chưa có install nào</div>
-            </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            <StatCard
+              label="Vượt trần"
+              value={t.overCount}
+              sub={`trên ${t.withInstalls} nước có install`}
+              tone="text-rose-600"
+              lens="over"
+              active={lens === 'over'}
+              onPick={setLens}
+            />
+            <StatCard
+              label="Chi vượt trần"
+              value={money(t.overspend)}
+              sub={`trên ${money(t.spend)} tổng chi (${t.spend > 0 ? Math.round((t.overspend / t.spend) * 100) : 0}%)`}
+              tone="text-rose-600"
+              lens="over"
+              active={lens === 'over'}
+              onPick={setLens}
+            />
+            <StatCard
+              label="CPI trung bình"
+              value={t.cpi === null ? '—' : money2(t.cpi)}
+              sub={`${t.installs} install / L30`}
+            />
+            <StatCard
+              label="Trần > giá trị install"
+              value={t.capAboveValue}
+              sub="nước lỗ ngay ở mức trần"
+              tone="text-rose-600"
+              lens="cap-above-value"
+              active={lens === 'cap-above-value'}
+              onPick={setLens}
+            />
+            <StatCard
+              label="Tier 1 im lặng"
+              value={
+                <>
+                  {t.tier1Silent}
+                  <span className="text-xs font-normal text-slate-400">/{t.tier1}</span>
+                </>
+              }
+              sub="chưa có install nào"
+              lens="tier1-silent"
+              active={lens === 'tier1-silent'}
+              onPick={setLens}
+            />
           </div>
 
           {/* One dropdown, no colour-coded filter chips. */}
