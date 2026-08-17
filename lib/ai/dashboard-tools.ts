@@ -15,6 +15,12 @@ import {
   type OverviewWindow,
 } from '@/components/overview/aggregate';
 import { expectedAdsInstalls, runrateAdsToMonthEnd } from '@/lib/config/ads-targets';
+import { buildWeeklyDigest } from '@/lib/market/weeklyDigest';
+import { analyseCampHealth } from '@/lib/market/campHealth';
+import { buildCpiCapOverview } from '@/lib/market/cpiCapOverview';
+import { buildGoogleAdsReport } from '@/lib/market/googleAdsReport';
+import { buildGoogleAdsDeep } from '@/lib/market/googleAdsDeep';
+import { buildInstallOrigin } from '@/lib/market/installOrigin';
 
 const WindowSchema = z.enum(['L3', 'L7', 'L14', 'L30', 'L90']);
 const SurfaceSchema = z.enum(['all', 'organic', 'paid']).optional();
@@ -390,6 +396,260 @@ export function makeDashboardTools(data: SheetPayload) {
           by_window: all_window_rows,
           by_country_top10: countryHits,
           action_queue: actionQueueHits,
+        };
+      },
+    }),
+
+    get_weekly_digest: tool({
+      description:
+        'ONE call that sweeps every module — Overview, Camp Health, Overbid, Bid Recommendations, Google Ads, Nguồn Install — and returns only what moved past a threshold or stands out. Use this FIRST for open questions like "tuần này có gì", "có gì bất thường không", "biến động tuần vừa rồi", "outlier", "cần xử lý gì". Far cheaper and more complete than calling the per-area tools one by one. Each finding names the screen it came from so the user can verify it.',
+      inputSchema: z.object({
+        days: z
+          .number()
+          .min(3)
+          .max(30)
+          .default(7)
+          .describe('Length of the period to summarise, in days. 7 = last week.'),
+      }),
+      execute: async ({ days }) => {
+        const digest = buildWeeklyDigest(data, days);
+        if (!digest) return { error: 'Chưa có dữ liệu để tổng hợp.' };
+        return {
+          period_days: days,
+          through: digest.generatedFor,
+          counts: digest.counts,
+          // The findings, already ranked: critical first, then by money at stake.
+          findings: digest.items.map((i) => ({
+            severity: i.severity,
+            source: i.source,
+            headline: i.headline,
+            detail: i.detail,
+            action: i.action ?? null,
+          })),
+        };
+      },
+    }),
+
+    get_camp_health: tool({
+      description:
+        'Campaign-level health for a period: which camps burn money with no installs, which have a CTR problem, which are losing impressions, which are rising, which are switched off. Use when the question is about CAMPAIGNS rather than keywords.',
+      inputSchema: z.object({
+        days: z.number().min(3).max(90).default(30),
+        bucket: z
+          .enum(['all', 'burning', 'wasted-imp', 'losing-imp', 'rising', 'paused'])
+          .default('all')
+          .describe('Filter to one health bucket.'),
+        limit: z.number().min(1).max(40).default(12),
+      }),
+      execute: async ({ days, bucket, limit }) => {
+        const health = analyseCampHealth(data.shopifyDaily ?? [], {
+          windowDays: days,
+          canonicalNames: (data.campLinks ?? []).map((c) => c.camp),
+          pausedCamps: (data.pausedKw ?? []).map((r) => r.camp),
+        });
+        const rows = bucket === 'all' ? health.rows : health.rows.filter((r) => r.bucket === bucket);
+        return {
+          period: { from: health.from, to: health.to, days },
+          total_spend: round(health.totalSpend, 0),
+          median_cpi: round(health.medianCpi, 2),
+          counts_by_bucket: health.rows.reduce<Record<string, number>>((acc, r) => {
+            acc[r.bucket] = (acc[r.bucket] ?? 0) + 1;
+            return acc;
+          }, {}),
+          camps: rows.slice(0, limit).map((r) => ({
+            camp: r.camp,
+            bucket: r.bucket,
+            spend: round(r.cur.spend, 0),
+            installs: r.cur.installs,
+            clicks: r.cur.clicks,
+            impressions: r.cur.impressions,
+            cpi: round(r.cur.cpi, 2),
+            imp_delta_pct: round((r.impDelta ?? 0) * 100),
+            spend_delta_pct: round((r.spendDelta ?? 0) * 100),
+            money_at_risk: round(r.atRisk, 0),
+            // Small install counts make CPI a sample, not a rate — say so rather
+            // than letting the model quote it as one.
+            cpi_reliable: r.reliable,
+            reason: r.reason,
+          })),
+        };
+      },
+    }),
+
+    get_cpi_caps: tool({
+      description:
+        'Per-country CPI ceilings vs what each country actually cost, plus what one install is WORTH there (revenue per install). Use for questions about bid caps, which countries overpay, or whether a ceiling is set correctly at all.',
+      inputSchema: z.object({
+        only: z
+          .enum(['all', 'over-cap', 'cap-above-value', 'spending'])
+          .default('over-cap')
+          .describe('over-cap = measured CPI above ceiling; cap-above-value = the ceiling itself exceeds what an install earns.'),
+        limit: z.number().min(1).max(60).default(20),
+      }),
+      execute: async ({ only, limit }) => {
+        const ov = buildCpiCapOverview(data);
+        if (!ov) return { error: 'Chưa đọc được PerGeo_CPI_Cap.' };
+        const pick = (() => {
+          switch (only) {
+            case 'over-cap': return ov.rows.filter((r) => r.verdict === 'over');
+            case 'cap-above-value': return ov.rows.filter((r) => r.capHeadroom !== null && r.capHeadroom < 0);
+            case 'spending': return ov.rows.filter((r) => r.spend > 0);
+            default: return ov.rows;
+          }
+        })();
+        return {
+          totals: {
+            countries_configured: ov.totals.configured,
+            countries_with_spend: ov.totals.withSpend,
+            spend: round(ov.totals.spend, 0),
+            installs: ov.totals.installs,
+            blended_cpi: round(ov.totals.cpi, 2),
+            overspend_vs_cap: round(ov.totals.overspend, 0),
+            countries_over_cap: ov.totals.overCount,
+            countries_cap_above_value: ov.totals.capAboveValue,
+          },
+          countries: pick.slice(0, limit).map((r) => ({
+            country: r.country,
+            revenue_rank: r.rank,
+            tier1: r.tier1,
+            cpi_cap: r.cap,
+            cpi_actual: round(r.cpi, 2),
+            cpi_reliable: r.cpiReliable,
+            installs: r.installs,
+            spend: round(r.spend, 0),
+            value_per_install: round(r.valuePerInstall, 2),
+            cap_headroom: round(r.capHeadroom, 2),
+            verdict: r.verdict,
+          })),
+        };
+      },
+    }),
+
+    get_google_ads: tool({
+      description:
+        'Google Ads: spend, installs, impression share lost to budget vs rank, spend per country against the CPI ceiling and the exclude list, Quality Score weak points, and target CPA vs actual. A SEPARATE channel from App Store Ads — never add their install counts together.',
+      inputSchema: z.object({
+        area: z
+          .enum(['summary', 'countries', 'quality', 'bidding'])
+          .default('summary'),
+        limit: z.number().min(1).max(40).default(12),
+      }),
+      execute: async ({ area, limit }) => {
+        const report = buildGoogleAdsReport(data.googleAds);
+        if (!report) return { error: 'Chưa có dữ liệu Google Ads.' };
+        const deep = buildGoogleAdsDeep(data);
+        if (area === 'countries' && deep.country) {
+          return {
+            currency_note: `Chi phí gốc bằng ${report.currency}, đã quy về USD.`,
+            total_cost_usd: deep.country.totalCostUsd,
+            spend_in_excluded_countries_usd: deep.country.excludedCostUsd,
+            spend_in_no_revenue_countries_usd: deep.country.noRevenueCostUsd,
+            countries: deep.country.rows
+              .filter((r) => r.costUsd > 0)
+              .slice(0, limit)
+              .map((r) => ({
+                country: r.country,
+                cost_usd: r.costUsd,
+                clicks: r.clicks,
+                cost_per_google_conversion_usd: r.cpaUsd,
+                cpi_cap_usd: r.capUsd,
+                value_per_install_usd: r.valuePerInstall,
+                on_appstore_exclude_list: r.excluded,
+              })),
+          };
+        }
+        if (area === 'quality' && deep.quality) {
+          return {
+            keywords_with_qs_below_5: deep.quality.lowQsCount,
+            spend_on_weak_keywords_usd: deep.quality.weakCostUsd,
+            by_weak_component: deep.quality.byCulprit,
+            keywords: deep.quality.rows
+              .filter((r) => r.weakParts.length > 0)
+              .slice(0, limit)
+              .map((r) => ({
+                keyword: r.keyword,
+                campaign: r.campaignName,
+                qs: r.qs,
+                weak: r.weakParts,
+                fix_first: r.culprit,
+                cost_usd: r.costUsd,
+              })),
+          };
+        }
+        if (area === 'bidding' && deep.bidding) {
+          return {
+            campaigns_over_their_target: deep.bidding.overTargetCount,
+            campaigns_without_target: deep.bidding.noTargetCount,
+            campaigns: deep.bidding.rows.slice(0, limit).map((r) => ({
+              campaign: r.campaignName,
+              strategy: r.bidStrategy,
+              target_cpa_usd: r.targetCpaUsd,
+              actual_cpa_usd: r.actualCpaUsd,
+              actual_cpi_usd: r.actualCpiUsd,
+              installs: r.installs,
+              cost_usd: r.costUsd,
+            })),
+          };
+        }
+        return {
+          period: { from: report.from, to: report.to, days: report.days },
+          currency: report.currency,
+          cost: round(report.totals.cost, 0),
+          clicks: report.totals.clicks,
+          // Google's 'conversions' is mostly page views; installs is the real number.
+          google_conversions: round(report.totals.conversions, 1),
+          installs_only: round(report.totals.installs, 1),
+          cost_lost_to_budget: round(report.lostToBudgetCost, 0),
+          cost_lost_to_rank: round(report.lostToRankCost, 0),
+          campaigns: report.campaigns.slice(0, limit).map((c) => ({
+            campaign: c.name,
+            cost: round(c.cost, 0),
+            clicks: c.clicks,
+            installs: round(c.installs, 1),
+            impression_share: round((c.is ?? 0) * 100),
+            verdict: c.verdict,
+          })),
+        };
+      },
+    }),
+
+    get_install_origin: tool({
+      description:
+        'Where paid installs came from: keyword x country x ad position x campaign x bid. Use for "install đến từ keyword nào", "nước nào", "vị trí mấy". Covers only the installs GA4 broke down by country — the response states the coverage.',
+      inputSchema: z.object({
+        keyword: z.string().nullish().describe('Optional: narrow to one keyword.'),
+        country: z.string().nullish().describe('Optional: narrow to one country.'),
+        limit: z.number().min(1).max(60).default(20),
+      }),
+      execute: async ({ keyword, country, limit }) => {
+        const origin = buildInstallOrigin(data);
+        if (!origin) return { error: 'Chưa có dòng paid nào ở mức keyword × nước kèm install.' };
+        const kw = keyword?.trim().toLowerCase();
+        const co = country?.trim().toLowerCase();
+        const rows = origin.rows.filter(
+          (r) =>
+            (!kw || r.keyword.toLowerCase().includes(kw)) &&
+            (!co || r.country.toLowerCase().includes(co)),
+        );
+        return {
+          window: origin.window,
+          installs_traced: origin.installs,
+          installs_at_keyword_grain: origin.installsAllGrain,
+          coverage_note:
+            'GA4 giấu bớt hàng lượng thấp khi tách theo nước, nên đây KHÔNG phải toàn bộ install paid.',
+          rows_with_ambiguous_campaign: origin.ambiguousRows,
+          rows: rows.slice(0, limit).map((r) => ({
+            keyword: r.keyword,
+            country: r.country,
+            ad_position: r.position,
+            users: r.users,
+            installs: r.installs,
+            cr_pct: round((r.cr ?? 0) * 100, 1),
+            bid_min: r.bidMin,
+            bid_max: r.bidMax,
+            campaigns: r.camps.map((c) => c.camp),
+            campaign_is_ambiguous: r.campAmbiguous,
+          })),
         };
       },
     }),

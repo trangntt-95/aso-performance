@@ -74,7 +74,11 @@ const SYSTEM_PROMPT = `Bạn là trợ lý phân tích ASO cho **TrueProfit ASO 
 - KPIs: Users (demand), Install (số cài đặt), CR (conversion), Position (rank, lower better)
 - VN + IN luôn exclude khỏi paid ads
 
-**Tools:** get_overview · get_top_keywords · get_country_breakdown · get_category_share · get_volume_movers · get_market_trajectory · get_channel_split · get_daily_trend · search_keyword.`;
+**Tools:** get_weekly_digest · get_overview · get_top_keywords · get_country_breakdown · get_category_share · get_volume_movers · get_market_trajectory · get_channel_split · get_daily_trend · search_keyword · get_camp_health · get_cpi_caps · get_google_ads · get_install_origin.
+
+Với câu hỏi mở ("tuần này có gì", "có gì bất thường", "biến động", "outlier", "cần xử lý gì"), gọi **get_weekly_digest trước tiên** — nó quét mọi module trong một lượt. Chỉ gọi thêm tool khác khi cần đào sâu một mục cụ thể trong kết quả đó.
+
+Quy tắc đọc số: CPI dựa trên 1–2 install là một mẫu, không phải tỷ lệ — nếu cpi_reliable là false thì phải nói rõ. Google Ads và App Store Ads đếm install theo hai cách khác nhau, không bao giờ cộng lại.`;
 
 async function fetchPayload(): Promise<SheetPayload> {
   const raw = await fetchAllTabs();

@@ -44,6 +44,12 @@ export interface ChannelComparison {
   channels: ChannelStats[];
   /** True when the two sources don't overlap at all — nothing to compare. */
   noOverlap: boolean;
+  /** The full range both channels cover, ignoring any page filter. Lets the UI
+   *  say which days DO exist instead of just refusing to draw. */
+  availableFrom: string;
+  availableTo: string;
+  /** True when a page-level date filter is what emptied the comparison. */
+  clippedByFilter: boolean;
 }
 
 export function compareChannels(
@@ -61,12 +67,26 @@ export function compareChannels(
   const gDates = Array.from(new Set(g.campaigns.map((c) => c.date))).sort();
   const sDates = Array.from(new Set(shopify.map((r) => r.date))).sort();
   // The overlap, so neither channel is credited with days the other never saw.
-  let from = gDates[0] > sDates[0] ? gDates[0] : sDates[0];
-  let to = gDates[gDates.length - 1] < sDates[sDates.length - 1] ? gDates[gDates.length - 1] : sDates[sDates.length - 1];
+  const availableFrom = gDates[0] > sDates[0] ? gDates[0] : sDates[0];
+  const availableTo =
+    gDates[gDates.length - 1] < sDates[sDates.length - 1] ? gDates[gDates.length - 1] : sDates[sDates.length - 1];
+  let from = availableFrom;
+  let to = availableTo;
   if (range?.from && range.from > from) from = range.from;
   if (range?.to && range.to < to) to = range.to;
   if (from > to) {
-    return { from, to, days: 0, channels: [], noOverlap: true };
+    return {
+      from,
+      to,
+      days: 0,
+      channels: [],
+      noOverlap: true,
+      availableFrom,
+      availableTo,
+      // Distinguish "the two exports share no days" from "you filtered to days
+      // one of them doesn't have" — they need different words.
+      clippedByFilter: availableFrom <= availableTo,
+    };
   }
   const inRange = (d: string) => d >= from && d <= to;
   const days = new Set<string>();
@@ -129,7 +149,16 @@ export function compareChannels(
   ];
 
   const dayList = Array.from(days).sort();
-  return { from, to, days: dayList.length, channels, noOverlap: false };
+  return {
+    from,
+    to,
+    days: dayList.length,
+    channels,
+    noOverlap: false,
+    availableFrom,
+    availableTo,
+    clippedByFilter: false,
+  };
 }
 
 // ---------------------------------------------------------------------------
