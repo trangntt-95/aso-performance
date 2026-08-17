@@ -63,6 +63,46 @@ export interface InstallOriginRow {
   campUnknown: boolean;
 }
 
+/** One country's paid result for a single keyword — the detail-panel slice. */
+export interface KeywordCountryOrigin {
+  country: string;
+  users: number;
+  installs: number;
+  cr: number | null;
+  position: number | null;
+  usersPrev: number;
+  installsPrev: number;
+  positionPrev: number | null;
+}
+
+/**
+ * Paid results per country for one keyword, installs first.
+ *
+ * Same source and same caveat as the Nguồn Install table: GA4 withholds
+ * low-volume rows harder at country grain, so a country missing here has not
+ * necessarily gone quiet — it may simply be below the threshold.
+ */
+export function keywordCountryOrigin(
+  data: SheetPayload | null | undefined,
+  keyword: string,
+): KeywordCountryOrigin[] {
+  if (!data || !keyword) return [];
+  const key = normKw(keyword);
+  return (data.countryL30 ?? [])
+    .filter((r) => r.surface === 'search_ad' && normKw(r.searchTerm) === key && r.country)
+    .map((r) => ({
+      country: r.country as string,
+      users: r.usersL,
+      installs: r.getAppL,
+      cr: r.crL,
+      position: r.posL,
+      usersPrev: r.usersP,
+      installsPrev: r.getAppP,
+      positionPrev: r.posP,
+    }))
+    .sort((a, b) => b.installs - a.installs || b.users - a.users);
+}
+
 export interface InstallOriginReport {
   rows: InstallOriginRow[];
   /** Installs covered by this breakdown. */
@@ -84,6 +124,78 @@ const numOrNull = (s: string): number | null => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
+/** Camps that bid a keyword, split into live and paused, with the bid set in each. */
+export interface KeywordCamps {
+  live: OriginCamp[];
+  paused: OriginCamp[];
+  bidMax: number | null;
+  bidMin: number | null;
+  /** More than one live camp — the true source of a given install is unknown. */
+  ambiguous: boolean;
+  /** Master KW Lookup has no row for this keyword at all. */
+  unknown: boolean;
+}
+
+/** Build the camp/bid index once, then ask it per keyword. */
+export interface KeywordCampIndex {
+  get(keyword: string): KeywordCamps;
+  size: number;
+}
+
+export function buildKeywordCampIndex(data: SheetPayload | null | undefined): KeywordCampIndex {
+  const master: MasterKwRow[] = data?.masterKwLookup ?? [];
+  const byKeyword = new Map<string, MasterKwRow[]>();
+  for (const m of master) {
+    const k = normKw(m.keyword);
+    if (!k) continue;
+    const arr = byKeyword.get(k);
+    if (arr) arr.push(m);
+    else byKeyword.set(k, [m]);
+  }
+  const pausedNames = new Set(
+    (data?.pausedKw ?? []).map((r) => normalizeCampName(r.camp).toLowerCase()).filter(Boolean),
+  );
+  const campUrl = buildCampUrlIndex(data?.campLinks ?? []);
+  const cache = new Map<string, KeywordCamps>();
+
+  return {
+    size: byKeyword.size,
+    get(keyword: string): KeywordCamps {
+      const key = normKw(keyword);
+      const hit = cache.get(key);
+      if (hit) return hit;
+      const hits = byKeyword.get(key) ?? [];
+      const seen = new Set<string>();
+      const live: OriginCamp[] = [];
+      const paused: OriginCamp[] = [];
+      for (const h of hits) {
+        const camp = h.camp?.trim();
+        if (!camp || seen.has(camp)) continue;
+        seen.add(camp);
+        const isPaused = pausedNames.has(normalizeCampName(camp).toLowerCase());
+        (isPaused ? paused : live).push({
+          camp,
+          bidMax: numOrNull(h.bidMax),
+          url: campUrl.get(camp),
+          paused: isPaused,
+        });
+      }
+      live.sort((a, b) => (b.bidMax ?? 0) - (a.bidMax ?? 0));
+      const bids = live.map((c) => c.bidMax).filter((b): b is number => b !== null);
+      const out: KeywordCamps = {
+        live,
+        paused,
+        bidMax: bids.length > 0 ? Math.max(...bids) : null,
+        bidMin: bids.length > 0 ? Math.min(...bids) : null,
+        ambiguous: live.length > 1,
+        unknown: hits.length === 0,
+      };
+      cache.set(key, out);
+      return out;
+    },
+  };
+}
+
 /**
  * Build the keyword → country → position → campaign → bid map for paid installs.
  *
@@ -96,48 +208,11 @@ export function buildInstallOrigin(data: SheetPayload | null | undefined): Insta
   const paidWithInstalls = country.filter((r) => r.surface === 'search_ad' && (r.getAppL ?? 0) > 0);
   if (paidWithInstalls.length === 0) return null;
 
-  // keyword → its Master KW Lookup rows (campaign + max bid).
-  const master: MasterKwRow[] = data.masterKwLookup ?? [];
-  const byKeyword = new Map<string, MasterKwRow[]>();
-  for (const m of master) {
-    const k = normKw(m.keyword);
-    if (!k) continue;
-    const arr = byKeyword.get(k);
-    if (arr) arr.push(m);
-    else byKeyword.set(k, [m]);
-  }
-
-  // Paused campaigns, matched on the note-stripped name so an annotated label
-  // in Master still resolves to its Paused_camp entry.
-  const pausedNames = new Set(
-    (data.pausedKw ?? []).map((r) => normalizeCampName(r.camp).toLowerCase()).filter(Boolean),
-  );
-  const campUrl = buildCampUrlIndex(data.campLinks ?? []);
+  const campIndex = buildKeywordCampIndex(data);
 
   const rows: InstallOriginRow[] = [];
   for (const r of paidWithInstalls) {
-    const key = normKw(r.searchTerm);
-    const hits = byKeyword.get(key) ?? [];
-
-    const seen = new Set<string>();
-    const live: OriginCamp[] = [];
-    const paused: OriginCamp[] = [];
-    for (const h of hits) {
-      const camp = h.camp?.trim();
-      if (!camp || seen.has(camp)) continue;
-      seen.add(camp);
-      const isPaused = pausedNames.has(normalizeCampName(camp).toLowerCase());
-      const entry: OriginCamp = {
-        camp,
-        bidMax: numOrNull(h.bidMax),
-        url: campUrl.get(camp),
-        paused: isPaused,
-      };
-      (isPaused ? paused : live).push(entry);
-    }
-    live.sort((a, b) => (b.bidMax ?? 0) - (a.bidMax ?? 0));
-
-    const bids = live.map((c) => c.bidMax).filter((b): b is number => b !== null);
+    const camps = campIndex.get(r.searchTerm);
     rows.push({
       keyword: r.searchTerm,
       category: r.category,
@@ -149,12 +224,12 @@ export function buildInstallOrigin(data: SheetPayload | null | undefined): Insta
       usersPrev: r.usersP,
       installsPrev: r.getAppP,
       positionPrev: r.posP,
-      camps: live,
-      pausedCamps: paused,
-      bidMax: bids.length > 0 ? Math.max(...bids) : null,
-      bidMin: bids.length > 0 ? Math.min(...bids) : null,
-      campAmbiguous: live.length > 1,
-      campUnknown: hits.length === 0,
+      camps: camps.live,
+      pausedCamps: camps.paused,
+      bidMax: camps.bidMax,
+      bidMin: camps.bidMin,
+      campAmbiguous: camps.ambiguous,
+      campUnknown: camps.unknown,
     });
   }
 

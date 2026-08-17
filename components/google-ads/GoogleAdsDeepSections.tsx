@@ -32,15 +32,28 @@ function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-lg border border-slate-200 bg-white">
+    <div
+      className={cn(
+        'overflow-hidden rounded-lg border bg-white transition-colors',
+        open ? 'border-slate-300 shadow-sm' : 'border-slate-200',
+      )}
+    >
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+        className={cn(
+          'flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors',
+          open ? 'bg-slate-50' : 'hover:bg-slate-50',
+        )}
       >
-        <span className="text-xs font-semibold text-slate-800">{title}</span>
+        {/* A closed section must still say it can be opened — the row of
+            identical white cards was the whole readability problem. */}
+        <span className="text-[12px] font-semibold text-slate-900">{title}</span>
         {hint && <span className="hidden text-[10px] text-slate-500 sm:inline">— {hint}</span>}
-        <ChevronDown className={cn('ml-auto h-4 w-4 shrink-0 text-slate-400 transition-transform', open && 'rotate-180')} />
+        <span className="ml-auto flex shrink-0 items-center gap-1 text-[10px] font-medium text-slate-400">
+          {open ? 'thu gọn' : 'mở'}
+          <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
+        </span>
       </button>
       {open && <div className="space-y-2 border-t border-slate-200 p-3">{children}</div>}
     </div>

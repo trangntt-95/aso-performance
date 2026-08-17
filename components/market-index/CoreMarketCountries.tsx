@@ -72,10 +72,13 @@ export function CoreMarketCountries({ data, limit = 15 }: Props) {
   const revenueBy = useMemo(() => {
     const rows = data?.perGeoRevenue ?? [];
     const total = rows.reduce((sum, r) => sum + (Number.isFinite(r.revenue) ? r.revenue : 0), 0);
-    const m = new Map<string, { rank: number; revenue: number; share: number; vpi: number | null }>();
+    const m = new Map<string, { rank: number | null; revenue: number; share: number; vpi: number | null }>();
     for (const r of rows) {
       m.set(r.country.trim().toLowerCase(), {
-        rank: r.rank,
+        // 70 of the 122 countries in the block carry no rank. Their cell parses
+        // to 0, and `0 ?? 9999` is 0 — left as-is they sort ahead of the United
+        // States. Normalise to null here, once, at the boundary.
+        rank: r.rank > 0 ? r.rank : null,
         revenue: r.revenue,
         share: total > 0 ? r.revenue / total : 0,
         vpi: r.valuePerInstall,
@@ -84,7 +87,12 @@ export function CoreMarketCountries({ data, limit = 15 }: Props) {
     return m;
   }, [data?.perGeoRevenue]);
 
-  const hasRevenueRank = revenueBy.size > 0;
+  // Ranked countries are what makes a revenue ordering possible at all; a block
+  // present but entirely unranked is the same as having no ordering.
+  const hasRevenueRank = useMemo(
+    () => (data?.perGeoRevenue ?? []).some((r) => r.rank > 0),
+    [data?.perGeoRevenue],
+  );
   const revenuePeriod = data?.perGeoRevenuePeriod ?? '';
 
   const enriched = useMemo<Row[]>(
@@ -124,7 +132,7 @@ export function CoreMarketCountries({ data, limit = 15 }: Props) {
           getAppShare: 0,
           deltaUsersPct: null,
           deltaGetAppPct: null,
-          rank: r.rank,
+          rank: r.rank > 0 ? r.rank : null,
           tier1: tier1By.get(k) ?? false,
           revenue: rev?.revenue ?? r.revenue,
           revenueShare: rev?.share ?? null,
@@ -132,14 +140,16 @@ export function CoreMarketCountries({ data, limit = 15 }: Props) {
         },
       );
     }
-    return out.sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999));
+    return out
+      .filter((r) => r.rank !== null)
+      .sort((a, b) => (a.rank as number) - (b.rank as number));
   }, [hasRevenueRank, enriched, data?.perGeoRevenue, revenueBy, tier1By]);
 
   const shown = useMemo(() => {
     const share = (r: Row) => (metric === 'users' ? r.usersShare : r.getAppShare);
     if (basis === 'revenue' && hasRevenueRank) return coreRows.slice(0, limit);
     return [...enriched].sort((a, b) => share(b) - share(a)).slice(0, limit);
-  }, [enriched, basis, hasRevenueRank, metric, limit]);
+  }, [enriched, coreRows, basis, hasRevenueRank, metric, limit]);
 
   // Countries big enough by traffic to make the users top-N but not the revenue
   // one. Naming them is the point — this is the gap the old card hid.

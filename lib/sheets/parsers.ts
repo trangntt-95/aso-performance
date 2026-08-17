@@ -728,8 +728,13 @@ export function parsePerGeoRevenue(rows: string[][]): {
     const installs = ci.installs >= 0 ? num(r[ci.installs]) : 0;
     const revenue = ci.revenue >= 0 ? num(r[ci.revenue]) : 0;
     const vpiCell = ci.valuePerInstall >= 0 ? numOrNull(r[ci.valuePerInstall]) : null;
+    // A blank rank cell parses to 0, and 0 is NOT nullish — every downstream
+    // `rank ?? 9999` would then sort unranked countries to the FRONT. Store the
+    // absence as 0 only after checking, and let the consumer treat <= 0 as
+    // unranked; the sort below already does.
+    const rankCell = ci.rank >= 0 ? num(r[ci.rank]) : 0;
     out.push({
-      rank: ci.rank >= 0 ? num(r[ci.rank]) : 0,
+      rank: rankCell > 0 ? rankCell : 0,
       country,
       installs,
       firstPaid: ci.firstPaid >= 0 ? num(r[ci.firstPaid]) : 0,

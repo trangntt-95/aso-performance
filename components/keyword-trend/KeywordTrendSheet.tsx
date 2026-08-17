@@ -13,6 +13,7 @@ import { TrendChart } from './TrendChart';
 import { BidImpactChart } from './BidImpactChart';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { normKw } from '@/lib/sheets/kwNorm';
+import { KeywordOriginBlock } from './KeywordOriginBlock';
 import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
 import { useStatusStore } from '@/lib/store/statusStore';
 import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
@@ -654,6 +655,9 @@ export function KeywordTrendSheet() {
                 <b>Snapshot</b> phía dưới vẫn đúng.
               </div>
             )}
+
+            {/* Nguồn Install, thu hẹp về đúng keyword này. */}
+            {keyword && <KeywordOriginBlock keyword={keyword} />}
 
             <section className="space-y-2">
               <h3 className="text-[11px] uppercase tracking-wide text-slate-500">

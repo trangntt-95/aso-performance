@@ -56,6 +56,19 @@ function SortHead({
   );
 }
 
+/** Divider that opens a group of related cards. */
+function Group({ n, title, sub }: { n: number; title: string; sub: string }) {
+  return (
+    <div className="flex items-baseline gap-2 pb-0.5 pt-3">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white">
+        {n}
+      </span>
+      <h2 className="text-[13px] font-bold tracking-tight text-slate-900">{title}</h2>
+      <span className="min-w-0 flex-1 truncate text-[10px] text-slate-500">{sub}</span>
+    </div>
+  );
+}
+
 export function GoogleAdsView() {
   const { data, isLoading, error } = useSheetData();
   const report = useMemo(() => (data ? buildGoogleAdsReport(data.googleAds) : null), [data]);
@@ -180,6 +193,8 @@ export function GoogleAdsView() {
         </div>
       </div>
 
+      <Group n={1} title="Tài khoản đang tiêu bao nhiêu, đổi lại được gì" sub="tổng quan · con số nào là install thật" />
+
       {/* KPI row */}
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
         {([
@@ -228,6 +243,12 @@ export function GoogleAdsView() {
           ))}
         </div>
       </div>
+
+      <Group
+        n={2}
+        title="Từng campaign đang chạy ra sao"
+        sub="click đẩy về đâu · xu hướng theo ngày · mất hiển thị vì ngân sách hay vì thứ hạng"
+      />
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {/* Where the clicks land — the one real link to the ASO side. */}
@@ -343,6 +364,9 @@ export function GoogleAdsView() {
       </div>
 
       {/* Campaign table */}
+      <div className="px-1 pt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+        Bảng campaign chi tiết
+      </div>
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2">
         <div className="relative min-w-[150px] max-w-xs flex-1">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -431,13 +455,35 @@ export function GoogleAdsView() {
         </div>
       </div>
 
-      {/* Same phrase on both surfaces — the cross-channel view. */}
+      <Group
+        n={3}
+        title="Vấn đề nằm ở đâu"
+        sub="nước · Quality Score · chiến lược bid · thiết bị · asset — bấm để mở từng mục"
+      />
+
       {/* Năm tab chẩn đoán: nước, Quality Score, chiến lược bid, thiết bị, asset. */}
       <GoogleAdsDeepSections />
 
+      <Group
+        n={4}
+        title="Người dùng gõ gì, mình đã mua đúng chưa"
+        sub="cùng cụm từ trên hai bề mặt · cụm đã hiện nhưng chưa thành keyword"
+      />
+
+      {/* Same phrase on both surfaces — the cross-channel view. */}
       <BrandDemandTable />
 
       {/* Search terms */}
+      <div className="rounded-lg border border-slate-200 bg-white p-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+          Cụm tìm kiếm đã kích hoạt quảng cáo
+        </div>
+        <div className="mt-1 text-[11px] leading-snug text-slate-600">
+          Cụm người dùng thật sự gõ trên Google, kèm trạng thái: <b>đã thêm</b> làm keyword, <b>chưa thêm</b>, hay{' '}
+          <b>đã loại</b>. Đây là chỗ quyết định thêm keyword hay thêm negative.
+        </div>
+      </div>
+
       <div className="max-h-[60vh] overflow-auto rounded-lg border bg-white">
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
