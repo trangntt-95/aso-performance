@@ -24,6 +24,7 @@ import type {
   SurfaceLabel,
 } from '@/lib/sheets/types';
 import { buildPaidStatusIndex, resolvePaidStatus, type PaidStatus } from '@/lib/sheets/paidStatus';
+import { WasteKeywordsPanel } from './WasteKeywordsPanel';
 import { normKw } from '@/lib/sheets/kwNorm';
 
 interface KeywordSummary extends PaidStatus {
@@ -402,6 +403,10 @@ export function CategoryDrilldown({ category }: { category?: string }) {
 
   return (
     <div className="space-y-3">
+      {/* Cảnh báo trước bảng: keyword đang lấy traffic paid mà không ra install,
+          và vẫn đang được bid. Chỉ hiện ở view tất cả keyword. */}
+      {allMode && <WasteKeywordsPanel />}
+
       {!allMode && (
         <div className="flex items-center gap-3">
           <Link href="/categories" className="text-xs text-slate-500 inline-flex items-center gap-1 hover:underline">
