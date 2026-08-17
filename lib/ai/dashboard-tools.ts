@@ -15,7 +15,6 @@ import {
   type OverviewWindow,
 } from '@/components/overview/aggregate';
 import { expectedAdsInstalls, runrateAdsToMonthEnd } from '@/lib/config/ads-targets';
-import { buildWeeklyDigest } from '@/lib/market/weeklyDigest';
 import { analyseCampHealth } from '@/lib/market/campHealth';
 import { buildCpiCapOverview } from '@/lib/market/cpiCapOverview';
 import { buildGoogleAdsReport } from '@/lib/market/googleAdsReport';
@@ -396,36 +395,6 @@ export function makeDashboardTools(data: SheetPayload) {
           by_window: all_window_rows,
           by_country_top10: countryHits,
           action_queue: actionQueueHits,
-        };
-      },
-    }),
-
-    get_weekly_digest: tool({
-      description:
-        'ONE call that sweeps every module — Overview, Camp Health, Overbid, Bid Recommendations, Google Ads, Nguồn Install — and returns only what moved past a threshold or stands out. Use this FIRST for open questions like "tuần này có gì", "có gì bất thường không", "biến động tuần vừa rồi", "outlier", "cần xử lý gì". Far cheaper and more complete than calling the per-area tools one by one. Each finding names the screen it came from so the user can verify it.',
-      inputSchema: z.object({
-        days: z
-          .number()
-          .min(3)
-          .max(30)
-          .default(7)
-          .describe('Length of the period to summarise, in days. 7 = last week.'),
-      }),
-      execute: async ({ days }) => {
-        const digest = buildWeeklyDigest(data, days);
-        if (!digest) return { error: 'Chưa có dữ liệu để tổng hợp.' };
-        return {
-          period_days: days,
-          through: digest.generatedFor,
-          counts: digest.counts,
-          // The findings, already ranked: critical first, then by money at stake.
-          findings: digest.items.map((i) => ({
-            severity: i.severity,
-            source: i.source,
-            headline: i.headline,
-            detail: i.detail,
-            action: i.action ?? null,
-          })),
         };
       },
     }),

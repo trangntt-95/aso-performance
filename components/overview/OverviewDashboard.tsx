@@ -34,7 +34,6 @@ import { WindowSelector } from './WindowSelector';
 import { DownloadMenu } from '@/components/shared/DownloadMenu';
 import { buildOverviewSheets } from '@/lib/export/overviewExport';
 import { ChannelMixCards } from './ChannelMixCards';
-import { WeeklyDigestCard } from './WeeklyDigestCard';
 import { ChannelComparisonCard } from './ChannelComparison';
 import { compareChannels } from '@/lib/market/crossChannel';
 import { MarketTrajectoryChart } from './MarketTrajectoryChart';
@@ -709,9 +708,6 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           </div>
         </div>
       )}
-
-      {/* Một lượt quét mọi module — thay cho việc mở tám màn hình. */}
-      {!embedded && <WeeklyDigestCard />}
 
       <section
         id="sec-kpis"
