@@ -1,5 +1,5 @@
 import type { GoogleAdsPayload } from '@/lib/sheets/googleAdsTypes';
-import type { PerGeoCpiCapRow, SheetPayload } from '@/lib/sheets/types';
+import type { PerGeoCpiCapRow, PerGeoRevenueRow, SheetPayload } from '@/lib/sheets/types';
 import { toUsd } from '@/lib/config/fx';
 import { isInstallAction } from './googleAdsReport';
 
@@ -48,6 +48,13 @@ export interface GadsCountryRow {
   /** True when the country is on the App Store exclude list. */
   excluded: boolean;
   campaigns: number;
+
+  /** Revenue ÷ installs in this country, from the quarterly revenue block. The
+   *  channel doesn't change what a user is worth once they're in the app, so
+   *  this ceiling applies to Google spend exactly as it does to App Store spend. */
+  valuePerInstall: number | null;
+  /** Share of total account revenue this country produces. */
+  revenueShare: number | null;
 }
 
 // Countries the account is meant to stay out of on the App Store side. Spend
@@ -89,11 +96,15 @@ export interface GadsCountryReport {
   uncappedCount: number;
   /** Cost per conversion above the country's CPI cap. */
   overCapCount: number;
+  /** Google spend landing in countries that produce no revenue at all. */
+  noRevenueCostUsd: number;
+  noRevenueCount: number;
 }
 
 export function buildGadsCountryReport(
   gads: GoogleAdsPayload | null | undefined,
   perGeo: PerGeoCpiCapRow[],
+  revenue: PerGeoRevenueRow[] = [],
 ): GadsCountryReport | null {
   const rows = gads?.countries ?? [];
   if (rows.length === 0) return null;
@@ -101,6 +112,15 @@ export function buildGadsCountryReport(
 
   const capByCountry = new Map<string, PerGeoCpiCapRow>();
   for (const c of perGeo) capByCountry.set(c.country.trim().toLowerCase(), c);
+
+  const totalRevenue = revenue.reduce((s, r) => s + (Number.isFinite(r.revenue) ? r.revenue : 0), 0);
+  const revByCountry = new Map<string, { vpi: number | null; share: number | null }>();
+  for (const r of revenue) {
+    revByCountry.set(r.country.trim().toLowerCase(), {
+      vpi: r.valuePerInstall,
+      share: totalRevenue > 0 ? r.revenue / totalRevenue : null,
+    });
+  }
 
   interface Acc {
     code: string;
@@ -133,7 +153,9 @@ export function buildGadsCountryReport(
 
   const out: GadsCountryRow[] = [];
   acc.forEach((e, country) => {
-    const cfg = capByCountry.get(country.trim().toLowerCase());
+    const lc = country.trim().toLowerCase();
+    const cfg = capByCountry.get(lc);
+    const rev = revByCountry.get(lc);
     const costUsd = usdOf(e.cost, cur);
     out.push({
       country,
@@ -151,6 +173,8 @@ export function buildGadsCountryReport(
       tier1: cfg?.tier1 ?? false,
       excluded: isExcluded(country),
       campaigns: e.camps.size,
+      valuePerInstall: rev?.vpi ?? null,
+      revenueShare: rev?.share ?? null,
     });
   });
 
@@ -163,6 +187,20 @@ export function buildGadsCountryReport(
     uncappedCostUsd: round2(spending.filter((r) => r.capUsd === null).reduce((s, r) => s + r.costUsd, 0)),
     uncappedCount: spending.filter((r) => r.capUsd === null).length,
     overCapCount: out.filter((r) => r.capUsd !== null && r.cpaUsd !== null && r.cpaUsd > r.capUsd).length,
+    // Only counted when the revenue block exists — with no revenue data at all
+    // every country would look revenue-less, which is a different statement.
+    noRevenueCostUsd:
+      revenue.length === 0
+        ? 0
+        : round2(
+            spending
+              .filter((r) => r.valuePerInstall === null || r.valuePerInstall <= 0)
+              .reduce((s, r) => s + r.costUsd, 0),
+          ),
+    noRevenueCount:
+      revenue.length === 0
+        ? 0
+        : spending.filter((r) => r.valuePerInstall === null || r.valuePerInstall <= 0).length,
   };
 }
 
@@ -592,7 +630,7 @@ export interface GoogleAdsDeep {
 export function buildGoogleAdsDeep(data: SheetPayload | null | undefined): GoogleAdsDeep {
   const gads = data?.googleAds;
   return {
-    country: buildGadsCountryReport(gads, data?.perGeoCpiCap ?? []),
+    country: buildGadsCountryReport(gads, data?.perGeoCpiCap ?? [], data?.perGeoRevenue ?? []),
     quality: buildGadsQualityReport(gads),
     bidding: buildGadsBiddingReport(gads),
     devices: buildGadsDeviceReport(gads),

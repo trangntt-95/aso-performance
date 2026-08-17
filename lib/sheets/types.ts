@@ -273,6 +273,30 @@ export interface MasterKwRow {
  * One recommended bid per Country × Category, fully computed in the 'Max bid cap'
  * sheet tab (Apps Script). The dashboard only reads + filters — no recompute.
  */
+/**
+ * One country in the revenue block of 'PerGeo_CPI_Cap' (columns I–P).
+ *
+ * This is the block Trang refreshes each quarter, and it is the authority on
+ * what the core market is: actual revenue, not a hand-kept rank. `valuePerInstall`
+ * is the number that makes a CPI cap judgeable — a ceiling above it buys installs
+ * that cannot pay for themselves.
+ */
+export interface PerGeoRevenueRow {
+  /** Rank by revenue, from column I. */
+  rank: number;
+  country: string;
+  installs: number;
+  /** Users who made a first payment. */
+  firstPaid: number;
+  /** firstPaid / installs. */
+  firstPaidCr: number | null;
+  /** Average revenue per paying user. */
+  arppu: number | null;
+  revenue: number;
+  /** Revenue ÷ installs — what one install is worth in this country. */
+  valuePerInstall: number | null;
+}
+
 /** One row of the 'PerGeo_CPI_Cap' tab — the CPI ceiling set per country. */
 export interface PerGeoCpiCapRow {
   country: string;
@@ -428,6 +452,12 @@ export interface SheetPayload {
    *  config the bid recommendations are derived FROM, so it's carried
    *  separately to let the UI show intent next to outcome. */
   perGeoCpiCap: PerGeoCpiCapRow[];
+  /** Revenue per country ('PerGeo_CPI_Cap' columns I–P), refreshed quarterly.
+   *  The definition of the core market and the only source of what an install
+   *  is actually worth. */
+  perGeoRevenue: PerGeoRevenueRow[];
+  /** Period the revenue block covers, e.g. "tháng 4-7". */
+  perGeoRevenuePeriod: string;
   /** Per-campaign aggregate paid spend ('Shopify_daily' tab) — for overbid detection. */
   shopifyCamps: ShopifyCampRow[];
   /** Date range the Shopify_daily totals cover (from cell A2), e.g. "01/03/2026 → 14/06/2026". */

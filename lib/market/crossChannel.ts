@@ -46,7 +46,13 @@ export interface ChannelComparison {
   noOverlap: boolean;
 }
 
-export function compareChannels(data: SheetPayload | undefined): ChannelComparison | null {
+export function compareChannels(
+  data: SheetPayload | undefined,
+  /** Page-level date filter. The comparison is clipped to it, then further
+   *  clipped to the days both channels actually reported — asking for July
+   *  cannot invent Google days that don't exist. */
+  range?: { from: string; to: string } | null,
+): ChannelComparison | null {
   if (!data) return null;
   const g = data.googleAds;
   const shopify = data.shopifyDaily ?? [];
@@ -55,8 +61,10 @@ export function compareChannels(data: SheetPayload | undefined): ChannelComparis
   const gDates = Array.from(new Set(g.campaigns.map((c) => c.date))).sort();
   const sDates = Array.from(new Set(shopify.map((r) => r.date))).sort();
   // The overlap, so neither channel is credited with days the other never saw.
-  const from = gDates[0] > sDates[0] ? gDates[0] : sDates[0];
-  const to = gDates[gDates.length - 1] < sDates[sDates.length - 1] ? gDates[gDates.length - 1] : sDates[sDates.length - 1];
+  let from = gDates[0] > sDates[0] ? gDates[0] : sDates[0];
+  let to = gDates[gDates.length - 1] < sDates[sDates.length - 1] ? gDates[gDates.length - 1] : sDates[sDates.length - 1];
+  if (range?.from && range.from > from) from = range.from;
+  if (range?.to && range.to < to) to = range.to;
   if (from > to) {
     return { from, to, days: 0, channels: [], noOverlap: true };
   }

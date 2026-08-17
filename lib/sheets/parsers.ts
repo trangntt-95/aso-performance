@@ -6,6 +6,7 @@ import type {
   BidAction,
   BidCapRow,
   PerGeoCpiCapRow,
+  PerGeoRevenueRow,
   CampLinkRow,
   Category,
   DynamicBasketItem,
@@ -647,6 +648,102 @@ export function parsePerGeoCpiCap(rows: string[][]): PerGeoCpiCapRow[] {
     });
   }
   return out;
+}
+
+/**
+ * The revenue block living to the right of 'PerGeo_CPI_Cap' (columns I–P).
+ *
+ * Located by its own header row (the cell reading 'Country' in that block)
+ * rather than by a fixed column letter, so inserting a column on either side
+ * doesn't silently shift every figure by one.
+ */
+export function parsePerGeoRevenue(rows: string[][]): {
+  rows: PerGeoRevenueRow[];
+  period: string;
+} {
+  const empty = { rows: [] as PerGeoRevenueRow[], period: '' };
+  if (!rows || rows.length < 2) return empty;
+  const norm = (c: unknown): string => str(c).trim().toLowerCase();
+
+  // Find the header cell of the revenue block: a row where some column at
+  // index >= 4 says 'country' and a later column says 'revenue'.
+  let headerIdx = -1;
+  let base = -1;
+  for (let i = 0; i < Math.min(rows.length, 12); i++) {
+    const r = (rows[i] ?? []).map(norm);
+    const ci = r.findIndex((c, idx) => idx >= 4 && c === 'country');
+    if (ci < 0) continue;
+    if (!r.some((c, idx) => idx > ci && c === 'revenue')) continue;
+    headerIdx = i;
+    base = ci;
+    break;
+  }
+  if (headerIdx < 0) return empty;
+
+  const header = (rows[headerIdx] ?? []).map(norm);
+  // Column indices are resolved by header text within the block.
+  const find = (...cands: string[]): number => {
+    for (const c of cands) {
+      const i = header.findIndex((h, idx) => idx >= base && h === c);
+      if (i >= 0) return i;
+    }
+    for (const c of cands) {
+      const i = header.findIndex((h, idx) => idx >= base && h.startsWith(c));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const ci = {
+    // The rank sits one column LEFT of the country name, outside the header row.
+    rank: base - 1,
+    country: base,
+    installs: find('installed', 'installs', 'install'),
+    firstPaid: find('first paid cr') === find('first paid') ? -1 : find('first paid'),
+    firstPaidCr: find('first paid cr'),
+    arppu: find('arppu'),
+    revenue: find('revenue'),
+    valuePerInstall: find('giá trị 1 install', 'value per install'),
+  };
+  // 'first paid' and 'first paid cr' both start with 'first paid'; take the
+  // first exact hit for the count and keep them distinct.
+  const exactFirstPaid = header.findIndex((h, idx) => idx >= base && h === 'first paid');
+  if (exactFirstPaid >= 0) ci.firstPaid = exactFirstPaid;
+
+  // The period label sits above the header inside the same block.
+  let period = '';
+  for (let i = 0; i < headerIdx; i++) {
+    const v = str((rows[i] ?? [])[base]);
+    if (v && !/^raw data/i.test(v)) { period = v; break; }
+  }
+
+  const out: PerGeoRevenueRow[] = [];
+  const seen = new Set<string>();
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const r = rows[i] ?? [];
+    const country = str(r[ci.country]).trim();
+    if (!country) continue;
+    const key = country.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const installs = ci.installs >= 0 ? num(r[ci.installs]) : 0;
+    const revenue = ci.revenue >= 0 ? num(r[ci.revenue]) : 0;
+    const vpiCell = ci.valuePerInstall >= 0 ? numOrNull(r[ci.valuePerInstall]) : null;
+    out.push({
+      rank: ci.rank >= 0 ? num(r[ci.rank]) : 0,
+      country,
+      installs,
+      firstPaid: ci.firstPaid >= 0 ? num(r[ci.firstPaid]) : 0,
+      firstPaidCr: ci.firstPaidCr >= 0 ? numOrNull(r[ci.firstPaidCr]) : null,
+      arppu: ci.arppu >= 0 ? numOrNull(r[ci.arppu]) : null,
+      revenue,
+      // Prefer the sheet's own column; fall back to the division so a blank
+      // cell doesn't cost the row its most useful number.
+      valuePerInstall: vpiCell !== null ? vpiCell : installs > 0 ? revenue / installs : null,
+    });
+  }
+  // Rank ascending, but rows without a rank go last rather than to the front.
+  out.sort((a, b) => (a.rank || 9999) - (b.rank || 9999));
+  return { rows: out, period };
 }
 
 export function parseBidCap(rows: string[][]): BidCapRow[] {

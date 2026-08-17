@@ -98,7 +98,9 @@ export function GoogleAdsDeepSections() {
   const { data } = useSheetData();
   const deep = useMemo(() => buildGoogleAdsDeep(data), [data]);
   const [qsFilter, setQsFilter] = useState<'weak' | 'all'>('weak');
-  const [countryFilter, setCountryFilter] = useState<'spending' | 'all' | 'excluded' | 'uncapped'>('spending');
+  const [countryFilter, setCountryFilter] = useState<
+    'spending' | 'all' | 'excluded' | 'uncapped' | 'no-revenue'
+  >('spending');
 
   const countryRows = useMemo<GadsCountryRow[]>(() => {
     const rs = deep.country?.rows ?? [];
@@ -106,6 +108,8 @@ export function GoogleAdsDeepSections() {
       case 'all': return rs;
       case 'excluded': return rs.filter((r) => r.excluded);
       case 'uncapped': return rs.filter((r) => r.costUsd > 0 && r.capUsd === null);
+      case 'no-revenue':
+        return rs.filter((r) => r.costUsd > 0 && (r.valuePerInstall === null || r.valuePerInstall <= 0));
       default: return rs.filter((r) => r.costUsd > 0);
     }
   }, [deep.country, countryFilter]);
@@ -147,10 +151,10 @@ export function GoogleAdsDeepSections() {
               tone={deep.country.uncappedCount > 0 ? 'text-amber-700' : 'text-slate-900'}
             />
             <Stat
-              label="Vượt trần"
-              value={String(deep.country.overCapCount)}
-              sub="nước có cost/conv trên trần"
-              tone={deep.country.overCapCount > 0 ? 'text-rose-600' : 'text-slate-900'}
+              label="Vào nước không ra doanh thu"
+              value={usd(deep.country.noRevenueCostUsd)}
+              sub={`${deep.country.noRevenueCount} nước, $0 doanh thu ghi nhận`}
+              tone={deep.country.noRevenueCostUsd > 0 ? 'text-rose-600' : 'text-slate-900'}
             />
           </div>
 
@@ -163,6 +167,7 @@ export function GoogleAdsDeepSections() {
               <option value="spending">Nước có chi tiền</option>
               <option value="excluded">Nước đang exclude bên App Store</option>
               <option value="uncapped">Chưa có trần CPI</option>
+              <option value="no-revenue">Chưa ra doanh thu</option>
               <option value="all">Tất cả</option>
             </select>
             <span className="text-[10px] text-slate-500">{countryRows.length} nước</span>
@@ -181,6 +186,12 @@ export function GoogleAdsDeepSections() {
                     Cost / conv
                   </th>
                   <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Trần CPI</th>
+                  <th
+                    className="whitespace-nowrap px-2 py-1.5 text-right font-medium"
+                    title="Doanh thu ÷ install ở nước đó — kênh nào đưa người dùng tới không làm thay đổi giá trị của họ"
+                  >
+                    Giá trị 1 ins
+                  </th>
                   <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">Camp</th>
                 </tr>
               </thead>
@@ -231,6 +242,32 @@ export function GoogleAdsDeepSections() {
                           </span>
                         ) : (
                           usd(r.capUsd)
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px]">
+                        {r.valuePerInstall === null ? (
+                          <span className="text-slate-300" title="Nước này không có trong khối doanh thu">
+                            —
+                          </span>
+                        ) : (
+                          <span
+                            className={cn(
+                              r.valuePerInstall <= 0
+                                ? 'font-semibold text-rose-600'
+                                : r.cpaUsd !== null && r.cpaUsd > r.valuePerInstall
+                                  ? 'font-semibold text-rose-600'
+                                  : 'text-slate-700',
+                            )}
+                            title={
+                              r.valuePerInstall <= 0
+                                ? 'Nước này chưa tạo ra doanh thu nào — mọi đồng chi vào đây là lỗ.'
+                                : r.cpaUsd !== null && r.cpaUsd > r.valuePerInstall
+                                  ? `Cost/conv (${usd(r.cpaUsd)}) đã cao hơn giá trị một install (${usd(r.valuePerInstall)}) — mà cost/conv còn dễ dãi hơn CPI thật.`
+                                  : undefined
+                            }
+                          >
+                            {usd(r.valuePerInstall)}
+                          </span>
                         )}
                       </td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-[11px] text-slate-500">{r.campaigns}</td>

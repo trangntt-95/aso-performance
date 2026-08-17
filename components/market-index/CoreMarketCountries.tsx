@@ -15,10 +15,11 @@ import { cn } from '@/lib/utils';
 // both are on the paid-exclude list. Traffic volume is the wrong axis for a
 // question about which markets matter.
 //
-// The revenue answer is already in the account: PerGeo_CPI_Cap carries a
-// 'Country Rank' column, which is the revenue ranking the CPI ceilings were
-// derived from. India sits at rank 47 there and Vietnam has no rank at all, so
-// ranking by revenue excludes them without any special-casing.
+// The revenue answer lives in the same tab, in the block Trang refreshes each
+// quarter (PerGeo_CPI_Cap columns I–P): real revenue per country, plus what one
+// install is worth there. Ranking by that excludes India and Vietnam without
+// any special-casing — India earns $0.86 per install, Vietnam is not in the
+// block at all.
 //
 // The users view is kept, but relabelled as what it is — traffic, not market.
 
@@ -42,10 +43,14 @@ function deltaCls(v: number | null): string {
   return v > 0 ? 'text-emerald-600' : 'text-rose-600';
 }
 
-/** A country in the basket, plus its revenue rank when one exists. */
+/** A country in the basket, plus what the revenue block says about it. */
 interface Row extends CountryWeight {
   rank: number | null;
   tier1: boolean;
+  revenue: number | null;
+  revenueShare: number | null;
+  /** Revenue ÷ installs — the ceiling any CPI has to stay under to pay off. */
+  valuePerInstall: number | null;
 }
 
 export function CoreMarketCountries({ data, limit = 15 }: Props) {
@@ -58,39 +63,81 @@ export function CoreMarketCountries({ data, limit = 15 }: Props) {
     [data, window],
   );
 
-  const rankByCountry = useMemo(() => {
-    const m = new Map<string, { rank: number | null; tier1: boolean }>();
-    for (const c of data?.perGeoCpiCap ?? []) {
-      m.set(c.country.trim().toLowerCase(), { rank: c.rank, tier1: c.tier1 });
-    }
+  const tier1By = useMemo(() => {
+    const m = new Map<string, boolean>();
+    for (const c of data?.perGeoCpiCap ?? []) m.set(c.country.trim().toLowerCase(), c.tier1);
     return m;
   }, [data?.perGeoCpiCap]);
 
-  const hasRevenueRank = useMemo(
-    () => (data?.perGeoCpiCap ?? []).some((c) => c.rank !== null),
-    [data?.perGeoCpiCap],
-  );
+  const revenueBy = useMemo(() => {
+    const rows = data?.perGeoRevenue ?? [];
+    const total = rows.reduce((sum, r) => sum + (Number.isFinite(r.revenue) ? r.revenue : 0), 0);
+    const m = new Map<string, { rank: number; revenue: number; share: number; vpi: number | null }>();
+    for (const r of rows) {
+      m.set(r.country.trim().toLowerCase(), {
+        rank: r.rank,
+        revenue: r.revenue,
+        share: total > 0 ? r.revenue / total : 0,
+        vpi: r.valuePerInstall,
+      });
+    }
+    return m;
+  }, [data?.perGeoRevenue]);
+
+  const hasRevenueRank = revenueBy.size > 0;
+  const revenuePeriod = data?.perGeoRevenuePeriod ?? '';
 
   const enriched = useMemo<Row[]>(
     () =>
       rows.map((r) => {
-        const cfg = rankByCountry.get(r.country.trim().toLowerCase());
-        return { ...r, rank: cfg?.rank ?? null, tier1: cfg?.tier1 ?? false };
+        const k = r.country.trim().toLowerCase();
+        const rev = revenueBy.get(k);
+        return {
+          ...r,
+          rank: rev?.rank ?? null,
+          tier1: tier1By.get(k) ?? false,
+          revenue: rev?.revenue ?? null,
+          revenueShare: rev?.share ?? null,
+          valuePerInstall: rev?.vpi ?? null,
+        };
       }),
-    [rows, rankByCountry],
+    [rows, revenueBy, tier1By],
   );
+
+  // The revenue block lists countries GA4 may not have reported any traffic for
+  // in the selected window. They are still core market — a country earning
+  // money with no measured users this week has not stopped mattering.
+  const coreRows = useMemo<Row[]>(() => {
+    if (!hasRevenueRank) return [];
+    const byCountry = new Map(enriched.map((r) => [r.country.trim().toLowerCase(), r]));
+    const out: Row[] = [];
+    for (const r of data?.perGeoRevenue ?? []) {
+      const k = r.country.trim().toLowerCase();
+      const hit = byCountry.get(k);
+      const rev = revenueBy.get(k);
+      out.push(
+        hit ?? {
+          country: r.country,
+          users: 0,
+          getApp: 0,
+          usersShare: 0,
+          getAppShare: 0,
+          deltaUsersPct: null,
+          deltaGetAppPct: null,
+          rank: r.rank,
+          tier1: tier1By.get(k) ?? false,
+          revenue: rev?.revenue ?? r.revenue,
+          revenueShare: rev?.share ?? null,
+          valuePerInstall: r.valuePerInstall,
+        },
+      );
+    }
+    return out.sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999));
+  }, [hasRevenueRank, enriched, data?.perGeoRevenue, revenueBy, tier1By]);
 
   const shown = useMemo(() => {
     const share = (r: Row) => (metric === 'users' ? r.usersShare : r.getAppShare);
-    if (basis === 'revenue' && hasRevenueRank) {
-      // Ranked countries only, in revenue order. A country with no rank is not
-      // absent from the market — it simply has no revenue standing, which is
-      // exactly what puts it outside the core.
-      return enriched
-        .filter((r) => r.rank !== null)
-        .sort((a, b) => (a.rank as number) - (b.rank as number))
-        .slice(0, limit);
-    }
+    if (basis === 'revenue' && hasRevenueRank) return coreRows.slice(0, limit);
     return [...enriched].sort((a, b) => share(b) - share(a)).slice(0, limit);
   }, [enriched, basis, hasRevenueRank, metric, limit]);
 
@@ -110,11 +157,15 @@ export function CoreMarketCountries({ data, limit = 15 }: Props) {
   const share = (r: Row) => (metric === 'users' ? r.usersShare : r.getAppShare);
   const value = (r: Row) => (metric === 'users' ? r.users : r.getApp);
   const delta = (r: Row) => (metric === 'users' ? r.deltaUsersPct : r.deltaGetAppPct);
-  const maxShare = shown.reduce((m, r) => Math.max(m, share(r)), 0);
-  const shownShare = shown.reduce((s, r) => s + share(r), 0);
+  const byRevenueBasis = basis === 'revenue' && hasRevenueRank;
+  // Under the revenue basis the bar IS revenue share; under the traffic basis
+  // it stays the users/install share it always was.
+  const weight = (r: Row) => (byRevenueBasis ? (r.revenueShare ?? 0) : share(r));
+  const maxShare = shown.reduce((m, r) => Math.max(m, weight(r)), 0);
+  const shownShare = shown.reduce((s, r) => s + weight(r), 0);
   const unit = metric === 'users' ? 'users' : 'install';
   const fellBack = effWindow !== window;
-  const byRevenue = basis === 'revenue' && hasRevenueRank;
+  const byRevenue = byRevenueBasis;
 
   return (
     <Card className="border-slate-200 shadow-sm">
@@ -128,8 +179,8 @@ export function CoreMarketCountries({ data, limit = 15 }: Props) {
             <p className="text-[11px] text-slate-500">
               {byRevenue ? (
                 <>
-                  Top {shown.length} nước theo <b>rank doanh thu</b> (cột Country Rank trong PerGeo_CPI_Cap) · chiếm{' '}
-                  {(shownShare * 100).toFixed(0)}% {metric === 'users' ? 'Users' : 'Install'} / {totalCountries} nước
+                  Top {shown.length} nước theo <b>doanh thu thật</b> · chiếm {(shownShare * 100).toFixed(0)}% tổng doanh
+                  thu{revenuePeriod ? ` (${revenuePeriod})` : ''}
                 </>
               ) : (
                 <>
@@ -217,20 +268,36 @@ export function CoreMarketCountries({ data, limit = 15 }: Props) {
                     )}
                   </span>
                   <span className="shrink-0 font-mono text-[12px] font-semibold tabular-nums text-indigo-700">
-                    {(share(r) * 100).toFixed(1)}%
+                    {(weight(r) * 100).toFixed(1)}%
                   </span>
                 </div>
                 <div className="relative mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
                   <div
                     className="absolute inset-y-0 left-0 rounded-full bg-indigo-500"
-                    style={{ width: `${maxShare > 0 ? (share(r) / maxShare) * 100 : 0}%` }}
+                    style={{ width: `${maxShare > 0 ? (weight(r) / maxShare) * 100 : 0}%` }}
                   />
                 </div>
               </div>
-              <div className="w-24 shrink-0 text-right font-mono text-[11px] tabular-nums text-slate-500">
-                {formatNumber(value(r), { compact: true })} {unit}
-                <span className={cn('ml-1', deltaCls(delta(r)))}>{fmtDelta(delta(r))}</span>
-              </div>
+              {byRevenue ? (
+                <div className="w-40 shrink-0 text-right font-mono text-[11px] tabular-nums">
+                  <div className="text-slate-700">
+                    ${formatNumber(Math.round(r.revenue ?? 0), { compact: true })}
+                  </div>
+                  <div
+                    className="cursor-help text-[10px] text-slate-400"
+                    title="Doanh thu ÷ install — một install ở nước này đáng bao nhiêu. Trần CPI phải nằm dưới con số này thì mới hoà vốn."
+                  >
+                    {r.valuePerInstall === null ? '—' : `$${r.valuePerInstall.toFixed(0)}/install`}
+                    <span className="ml-1 text-slate-300">·</span>{' '}
+                    <span className={cn(deltaCls(delta(r)))}>{fmtDelta(delta(r)) || '—'}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="w-24 shrink-0 text-right font-mono text-[11px] tabular-nums text-slate-500">
+                  {formatNumber(value(r), { compact: true })} {unit}
+                  <span className={cn('ml-1', deltaCls(delta(r)))}>{fmtDelta(delta(r))}</span>
+                </div>
+              )}
             </li>
           ))}
         </ol>
@@ -239,7 +306,11 @@ export function CoreMarketCountries({ data, limit = 15 }: Props) {
           <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] leading-snug text-slate-600">
             <b>Có lưu lượng nhưng ngoài core market:</b>{' '}
             {trafficOnly
-              .map((r) => `${r.country} (${(share(r) * 100).toFixed(1)}%${r.rank !== null ? `, rank ${r.rank}` : ', chưa có rank'})`)
+              .map(
+                (r) =>
+                  `${r.country} (${(share(r) * 100).toFixed(1)}% ${metric === 'users' ? 'users' : 'install'}` +
+                  `${r.valuePerInstall !== null ? `, $${r.valuePerInstall.toFixed(2)}/install` : ', chưa có doanh thu'})`,
+              )
               .join(' · ')}
             . Đủ traffic để lọt top {limit} theo {metric === 'users' ? 'Users' : 'Install'}, nhưng không nằm trong top{' '}
             {limit} doanh thu — nên không tính là core market.
@@ -250,9 +321,10 @@ export function CoreMarketCountries({ data, limit = 15 }: Props) {
           ⓘ{' '}
           {byRevenue ? (
             <>
-              Thứ tự lấy từ cột <b>Country Rank</b> của <code className="text-[9px]">PerGeo_CPI_Cap</code> — thứ hạng
-              doanh thu, cùng nguồn với trần CPI. India ở rank 47 và Vietnam chưa có rank, nên cả hai <b>không</b> nằm
-              trong core market. % là share {metric === 'users' ? 'Users' : 'Install'} của nước đó trong window đã chọn.
+              Doanh thu lấy từ khối bên phải tab <code className="text-[9px]">PerGeo_CPI_Cap</code> (cột I–P), cập nhật
+              theo quý{revenuePeriod ? ` — kỳ hiện tại: ${revenuePeriod}` : ''}. <b>%</b> là share doanh thu, không phải
+              share traffic. <b>$/install</b> = doanh thu ÷ install ở nước đó: trần CPI phải nằm dưới con số này thì
+              install mới tự trả được cho mình.
             </>
           ) : (
             <>

@@ -62,6 +62,13 @@ export interface CountryCapRow {
   verdict: CapVerdict;
   /** Money spent above what the cap would have allowed for these installs. */
   overspend: number;
+
+  /** Revenue ÷ installs in this country, from the quarterly revenue block. */
+  valuePerInstall: number | null;
+  /** valuePerInstall − cap. Negative means the ceiling itself is set above what
+   *  an install is worth there: every install bought at the cap loses money,
+   *  no matter how well the campaign performs. */
+  capHeadroom: number | null;
 }
 
 export interface CpiCapOverview {
@@ -87,6 +94,8 @@ export interface CpiCapOverview {
     overCount: number;
     /** Tier 1 countries that produced zero installs. */
     tier1Silent: number;
+    /** Countries whose CPI cap exceeds what an install is worth there. */
+    capAboveValue: number;
   };
 }
 
@@ -116,6 +125,14 @@ export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview |
   const config: PerGeoCpiCapRow[] = data?.perGeoCpiCap ?? [];
   const bidCap: BidCapRow[] = data?.bidCap ?? [];
   if (config.length === 0) return null;
+
+  // What one install is actually worth per country, from the quarterly revenue
+  // block. This is the only number that can tell whether a CEILING is sane —
+  // measured CPI says how well we bought, this says whether buying was worth it.
+  const valueByCountry = new Map<string, number | null>();
+  for (const r of data?.perGeoRevenue ?? []) {
+    valueByCountry.set(r.country.trim().toLowerCase(), r.valuePerInstall);
+  }
 
   // Aggregate the detail table up to one row per country. Category is the wrong
   // grain here: a cap is set per country, so it has to be judged per country.
@@ -154,6 +171,10 @@ export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview |
     // "should have cost", it simply shouldn't have spent.
     const overspend = cpi !== null && c.cap > 0 && cpi > c.cap ? spend - installs * c.cap : 0;
 
+    const valuePerInstall = valueByCountry.get(key) ?? null;
+    const capHeadroom =
+      valuePerInstall !== null && c.cap > 0 ? valuePerInstall - c.cap : null;
+
     rows.push({
       country: c.country,
       rank: c.rank,
@@ -172,6 +193,8 @@ export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview |
       cpiReliable: installs >= CPI_CONFIDENT_INSTALLS,
       verdict: verdictOf({ installs, spend, clicks, cpi, cap: c.cap }),
       overspend,
+      valuePerInstall,
+      capHeadroom,
     });
   }
 
@@ -210,6 +233,7 @@ export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview |
       overspend: rows.reduce((s, r) => s + r.overspend, 0),
       overCount: rows.filter((r) => r.verdict === 'over').length,
       tier1Silent: rows.filter((r) => r.tier1 && r.installs === 0).length,
+      capAboveValue: rows.filter((r) => r.capHeadroom !== null && r.capHeadroom < 0).length,
     },
   };
 }

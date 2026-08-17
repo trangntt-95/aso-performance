@@ -111,6 +111,8 @@ async function fetchPayload(): Promise<SheetPayload> {
     campLinks: parseCampLinks(raw['Camp_Links'] ?? []),
     bidCap: parseBidCap(raw['Max bid cap'] ?? []),
     perGeoCpiCap: [],
+    perGeoRevenue: [],
+    perGeoRevenuePeriod: '',
     shopifyCamps: parseShopifyCamps(raw['Shopify_daily'] ?? []),
     shopifyDateRange: parseShopifyDateRange(raw['Shopify_daily'] ?? []),
     negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),

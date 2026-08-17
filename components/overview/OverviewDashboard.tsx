@@ -316,7 +316,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
   // Paid channels side by side. Returns null until both sources have data, so
   // the section simply doesn't render on a dashboard without Google Ads wired up.
-  const channelCompare = useMemo(() => compareChannels(data), [data]);
+  // Both channels are per-day, so unlike the window-based sections this one can
+  // and does honour the page's date filter.
+  const channelCompare = useMemo(() => compareChannels(data, dateRange), [data, dateRange]);
 
   const openCategoryDetail = useCategoryDetailStore((s) => s.openCategory);
 

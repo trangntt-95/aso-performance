@@ -34,11 +34,12 @@ const VERDICT_CLS: Record<CapVerdict, string> = {
   idle: 'bg-slate-50 text-slate-400 border-slate-200',
 };
 
-type Lens = 'all' | 'over' | 'tier1' | 'silent' | 'idle';
+type Lens = 'all' | 'over' | 'cap-above-value' | 'tier1' | 'silent' | 'idle';
 
 const LENS_LABEL: Record<Lens, string> = {
   all: 'Tất cả nước có cấu hình',
   over: 'Đang vượt trần CPI',
+  'cap-above-value': 'Trần đặt cao hơn giá trị 1 install',
   tier1: 'Tier 1',
   silent: 'Rank cao nhưng chưa có install',
   idle: 'Chưa tiêu đồng nào',
@@ -80,6 +81,8 @@ export function CpiCapOverview() {
     switch (lens) {
       case 'over':
         return r.filter((x) => x.verdict === 'over' || x.verdict === 'spending-no-install');
+      case 'cap-above-value':
+        return r.filter((x) => x.capHeadroom !== null && x.capHeadroom < 0);
       case 'tier1':
         return r.filter((x) => x.tier1);
       case 'silent':
@@ -137,6 +140,11 @@ export function CpiCapOverview() {
               <div className="text-[10px] text-slate-500">{t.installs} install / L30</div>
             </div>
             <div className="rounded border border-slate-200 p-2">
+              <div className="text-[10px] uppercase tracking-wide text-slate-500">Trần &gt; giá trị install</div>
+              <div className="text-lg font-semibold text-rose-600">{t.capAboveValue}</div>
+              <div className="text-[10px] text-slate-500">nước lỗ ngay ở mức trần</div>
+            </div>
+            <div className="rounded border border-slate-200 p-2">
               <div className="text-[10px] uppercase tracking-wide text-slate-500">Tier 1 im lặng</div>
               <div className="text-lg font-semibold text-slate-800">
                 {t.tier1Silent}
@@ -179,6 +187,12 @@ export function CpiCapOverview() {
                     <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Chi</th>
                     <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Install</th>
                     <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Click</th>
+                    <th
+                      className="whitespace-nowrap px-2 py-1.5 text-right font-medium"
+                      title="Doanh thu ÷ install ở nước đó, từ khối doanh thu cập nhật theo quý"
+                    >
+                      Giá trị 1 ins
+                    </th>
                     <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Vượt</th>
                     <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">Trạng thái</th>
                   </tr>
@@ -233,6 +247,26 @@ export function CpiCapOverview() {
                       <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-500">
                         {r.clicks || '—'}
                       </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px]">
+                        {r.valuePerInstall === null ? (
+                          <span className="text-slate-300">—</span>
+                        ) : (
+                          <span
+                            className={cn(
+                              r.capHeadroom !== null && r.capHeadroom < 0 ? 'font-semibold text-rose-600' : 'text-slate-700',
+                            )}
+                            title={
+                              r.capHeadroom === null
+                                ? undefined
+                                : r.capHeadroom < 0
+                                  ? `Trần ${money(r.cap)} cao hơn giá trị một install (${money2(r.valuePerInstall)}) ${money2(-r.capHeadroom)}. Mua đúng ở mức trần vẫn lỗ.`
+                                  : `Còn ${money2(r.capHeadroom)} biên giữa giá trị một install và trần.`
+                            }
+                          >
+                            {money2(r.valuePerInstall)}
+                          </span>
+                        )}
+                      </td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-rose-600">
                         {r.overspend > 0 ? money(r.overspend) : '—'}
                       </td>
@@ -263,6 +297,12 @@ export function CpiCapOverview() {
               <b>Chi vượt trần</b> = phần tiền trả thêm so với việc mua đúng số install đó ở đúng mức trần. Nước
               &ldquo;tiêu, 0 install&rdquo; không được tính vào đây vì không có install nào để quy đổi — chỗ đó phải
               cắt, không phải hạ bid.
+            </div>
+            <div>
+              <b>Giá trị 1 install</b> = doanh thu ÷ install ở nước đó (khối doanh thu cập nhật theo quý trong{' '}
+              <code className="text-[9px]">PerGeo_CPI_Cap</code>). Trần <b>cao hơn</b> con số này nghĩa là bản thân cái
+              trần đã sai: mua đúng ở mức trần vẫn lỗ, dù camp chạy tốt đến đâu. Đây là lỗi cấu hình, không phải lỗi vận
+              hành — sửa ở sheet chứ không phải ở bid.
             </div>
             {overview.uncapped.length > 0 && (
               <div className="text-amber-700">
