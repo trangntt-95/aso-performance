@@ -38,6 +38,13 @@ export function KeywordOriginBlock({ keyword }: { keyword: string }) {
     <section className="space-y-2">
       <h3 className="text-[11px] uppercase tracking-wide text-slate-500">Nguồn install · camp, bid, nước</h3>
 
+      {camps.negative && (
+        <div className="rounded border border-rose-200 bg-rose-50 px-2 py-1.5 text-[11px] leading-snug text-rose-800">
+          Cụm này nằm trong <b>Negative KW list</b> nhưng vẫn có traffic paid trong kỳ. Negative áp theo từng camp —
+          kiểm tra xem đã thêm ở mọi camp chưa, hoặc nó mới được thêm sau những lượt hiển thị này.
+        </div>
+      )}
+
       {/* --- camps + bid ------------------------------------------------- */}
       <div className="rounded border border-slate-200 bg-white p-2">
         <div className="text-[10px] uppercase tracking-wide text-slate-500">Camp đang bid keyword này</div>

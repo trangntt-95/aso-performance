@@ -159,6 +159,7 @@ export function InstallOriginView() {
 
   const [search, setSearch] = useState('');
   const [countryFilter, setCountryFilter] = useState('all');
+  const [onlyNegative, setOnlyNegative] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('installs');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -182,6 +183,7 @@ export function InstallOriginView() {
     if (!report) return [];
     const q = search.trim().toLowerCase();
     const out = report.rows.filter((r) => {
+      if (onlyNegative && !r.negative) return false;
       if (countryFilter !== 'all' && r.country !== countryFilter) return false;
       if (!q) return true;
       return (
@@ -208,7 +210,7 @@ export function InstallOriginView() {
       if (typeof x === 'string' || typeof y === 'string') return dir * String(x).localeCompare(String(y));
       return dir * (x - y);
     });
-  }, [report, search, countryFilter, sortKey, sortDir]);
+  }, [report, search, countryFilter, onlyNegative, sortKey, sortDir]);
 
   if (error) {
     return <div className="py-10 text-center text-sm text-rose-600">{(error as Error).message}</div>;
@@ -257,6 +259,15 @@ export function InstallOriginView() {
             <div className="text-[10px] text-slate-500">keyword nằm ở nhiều camp đang chạy</div>
           </div>
           <div className="rounded border border-slate-200 p-2">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500">Đang là negative</div>
+            <div className={cn('text-lg font-semibold', report.negativeRows > 0 ? 'text-rose-600' : 'text-slate-900')}>
+              {report.negativeRows}
+            </div>
+            <div className="text-[10px] text-slate-500">
+              {report.negativeInstalls > 0 ? `${report.negativeInstalls} install từ cụm đáng lẽ bị loại` : 'cặp keyword × nước'}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 p-2">
             <div className="text-[10px] uppercase tracking-wide text-slate-500">Kỳ</div>
             <div className="text-[12px] font-semibold text-slate-900">{report.window}</div>
             <div className="text-[10px] text-slate-500">theo tab Country_L30</div>
@@ -294,7 +305,22 @@ export function InstallOriginView() {
             </option>
           ))}
         </select>
-        {(search || countryFilter !== 'all') && (
+        {report.negativeRows > 0 && (
+          <button
+            type="button"
+            onClick={() => setOnlyNegative((v) => !v)}
+            className={cn(
+              'h-7 shrink-0 rounded border px-2 text-[11px] font-medium transition',
+              onlyNegative
+                ? 'border-rose-300 bg-rose-50 text-rose-700'
+                : 'border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-900',
+            )}
+            title="Cụm nằm trong Negative KW list nhưng vẫn có traffic paid trong kỳ này"
+          >
+            Chỉ cụm đang là negative ({report.negativeRows})
+          </button>
+        )}
+        {(search || countryFilter !== 'all' || onlyNegative) && (
           <Button
             variant="ghost"
             size="sm"
@@ -302,6 +328,7 @@ export function InstallOriginView() {
             onClick={() => {
               setSearch('');
               setCountryFilter('all');
+              setOnlyNegative(false);
             }}
           >
             <X className="h-3 w-3" />
@@ -336,7 +363,17 @@ export function InstallOriginView() {
                   >
                     {r.keyword}
                   </button>
-                  <div className="text-[9px] text-slate-400">{r.category}</div>
+                  <div className="text-[9px] text-slate-400">
+                    {r.category}
+                    {r.negative && (
+                      <span
+                        className="ml-1 rounded bg-rose-100 px-1 font-semibold text-rose-700"
+                        title="Cụm này nằm trong Negative KW list nhưng vẫn nhận traffic paid trong kỳ. Hoặc negative chưa được áp ở mọi camp, hoặc nó mới được thêm sau khi những lượt hiển thị này đã chạy."
+                      >
+                        negative
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="whitespace-nowrap px-2 py-2 text-[11px] text-slate-700">{r.country}</td>
                 <td className={cn('whitespace-nowrap px-2 py-2 text-right font-mono text-[11px]', posTone(r.position))}>
@@ -390,6 +427,14 @@ export function InstallOriginView() {
           <b>Vị trí</b> và <b>CR</b> lấy nguyên từ GA4 ở mức keyword × nước, không tính lại. <b>Bid</b> là max bid đang
           set trong Master KW Lookup, không phải giá thực trả cho lượt click.
         </div>
+        {report.negativeRows > 0 && (
+          <div className="text-rose-700">
+            <b>{report.negativeRows} cặp keyword × nước</b> có cụm nằm trong{' '}
+            <code className="text-[9px]">Negative KW list</code> mà vẫn nhận traffic paid trong kỳ này. Negative áp
+            theo từng camp, nên hoặc nó chưa được thêm ở mọi camp, hoặc mới thêm sau khi những lượt này đã chạy — cần
+            đối chiếu ngày thêm negative trước khi kết luận.
+          </div>
+        )}
         <div>
           Khi một keyword nằm ở nhiều camp đang chạy, bảng liệt kê <b>tất cả ứng viên</b> thay vì chọn bừa một camp:{' '}
           <code className="text-[9px]">Camp_Links</code> chưa điền cột Geo nên không có cách nào xác định camp nào phục

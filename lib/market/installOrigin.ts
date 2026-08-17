@@ -61,6 +61,10 @@ export interface InstallOriginRow {
   campAmbiguous: boolean;
   /** True when Master KW Lookup has no row for this keyword at all. */
   campUnknown: boolean;
+  /** On the Negative KW list, yet still shown here with paid traffic. Either the
+   *  negative isn't applied in every campaign, or it was added after these
+   *  impressions were served — both worth knowing, neither visible until now. */
+  negative: boolean;
 }
 
 /** One country's paid result for a single keyword — the detail-panel slice. */
@@ -115,6 +119,10 @@ export interface InstallOriginReport {
   ambiguousRows: number;
   /** Rows with no Master KW Lookup match. */
   unknownRows: number;
+  /** Rows whose keyword is on the Negative KW list but still shows paid traffic. */
+  negativeRows: number;
+  /** Installs attributed to keywords that are supposed to be excluded. */
+  negativeInstalls: number;
   /** Window label of the source tab. */
   window: string;
 }
@@ -134,6 +142,8 @@ export interface KeywordCamps {
   ambiguous: boolean;
   /** Master KW Lookup has no row for this keyword at all. */
   unknown: boolean;
+  /** Listed in the Negative KW list. */
+  negative: boolean;
 }
 
 /** Build the camp/bid index once, then ask it per keyword. */
@@ -155,6 +165,7 @@ export function buildKeywordCampIndex(data: SheetPayload | null | undefined): Ke
   const pausedNames = new Set(
     (data?.pausedKw ?? []).map((r) => normalizeCampName(r.camp).toLowerCase()).filter(Boolean),
   );
+  const negatives = new Set((data?.negativeKw ?? []).map(normKw).filter(Boolean));
   const campUrl = buildCampUrlIndex(data?.campLinks ?? []);
   const cache = new Map<string, KeywordCamps>();
 
@@ -189,6 +200,7 @@ export function buildKeywordCampIndex(data: SheetPayload | null | undefined): Ke
         bidMin: bids.length > 0 ? Math.min(...bids) : null,
         ambiguous: live.length > 1,
         unknown: hits.length === 0,
+        negative: negatives.has(key),
       };
       cache.set(key, out);
       return out;
@@ -230,6 +242,7 @@ export function buildInstallOrigin(data: SheetPayload | null | undefined): Insta
       bidMin: camps.bidMin,
       campAmbiguous: camps.ambiguous,
       campUnknown: camps.unknown,
+      negative: camps.negative,
     });
   }
 
@@ -250,6 +263,8 @@ export function buildInstallOrigin(data: SheetPayload | null | undefined): Insta
     countries: new Set(rows.map((r) => r.country)).size,
     ambiguousRows: rows.filter((r) => r.campAmbiguous).length,
     unknownRows: rows.filter((r) => r.campUnknown).length,
+    negativeRows: rows.filter((r) => r.negative).length,
+    negativeInstalls: rows.filter((r) => r.negative).reduce((sum, r) => sum + r.installs, 0),
     window: win ? `${win.from} → ${win.to}` : 'L30',
   };
 }
