@@ -138,8 +138,19 @@ export function CampHealthView() {
         windowDays,
         canonicalNames: (data?.campLinks ?? []).map((c) => c.camp),
         pausedCamps: (data?.pausedKw ?? []).map((r) => r.camp),
+        // Fallback when the export has no date column: campaign totals still
+        // answer the period-free questions.
+        aggregate: data?.shopifyCamps ?? [],
+        aggregateRange: data?.shopifyDateRange ?? '',
       }),
-    [data?.shopifyDaily, data?.campLinks, data?.pausedKw, windowDays],
+    [
+      data?.shopifyDaily,
+      data?.campLinks,
+      data?.pausedKw,
+      data?.shopifyCamps,
+      data?.shopifyDateRange,
+      windowDays,
+    ],
   );
   const campUrl = useMemo(() => buildCampUrlIndex(data?.campLinks ?? []), [data?.campLinks]);
   // Camps the spend data knows about but Camp_Links doesn't. Not a fault of the
@@ -290,8 +301,18 @@ export function CampHealthView() {
       <div className="flex items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-900">
         <HeartPulse className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
         <div>
-          <b>Sức khoẻ campaign</b> — lấy từ export Shopify theo ngày, so kỳ đang chọn với kỳ trước liền kề cùng độ
-          dài. Bảng sắp theo <b>số tiền đang gặp vấn đề</b>, không phải theo tổng chi.
+          <b>Sức khoẻ campaign</b> —{' '}
+          {result.periodComparable ? (
+            <>
+              lấy từ export Shopify theo ngày, so kỳ đang chọn với kỳ trước liền kề cùng độ dài.
+            </>
+          ) : (
+            <>
+              lấy từ <b>tổng của một khoảng</b> ({data?.shopifyDateRange || 'không rõ khoảng'}) — export hiện tại không
+              có cột ngày.
+            </>
+          )}{' '}
+          Bảng sắp theo <b>số tiền đang gặp vấn đề</b>, không phải theo tổng chi.
           <div className="mt-1">
             Tổng chi kỳ này <b>${formatNumber(Math.round(result.totalSpend))}</b> · CPI trung vị{' '}
             <b>{money(result.medianCpi)}</b> ·{' '}
@@ -301,6 +322,16 @@ export function CampHealthView() {
           </div>
         </div>
       </div>
+
+      {!isLoading && !result.periodComparable && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-900">
+          <b>Chưa so được với kỳ trước.</b> Export Shopify Ads hiện tại chỉ có tổng của một khoảng, không có cột ngày,
+          nên ba nhóm cần dữ liệu theo ngày <b>không thể tính</b>: <b>Mất hiển thị</b>, <b>Có tiềm năng</b> và{' '}
+          <b>Ngừng chạy</b>. Những nhóm còn lại vẫn đúng vì không phụ thuộc kỳ trước: <b>Đốt tiền</b> (có click, 0
+          install), <b>Hiển thị phí</b> (CTR quá thấp), <b>CPI đắt</b>, và <b>đã tắt</b> theo tab Paused_camp. Muốn có
+          lại phần so sánh thì cần xuất Shopify Ads theo ngày như trước.
+        </div>
+      )}
 
       {/* Working list vs the camps already noted */}
       {!isLoading && (
@@ -422,18 +453,29 @@ export function CampHealthView() {
             <option value="all">Mọi camp</option>
             <option value="no-url">Chưa có URL ({noUrlCount})</option>
           </select>
-          <select
-            value={windowDays}
-            onChange={(e) => setWindowDays(Number(e.target.value))}
-            className="h-7 rounded border border-slate-200 bg-white px-2 text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            title="So kỳ này với kỳ trước liền kề cùng độ dài"
-          >
-            {WINDOWS.map((w) => (
-              <option key={w} value={w}>
-                Kỳ: {w} ngày
-              </option>
-            ))}
-          </select>
+          {result.periodComparable ? (
+            <select
+              value={windowDays}
+              onChange={(e) => setWindowDays(Number(e.target.value))}
+              className="h-7 rounded border border-slate-200 bg-white px-2 text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              title="So kỳ này với kỳ trước liền kề cùng độ dài"
+            >
+              {WINDOWS.map((w) => (
+                <option key={w} value={w}>
+                  Kỳ: {w} ngày
+                </option>
+              ))}
+            </select>
+          ) : (
+            /* No date column in the export, so there is no window to choose. A
+               dead dropdown would be worse than none. */
+            <span
+              className="inline-flex h-7 items-center rounded border border-slate-200 bg-slate-50 px-2 text-[11px] text-slate-500"
+              title="Export hiện tại chỉ có tổng của một khoảng, không có cột ngày — không chọn được độ dài kỳ."
+            >
+              {data?.shopifyDateRange || 'cả khoảng'}
+            </span>
+          )}
           {(search || bucketFilter !== 'problems' || linkFilter !== 'all') && (
             <Button
               variant="ghost"

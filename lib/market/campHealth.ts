@@ -1,4 +1,4 @@
-import type { ShopifyDailyRow } from '@/lib/sheets/types';
+import type { ShopifyCampRow, ShopifyDailyRow } from '@/lib/sheets/types';
 import { buildCampGrouper } from '@/lib/sheets/campGroup';
 
 // Where the ad budget is leaking, read from the per-day Shopify export.
@@ -60,6 +60,9 @@ export interface CampHealthRow {
 
 export interface CampHealthResult {
   rows: CampHealthRow[];
+  /** False when only campaign totals were available: deltas, and the buckets
+   *  that depend on them, are absent by necessity and the UI must say so. */
+  periodComparable: boolean;
   totalSpend: number;
   medianCpi: number | null;
   from: string;
@@ -97,6 +100,15 @@ export interface CampHealthOptions {
    *  switched off — absence of spend is not, since a camp can simply have been
    *  renamed or run out of budget. */
   pausedCamps?: string[];
+  /** Campaign TOTALS, used only when no per-day rows exist. The Shopify export
+   *  switched to a single date-range block with no date column, which zeroed the
+   *  per-day feed and blanked this whole screen. Totals can still answer the
+   *  period-free questions (spending with no installs, impressions with no
+   *  clicks, paused); anything needing a prior period is withheld rather than
+   *  faked. */
+  aggregate?: ShopifyCampRow[];
+  /** Label of the range the totals cover, e.g. "01/08/2026 → 16/08/2026". */
+  aggregateRange?: string;
 }
 
 export function analyseCampHealth(
@@ -115,17 +127,20 @@ export function analyseCampHealth(
   // campaign identity of its own, so the shorter running label could no longer
   // fold onto it and never got recognised as switched off. Left out, those
   // names fall through to the leftover pass and fold onto the spend label.
-  const grouper = buildCampGrouper(
-    rows.map((r) => r.camp),
-    opts.canonicalNames ?? [],
-  );
+  //
+  // The label set must come from whichever source actually has rows: fed the
+  // empty per-day list, the grouper has no labels to return and every camp name
+  // comes back lowercased from its own key.
+  const nameSource =
+    rows.length > 0 ? rows.map((r) => r.camp) : (opts.aggregate ?? []).map((r) => r.camp);
+  const grouper = buildCampGrouper(nameSource, opts.canonicalNames ?? []);
   // Paused_camp is the only confirmation that a campaign was switched off.
   // Resolved through the grouper so a paused camp still matches when the spend
   // data labels it with an extra description.
   const pausedKeys = new Set((opts.pausedCamps ?? []).filter(Boolean).map((c) => grouper.key(c)));
   const days = Array.from(new Set(rows.map((r) => r.date))).sort();
   if (days.length === 0) {
-    return { rows: [], totalSpend: 0, medianCpi: null, from: '', to: '', prevFrom: '', prevTo: '' };
+    return analyseFromTotals(opts, grouper, pausedKeys, minSpend);
   }
   const to = days[days.length - 1];
   const from = days[Math.max(0, days.length - win)];
@@ -254,7 +269,134 @@ export function analyseCampHealth(
 
   out.sort((x, y) => y.atRisk - x.atRisk || y.cur.spend - x.cur.spend);
   const totalSpend = prepared.reduce((s, a) => s + a.cur.spend, 0);
-  return { rows: out, totalSpend, medianCpi, from, to, prevFrom, prevTo };
+  return { rows: out, totalSpend, medianCpi, from, to, prevFrom, prevTo, periodComparable: true };
+}
+
+/**
+ * Campaign health from TOTALS alone.
+ *
+ * Same buckets, minus every one that needs a prior period. `impDelta` and its
+ * siblings stay null, which the existing guards already respect — so 'idle',
+ * 'losing-imp' and 'rising' simply cannot fire, rather than firing on a fabricated
+ * zero baseline. The result says `periodComparable: false` so the screen can
+ * explain the gap instead of looking broken.
+ */
+function analyseFromTotals(
+  opts: CampHealthOptions,
+  grouper: ReturnType<typeof buildCampGrouper>,
+  pausedKeys: Set<string>,
+  minSpend: number,
+): CampHealthResult {
+  const totals = opts.aggregate ?? [];
+  if (totals.length === 0) {
+    return {
+      rows: [],
+      totalSpend: 0,
+      medianCpi: null,
+      from: '',
+      to: '',
+      prevFrom: '',
+      prevTo: '',
+      periodComparable: false,
+    };
+  }
+
+  interface Acc { camp: string; impressions: number; clicks: number; installs: number; spend: number }
+  const byCamp = new Map<string, Acc>();
+  for (const r of totals) {
+    const key = grouper.key(r.camp);
+    if (!key) continue;
+    const a = byCamp.get(key) ?? { camp: grouper.label(key), impressions: 0, clicks: 0, installs: 0, spend: 0 };
+    a.impressions += r.impressions;
+    a.clicks += r.clicks;
+    a.installs += r.installs;
+    a.spend += r.spend;
+    byCamp.set(key, a);
+  }
+
+  // days = 0 keeps impPerDay at zero rather than inventing a rate from a range
+  // whose length isn't in the data.
+  const win = (w: Acc): HealthWindow => ({
+    impressions: w.impressions,
+    clicks: w.clicks,
+    installs: w.installs,
+    spend: w.spend,
+    days: 0,
+    cpc: w.clicks > 0 ? w.spend / w.clicks : null,
+    cpi: w.installs > 0 ? w.spend / w.installs : null,
+    ctr: w.impressions > 0 ? w.clicks / w.impressions : null,
+    impPerDay: 0,
+  });
+  const blank: HealthWindow = {
+    impressions: 0, clicks: 0, installs: 0, spend: 0, days: 0,
+    cpc: null, cpi: null, ctr: null, impPerDay: 0,
+  };
+
+  const prepared = Array.from(byCamp.values()).map((a) => ({ camp: a.camp, cur: win(a) }));
+  const cpis = prepared.map((a) => a.cur.cpi).filter((v): v is number => v !== null).sort((x, y) => x - y);
+  const medianCpi = cpis.length ? cpis[Math.floor(cpis.length / 2)] : null;
+
+  const range = opts.aggregateRange ? ` (${opts.aggregateRange})` : '';
+  const out: CampHealthRow[] = [];
+  for (const a of prepared) {
+    const cur = a.cur;
+    if (cur.spend < minSpend && cur.impressions === 0) continue;
+
+    let bucket: HealthBucket = 'ok';
+    let atRisk = 0;
+    let reason = '';
+
+    if (pausedKeys.has(grouper.key(a.camp))) {
+      bucket = 'paused';
+      reason = `Có trong tab Paused_camp → đã tắt. Số hiện ra là tổng của cả khoảng${range}, gồm cả những ngày trước khi tắt.`;
+    } else if (cur.installs === 0 && cur.clicks >= 2) {
+      bucket = 'burning';
+      atRisk = cur.spend;
+      reason = `Tiêu $${Math.round(cur.spend)} qua ${cur.clicks} click nhưng KHÔNG ra install nào${range}. CPC $${cur.cpc?.toFixed(2)} — cắt hoặc soát lại keyword.`;
+    } else if (cur.impressions >= 500 && (cur.ctr ?? 0) < 0.001) {
+      bucket = 'wasted-imp';
+      atRisk = cur.spend;
+      reason = `${Math.round(cur.impressions).toLocaleString()} lượt hiển thị nhưng chỉ ${cur.clicks} click (CTR ${((cur.ctr ?? 0) * 100).toFixed(2)}%). Keyword/creative lệch nhu cầu.`;
+    } else if (medianCpi !== null && cur.cpi !== null && cur.cpi > medianCpi * 1.5) {
+      bucket = 'pricey';
+      atRisk = Math.max(0, cur.spend - cur.installs * medianCpi);
+      reason = `CPI $${cur.cpi.toFixed(2)} — gấp ${(cur.cpi / medianCpi).toFixed(1)}× trung vị $${medianCpi.toFixed(2)}. Kéo về trung vị tiết kiệm ~$${Math.round(atRisk)}.`;
+    } else if (medianCpi !== null && cur.cpi !== null && cur.cpi <= medianCpi && cur.installs >= 2) {
+      bucket = 'scale';
+      reason = `CPI $${cur.cpi.toFixed(2)} rẻ hơn trung vị, ${cur.installs} install. Còn dư địa nới ngân sách.`;
+    } else {
+      bucket = 'ok';
+      reason = `Không thấy vấn đề rõ trong khoảng${range}.`;
+    }
+
+    out.push({
+      camp: a.camp,
+      bucket,
+      cur,
+      prev: blank,
+      impDelta: null,
+      installDelta: null,
+      spendDelta: null,
+      atRisk,
+      reason,
+      reliable: cur.installs >= 3,
+      lastActive: '',
+      series: [],
+    });
+  }
+
+  out.sort((x, y) => y.atRisk - x.atRisk || y.cur.spend - x.cur.spend);
+  const parts = (opts.aggregateRange ?? '').split('→').map((x) => x.trim());
+  return {
+    rows: out,
+    totalSpend: prepared.reduce((s, a) => s + a.cur.spend, 0),
+    medianCpi,
+    from: parts[0] ?? '',
+    to: parts[1] ?? '',
+    prevFrom: '',
+    prevTo: '',
+    periodComparable: false,
+  };
 }
 
 /**

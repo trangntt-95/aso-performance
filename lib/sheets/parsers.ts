@@ -864,6 +864,39 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
  * a blank column 0 and the whole table was silently dropped, taking Overbid
  * Camps down with it.
  */
+/**
+ * Roll per-day rows up to campaign totals over the last `days` days of data.
+ *
+ * The window is anchored to the newest date PRESENT, not to today: the export
+ * lands a day or two behind, and anchoring to today would silently shorten the
+ * window every morning until the sheet refreshed.
+ */
+export function campTotalsFromDaily(
+  rows: ShopifyDailyRow[],
+  days = 30,
+): { camps: ShopifyCampRow[]; from: string; to: string } {
+  if (!rows || rows.length === 0) return { camps: [], from: '', to: '' };
+  let to = '';
+  for (const r of rows) if (r.date > to) to = r.date;
+  if (!to) return { camps: [], from: '', to: '' };
+  const anchor = new Date(`${to}T00:00:00Z`);
+  anchor.setUTCDate(anchor.getUTCDate() - (days - 1));
+  const from = anchor.toISOString().slice(0, 10);
+
+  const acc = new Map<string, ShopifyCampRow>();
+  for (const r of rows) {
+    if (r.date < from || r.date > to) continue;
+    const e =
+      acc.get(r.camp) ?? { camp: r.camp, impressions: 0, clicks: 0, installs: 0, spend: 0 };
+    e.impressions += r.impressions;
+    e.clicks += r.clicks;
+    e.installs += r.installs;
+    e.spend += r.spend;
+    acc.set(r.camp, e);
+  }
+  return { camps: Array.from(acc.values()), from, to };
+}
+
 export function parseShopifyCamps(rows: string[][]): ShopifyCampRow[] {
   if (!rows || rows.length < 2) return [];
   const headerIdx = rows.findIndex((r) => (r ?? []).some((c) => /impression/i.test(str(c))));
