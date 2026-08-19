@@ -297,6 +297,47 @@ export interface PerGeoRevenueRow {
   valuePerInstall: number | null;
 }
 
+/**
+ * One entry of the hand-kept 'Excluded Countries' column in PerGeo_CPI_Cap.
+ *
+ * The column mixes two decisions in one list: a bare country name is a hard
+ * exclude, while a name carrying a parenthetical note ("Brazil (bid thấp)",
+ * "Pakistan (cân nhắc bid)") is a country still bought, but deliberately
+ * restrained. Collapsing both into one boolean would lose the difference that
+ * makes them different actions.
+ */
+export interface ExcludedCountryRow {
+  country: string;
+  /** The parenthetical, verbatim. Empty for a hard exclude. */
+  note: string;
+  /** False when a note qualifies it — bid low rather than stop. */
+  hardExclude: boolean;
+}
+
+/**
+ * A market tier from the PerGeo_CPI_Cap tier block, with the countries in it.
+ *
+ * Each tier column states a max-bid figure ("100", "$30-40", "$8-15") and lists
+ * its countries below. A country may carry its own override in parentheses —
+ * "Hong Kong (60$)", "Japan (109$)" — which beats the tier figure, and may carry
+ * a plain note instead ("Austria (vol hơi nhỏ)") which is commentary, not a bid.
+ */
+export interface MarketTierRow {
+  /** 'Tier 1 - Premium', 'Tier 1,5', 'Tier 2', … */
+  tier: string;
+  /** The bid text as written, e.g. '$30-40'. Kept verbatim for display. */
+  bidText: string;
+  /** Upper bound parsed from bidText; null when it isn't a number. */
+  maxBid: number | null;
+  countries: {
+    country: string;
+    /** Per-country override parsed from '(60$)'. null when absent. */
+    bidOverride: number | null;
+    /** Parenthetical that wasn't a number — kept as commentary. */
+    note: string;
+  }[];
+}
+
 /** One row of the 'PerGeo_CPI_Cap' tab — the CPI ceiling set per country. */
 export interface PerGeoCpiCapRow {
   country: string;
@@ -458,6 +499,13 @@ export interface SheetPayload {
   perGeoRevenue: PerGeoRevenueRow[];
   /** Period the revenue block covers, e.g. "tháng 4-7". */
   perGeoRevenuePeriod: string;
+  /** Tier → countries → max bid, from the tier block of PerGeo_CPI_Cap. This is
+   *  what lets a camp named "… Tier 2" be resolved to actual countries. */
+  marketTiers: MarketTierRow[];
+  /** Countries Trang has decided not to buy, or to buy only at a low bid
+   *  ('Excluded Countries' column of PerGeo_CPI_Cap). Replaces the list that
+   *  used to be hardcoded in the Google Ads report. */
+  excludedCountries: ExcludedCountryRow[];
   /** Per-campaign aggregate paid spend ('Shopify_daily' tab) — for overbid detection. */
   shopifyCamps: ShopifyCampRow[];
   /** Date range the Shopify_daily totals cover (from cell A2), e.g. "01/03/2026 → 14/06/2026". */

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { fetchShopifyDailyRows, listShopifyTabs, probeShopifyWide } from '@/lib/sheets/client';
-import { fetchTab } from '@/lib/sheets/client';
+import { parseExcludedCountries } from '@/lib/sheets/parsers';
+import { fetchShopifyDailyRows, fetchTab, listShopifyTabs, probeShopifyWide } from '@/lib/sheets/client';
 
 // What the two Shopify Ads sources actually contain right now.
 //
@@ -70,6 +70,20 @@ export async function GET(req: Request) {
     };
   } catch (err) {
     out.separateSheet = { error: err instanceof Error ? err.message : 'Unknown error' };
+  }
+
+  // Temporary: the exclude column parses locally but returns [] in the payload.
+  // Show what the route actually receives for that tab.
+  try {
+    const rows = await fetchTab('PerGeo_CPI_Cap');
+    out.perGeoTab = {
+      rows: rows.length,
+      row0Len: (rows[0] ?? []).length,
+      row0: (rows[0] ?? []).map((c) => String(c ?? '').slice(0, 24)),
+      parsed: parseExcludedCountries(rows).length,
+    };
+  } catch (err) {
+    out.perGeoTab = { error: err instanceof Error ? err.message : 'Unknown error' };
   }
 
   return NextResponse.json(out);

@@ -249,6 +249,32 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
   // ── Date mode (per-day / per-range snapshot from History_Daily) ──
   const availableDates = useMemo(() => availableDailyDates(data, filters), [data, filters]);
+
+  // First day of the month containing the newest day that HAS data → that day.
+  // Anchored to the data, not to today: the export lands a day or two behind, and
+  // anchoring to today would show an empty tail every morning and, on the 1st,
+  // a range with nothing in it at all.
+  const thisMonthRange = useMemo(() => {
+    if (availableDates.length === 0) return null;
+    const last = availableDates[availableDates.length - 1];
+    const from = `${last.slice(0, 7)}-01`;
+    // Only offer it when the month actually has a day of data.
+    return availableDates.some((d) => d >= from) ? { from, to: last } : null;
+  }, [availableDates]);
+
+  const applyThisMonth = () => {
+    if (!thisMonthRange) return;
+    setDateRange(thisMonthRange);
+    setRangeFrom(thisMonthRange.from);
+    setRangeTo(thisMonthRange.to);
+  };
+
+  const isThisMonth =
+    !!dateRange &&
+    !!thisMonthRange &&
+    dateRange.from === thisMonthRange.from &&
+    dateRange.to === thisMonthRange.to;
+
   const minDate = availableDates[0];
   const maxDate = availableDates[availableDates.length - 1];
   const dateKpi = useMemo(
@@ -587,6 +613,24 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               )}
             >
               <span className="text-slate-500">{inDateMode ? 'Lọc ngày:' : 'Ngày (theo report):'}</span>
+              {/* Shortcut for the range asked for most often. Hidden when the
+                  data has no day in the current month yet — a button that
+                  produces an empty view is worse than no button. */}
+              {thisMonthRange && (
+                <button
+                  type="button"
+                  onClick={applyThisMonth}
+                  title={`Từ ngày 1 của tháng tới ngày mới nhất có data (${thisMonthRange.from} → ${thisMonthRange.to})`}
+                  className={cn(
+                    'rounded border px-1.5 py-0.5 font-medium transition',
+                    isThisMonth
+                      ? 'border-rose-300 bg-rose-100 text-rose-700'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-900',
+                  )}
+                >
+                  Tháng này
+                </button>
+              )}
               <input
                 type="date"
                 value={rangeFrom}
@@ -852,7 +896,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                 <MarketTrajectoryChart
                   data={trajectory}
                   mode="single"
-                  metric={marketSeries === 'core' ? 'weightedDelta' : 'usersDelta'}
+                  metric={marketSeries === 'core' ? 'weightedDelta' : 'getAppDelta'}
                   activeWindow={window}
                   onWindowClick={(w) => {
                     if (['L3', 'L7', 'L14', 'L30', 'L90', 'L365'].includes(w)) {

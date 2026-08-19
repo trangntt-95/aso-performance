@@ -5,6 +5,8 @@ import type {
   AlertType,
   BidAction,
   BidCapRow,
+  ExcludedCountryRow,
+  MarketTierRow,
   PerGeoCpiCapRow,
   PerGeoRevenueRow,
   CampLinkRow,
@@ -749,6 +751,136 @@ export function parsePerGeoRevenue(rows: string[][]): {
   // Rank ascending, but rows without a rank go last rather than to the front.
   out.sort((a, b) => (a.rank || 9999) - (b.rank || 9999));
   return { rows: out, period };
+}
+
+/**
+ * The 'Excluded Countries' column of PerGeo_CPI_Cap.
+ *
+ * Located by its header text, not by column letter — it sits to the right of an
+ * unrelated revenue block and has already moved once.
+ *
+ * A country may appear twice, once bare and once with a note. The bare entry
+ * wins: a hard exclude is the stricter decision, and silently downgrading it to
+ * "bid low" because a second row mentions it would be the dangerous direction to
+ * guess in.
+ */
+export function parseExcludedCountries(rows: string[][]): ExcludedCountryRow[] {
+  if (!rows || rows.length < 2) return [];
+  // The header has already been both renamed ('Excluded Countries' →
+  // 'Excluded') and moved down the sheet, so match a prefix and scan a
+  // generous number of rows rather than pinning either.
+  let col = -1;
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 15) && col < 0; i++) {
+    const r = rows[i] ?? [];
+    for (let c = 0; c < r.length; c++) {
+      if (/^exclude/i.test(str(r[c]).trim())) {
+        col = c;
+        headerIdx = i;
+        break;
+      }
+    }
+  }
+  if (col < 0) return [];
+
+  const byCountry = new Map<string, ExcludedCountryRow>();
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const raw = str((rows[i] ?? [])[col]).trim();
+    if (!raw) continue;
+    const m = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(raw);
+    const country = (m ? m[1] : raw).trim();
+    if (!country) continue;
+    const note = m ? m[2].trim() : '';
+    const key = country.toLowerCase();
+    const prev = byCountry.get(key);
+    if (prev) {
+      // Keep the strictest reading, but don't lose the note.
+      prev.hardExclude = prev.hardExclude || note === '';
+      if (!prev.note && note) prev.note = note;
+      continue;
+    }
+    byCountry.set(key, { country, note, hardExclude: note === '' });
+  }
+  return Array.from(byCountry.values());
+}
+
+/** '$30-40' → 40, '100' → 100, '$8-15' → 15. Upper bound, since it's a cap. */
+function parseMaxBid(text: string): number | null {
+  const nums = String(text).match(/\d+(?:[.,]\d+)?/g);
+  if (!nums || nums.length === 0) return null;
+  const vals = nums.map((n) => Number(n.replace(',', '.'))).filter((n) => Number.isFinite(n));
+  return vals.length ? Math.max(...vals) : null;
+}
+
+/**
+ * The tier block of PerGeo_CPI_Cap: one column per tier, tier name in the header
+ * row, the max bid on the row below it, then the countries.
+ *
+ * Located by finding a row containing at least two cells that look like tier
+ * headings, so inserting a column or moving the block down doesn't break it.
+ * A trailing column with no heading is treated as a continuation of the tier to
+ * its left — the sheet uses one for Tier 3, which outgrew a single column.
+ */
+export function parseMarketTiers(rows: string[][]): MarketTierRow[] {
+  if (!rows || rows.length < 3) return [];
+  const isTier = (v: unknown) => /^tier\s*[0-9]/i.test(str(v).trim());
+
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const r = rows[i] ?? [];
+    if (r.filter(isTier).length >= 2) { headerIdx = i; break; }
+  }
+  if (headerIdx < 0) return [];
+
+  const header = rows[headerIdx] ?? [];
+  // Sheets trims trailing empty cells per row, so the header row is SHORTER than
+  // the rows below it whenever the last tier spills into an unlabelled column.
+  // Scanning to header.length dropped that column entirely — Tier 3 lost four
+  // countries. Scan to the widest row instead.
+  const width = rows.reduce((w, r) => Math.max(w, (r ?? []).length), header.length);
+  const cols: { tier: string; idx: number[] }[] = [];
+  for (let c = 0; c < width; c++) {
+    if (isTier(header[c])) {
+      cols.push({ tier: str(header[c]).trim(), idx: [c] });
+    } else if (cols.length > 0 && !str(header[c] ?? '').trim()) {
+      // Unlabelled column immediately right of a tier: a spill-over of it. Only
+      // adopted when it actually holds country names below the header.
+      const hasBody = rows.slice(headerIdx + 1).some((r) => str((r ?? [])[c]).trim());
+      if (hasBody && cols[cols.length - 1].idx[cols[cols.length - 1].idx.length - 1] === c - 1) {
+        cols[cols.length - 1].idx.push(c);
+      }
+    }
+  }
+  if (cols.length === 0) return [];
+
+  const bidRow = rows[headerIdx + 1] ?? [];
+  return cols.map(({ tier, idx }) => {
+    const bidText = str(bidRow[idx[0]]).trim();
+    const countries: MarketTierRow['countries'] = [];
+    const seen = new Set<string>();
+    for (let i = headerIdx + 2; i < rows.length; i++) {
+      for (const c of idx) {
+        const raw = str((rows[i] ?? [])[c]).trim();
+        if (!raw) continue;
+        // 'Spain - ARPPU thấp, …' and 'United Kingdom( UK bid cao)' both attach a
+        // note; only a parenthetical containing a number is a bid override.
+        const m = /^(.*?)\s*[（(]([^)）]*)[)）]\s*$/.exec(raw);
+        let country = (m ? m[1] : raw).trim();
+        let note = m ? m[2].trim() : '';
+        if (!m) {
+          const dash = /^(.*?)\s+-\s+(.*)$/.exec(raw);
+          if (dash) { country = dash[1].trim(); note = dash[2].trim(); }
+        }
+        if (!country) continue;
+        const key = country.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const num = note ? parseMaxBid(note) : null;
+        countries.push({ country, bidOverride: num, note: num === null ? note : '' });
+      }
+    }
+    return { tier, bidText, maxBid: parseMaxBid(bidText), countries };
+  });
 }
 
 export function parseBidCap(rows: string[][]): BidCapRow[] {

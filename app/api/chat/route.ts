@@ -117,6 +117,8 @@ async function fetchPayload(): Promise<SheetPayload> {
     perGeoCpiCap: [],
     perGeoRevenue: [],
     perGeoRevenuePeriod: '',
+    excludedCountries: [],
+    marketTiers: [],
     shopifyCamps: parseShopifyCamps(raw['Shopify_daily'] ?? []),
     shopifyDateRange: parseShopifyDateRange(raw['Shopify_daily'] ?? []),
     negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),

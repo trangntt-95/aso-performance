@@ -1,4 +1,4 @@
-import type { BidCapRow, PerGeoCpiCapRow, SheetPayload } from '@/lib/sheets/types';
+import type { BidCapRow, MarketTierRow, PerGeoCpiCapRow, SheetPayload } from '@/lib/sheets/types';
 
 // PerGeo_CPI_Cap holds *intent*: what we decided we're willing to pay per
 // install in each country, and how much revenue that country is worth to us.
@@ -121,8 +121,45 @@ function verdictOf(r: {
  * Returns null when either sheet is missing, so the caller can simply not
  * render the section rather than show an empty frame.
  */
+/**
+ * The per-country ceiling, from whichever block of PerGeo_CPI_Cap holds it.
+ *
+ * The original Country | Rank | CPI Cap columns were cleared in favour of a tier
+ * block: one column per tier with a bid range, and per-country overrides in
+ * parentheses. A tier's ceiling is the UPPER end of its range, since that is what
+ * "cap" means; a country's own figure beats it.
+ *
+ * Reading the tier block rather than requiring the old columns keeps this screen
+ * alive across that restructure instead of silently disappearing.
+ */
+function configFromTiers(tiers: MarketTierRow[]): PerGeoCpiCapRow[] {
+  const out: PerGeoCpiCapRow[] = [];
+  const seen = new Set<string>();
+  // Tier order in the sheet runs strongest first, so it doubles as a rank when
+  // no explicit revenue rank is present.
+  tiers.forEach((t, tierIdx) => {
+    const isTier1 = /tier\s*1(?![,.]5)/i.test(t.tier);
+    for (const c of t.countries) {
+      const key = c.country.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        country: c.country,
+        rank: null,
+        cap: c.bidOverride ?? t.maxBid ?? 0,
+        tier1: isTier1,
+        note: c.note || `${t.tier}${t.bidText ? ` · ${t.bidText}` : ''}`,
+      });
+    }
+    void tierIdx;
+  });
+  return out;
+}
+
 export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview | null {
-  const config: PerGeoCpiCapRow[] = data?.perGeoCpiCap ?? [];
+  const explicit: PerGeoCpiCapRow[] = data?.perGeoCpiCap ?? [];
+  const config: PerGeoCpiCapRow[] =
+    explicit.length > 0 ? explicit : configFromTiers(data?.marketTiers ?? []);
   const bidCap: BidCapRow[] = data?.bidCap ?? [];
   if (config.length === 0) return null;
 
@@ -130,8 +167,11 @@ export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview |
   // block. This is the only number that can tell whether a CEILING is sane —
   // measured CPI says how well we bought, this says whether buying was worth it.
   const valueByCountry = new Map<string, number | null>();
+  const rankByCountry = new Map<string, number | null>();
   for (const r of data?.perGeoRevenue ?? []) {
-    valueByCountry.set(r.country.trim().toLowerCase(), r.valuePerInstall);
+    const k = r.country.trim().toLowerCase();
+    valueByCountry.set(k, r.valuePerInstall);
+    rankByCountry.set(k, r.rank > 0 ? r.rank : null);
   }
 
   // Aggregate the detail table up to one row per country. Category is the wrong
@@ -177,7 +217,9 @@ export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview |
 
     rows.push({
       country: c.country,
-      rank: c.rank,
+      // Falls back to the revenue block's rank when the config has none — the
+      // tier block carries no rank column of its own.
+      rank: c.rank ?? rankByCountry.get(key) ?? null,
       cap: c.cap,
       tier1: c.tier1,
       note: c.note,

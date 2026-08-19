@@ -1,5 +1,5 @@
 import type { GoogleAdsPayload } from '@/lib/sheets/googleAdsTypes';
-import type { PerGeoCpiCapRow, PerGeoRevenueRow, SheetPayload } from '@/lib/sheets/types';
+import type { ExcludedCountryRow, PerGeoCpiCapRow, PerGeoRevenueRow, SheetPayload } from '@/lib/sheets/types';
 import { toUsd } from '@/lib/config/fx';
 import { isInstallAction } from './googleAdsReport';
 
@@ -45,8 +45,12 @@ export interface GadsCountryRow {
   /** Revenue rank from PerGeo_CPI_Cap. */
   rank: number | null;
   tier1: boolean;
-  /** True when the country is on the App Store exclude list. */
+  /** True when the country is a hard exclude on the App Store side. */
   excluded: boolean;
+  /** True when it's on the list but qualified ("bid thấp", "cân nhắc"). */
+  restricted: boolean;
+  /** The qualifying note, verbatim. */
+  excludeNote: string;
   campaigns: number;
 
   /** Revenue ÷ installs in this country, from the quarterly revenue block. The
@@ -57,32 +61,30 @@ export interface GadsCountryRow {
   revenueShare: number | null;
 }
 
-// Countries the account is meant to stay out of on the App Store side. Spend
-// landing here on Google is worth flagging even though it's a separate channel:
-// the reason for excluding them (installs that never convert) doesn't change
-// with the ad surface.
-export const EXCLUDED_COUNTRIES = [
-  'India',
-  'Nigeria',
-  'Vietnam',
-  'Pakistan',
-  'South Africa',
-  'Malaysia',
-  'Palestinian Territory, Occupied',
-  'Saudi Arabia',
-  'Morocco',
-  'Kenya',
-  'Dominica',
-  'Bangladesh',
-  'Venezuela',
-] as const;
-
-const EXCLUDED_LC = new Set(EXCLUDED_COUNTRIES.map((c) => c.toLowerCase()));
-/** 'Palestinian Territory, Occupied' vs Google's 'Palestine' — match loosely. */
-function isExcluded(country: string): boolean {
-  const lc = country.trim().toLowerCase();
-  if (EXCLUDED_LC.has(lc)) return true;
-  return lc.startsWith('palestin');
+/**
+ * Look up a country in the exclude list Trang maintains in PerGeo_CPI_Cap.
+ *
+ * The list used to be a constant in this file, which meant every edit to the
+ * sheet needed a deploy to take effect — and until it did, the dashboard and the
+ * sheet disagreed without saying so. Spend landing in these countries is worth
+ * flagging on Google too: the reason for excluding them doesn't change with the
+ * ad surface.
+ */
+function makeExcludeIndex(rows: ExcludedCountryRow[]) {
+  const byName = new Map<string, ExcludedCountryRow>();
+  for (const r of rows) byName.set(r.country.trim().toLowerCase(), r);
+  return (country: string): ExcludedCountryRow | null => {
+    const lc = country.trim().toLowerCase();
+    const hit = byName.get(lc);
+    if (hit) return hit;
+    // 'Palestinian Territory, Occupied' in the sheet vs 'Palestine' from Google.
+    if (lc.startsWith('palestin')) {
+      for (const [k, v] of Array.from(byName.entries())) {
+        if (k.startsWith('palestin')) return v;
+      }
+    }
+    return null;
+  };
 }
 
 export interface GadsCountryReport {
@@ -99,12 +101,17 @@ export interface GadsCountryReport {
   /** Google spend landing in countries that produce no revenue at all. */
   noRevenueCostUsd: number;
   noRevenueCount: number;
+  /** Spend in countries flagged "bid thấp"/"cân nhắc" rather than hard-excluded. */
+  restrictedCostUsd: number;
+  /** True when the sheet's exclude column was readable at all. */
+  hasExcludeList: boolean;
 }
 
 export function buildGadsCountryReport(
   gads: GoogleAdsPayload | null | undefined,
   perGeo: PerGeoCpiCapRow[],
   revenue: PerGeoRevenueRow[] = [],
+  excluded: ExcludedCountryRow[] = [],
 ): GadsCountryReport | null {
   const rows = gads?.countries ?? [];
   if (rows.length === 0) return null;
@@ -113,6 +120,7 @@ export function buildGadsCountryReport(
   const capByCountry = new Map<string, PerGeoCpiCapRow>();
   for (const c of perGeo) capByCountry.set(c.country.trim().toLowerCase(), c);
 
+  const excludeOf = makeExcludeIndex(excluded);
   const totalRevenue = revenue.reduce((s, r) => s + (Number.isFinite(r.revenue) ? r.revenue : 0), 0);
   const revByCountry = new Map<string, { vpi: number | null; share: number | null }>();
   for (const r of revenue) {
@@ -171,7 +179,12 @@ export function buildGadsCountryReport(
       capUsd: cfg && cfg.cap > 0 ? cfg.cap : null,
       rank: cfg?.rank ?? null,
       tier1: cfg?.tier1 ?? false,
-      excluded: isExcluded(country),
+      excluded: excludeOf(country)?.hardExclude ?? false,
+      restricted: (() => {
+        const x = excludeOf(country);
+        return x !== null && !x.hardExclude;
+      })(),
+      excludeNote: excludeOf(country)?.note ?? '',
       campaigns: e.camps.size,
       valuePerInstall: rev?.vpi ?? null,
       revenueShare: rev?.share ?? null,
@@ -201,6 +214,8 @@ export function buildGadsCountryReport(
       revenue.length === 0
         ? 0
         : spending.filter((r) => r.valuePerInstall === null || r.valuePerInstall <= 0).length,
+    restrictedCostUsd: round2(spending.filter((r) => r.restricted).reduce((s, r) => s + r.costUsd, 0)),
+    hasExcludeList: excluded.length > 0,
   };
 }
 
@@ -630,7 +645,12 @@ export interface GoogleAdsDeep {
 export function buildGoogleAdsDeep(data: SheetPayload | null | undefined): GoogleAdsDeep {
   const gads = data?.googleAds;
   return {
-    country: buildGadsCountryReport(gads, data?.perGeoCpiCap ?? [], data?.perGeoRevenue ?? []),
+    country: buildGadsCountryReport(
+      gads,
+      data?.perGeoCpiCap ?? [],
+      data?.perGeoRevenue ?? [],
+      data?.excludedCountries ?? [],
+    ),
     quality: buildGadsQualityReport(gads),
     bidding: buildGadsBiddingReport(gads),
     devices: buildGadsDeviceReport(gads),

@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 
 const usd = (n: number | null) => (n === null ? '—' : `$${n < 10 ? n.toFixed(2) : Math.round(n)}`);
 
-type CountryFilter = 'spending' | 'all' | 'excluded' | 'uncapped' | 'no-revenue';
+type CountryFilter = 'spending' | 'all' | 'excluded' | 'restricted' | 'uncapped' | 'no-revenue';
 type QsFilter = 'weak' | 'low-qs' | 'all';
 type BidFilter = 'all' | 'over-target' | 'no-target';
 
@@ -165,6 +165,7 @@ export function GoogleAdsDeepSections() {
     switch (countryFilter) {
       case 'all': return rs;
       case 'excluded': return rs.filter((r) => r.excluded);
+      case 'restricted': return rs.filter((r) => r.restricted);
       case 'uncapped': return rs.filter((r) => r.costUsd > 0 && r.capUsd === null);
       case 'no-revenue':
         return rs.filter((r) => r.costUsd > 0 && (r.valuePerInstall === null || r.valuePerInstall <= 0));
@@ -218,12 +219,12 @@ export function GoogleAdsDeepSections() {
               onPick={pickCountry}
             />
             <Stat
-              label="Chưa có trần CPI"
-              value={usd(deep.country.uncappedCostUsd)}
-              sub={`${deep.country.uncappedCount} nước không có trong PerGeo_CPI_Cap`}
-              tone={deep.country.uncappedCount > 0 ? 'text-amber-700' : 'text-slate-900'}
-              pick="uncapped"
-              active={countryFilter === 'uncapped'}
+              label="Vào nước cần bid thấp"
+              value={usd(deep.country.restrictedCostUsd)}
+              sub="đang trong nhóm 'cân nhắc / bid thấp'"
+              tone={deep.country.restrictedCostUsd > 0 ? 'text-amber-700' : 'text-slate-900'}
+              pick="restricted"
+              active={countryFilter === 'restricted'}
               onPick={pickCountry}
             />
             <Stat
@@ -245,6 +246,7 @@ export function GoogleAdsDeepSections() {
             >
               <option value="spending">Nước có chi tiền</option>
               <option value="excluded">Nước đang exclude bên App Store</option>
+              <option value="restricted">Nước cần bid thấp / cân nhắc</option>
               <option value="uncapped">Chưa có trần CPI</option>
               <option value="no-revenue">Chưa ra doanh thu</option>
               <option value="all">Tất cả</option>
@@ -288,9 +290,17 @@ export function GoogleAdsDeepSections() {
                         {r.excluded && (
                           <span
                             className="ml-1 rounded bg-rose-100 px-1 text-[9px] font-medium text-rose-700"
-                            title="Nước này nằm trong danh sách exclude của App Store Ads — nhưng Google vẫn đang chi tiền vào đây."
+                            title="Nước này nằm trong cột 'Excluded Countries' của PerGeo_CPI_Cap — nhưng Google vẫn đang chi tiền vào đây."
                           >
                             exclude
+                          </span>
+                        )}
+                        {r.restricted && (
+                          <span
+                            className="ml-1 rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-800"
+                            title={`Trong danh sách hạn chế: "${r.excludeNote}". Không cấm hẳn, nhưng bid phải giữ thấp.`}
+                          >
+                            {r.excludeNote || 'hạn chế'}
                           </span>
                         )}
                       </td>

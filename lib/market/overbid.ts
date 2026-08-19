@@ -137,6 +137,41 @@ export function assessCamps(
   // Maps an annotated Shopify_daily name onto its Camp_Links base name so notes
   // like "(CPI 107) - cân nhắc off" or "- good CPI 7" don't lose the URL/geo.
   const linkResolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+
+  // The resolver above only folds a LONGER spend label onto a SHORTER paused
+  // name. The reverse happens just as often: Paused_camp holds the annotated
+  // version ("… Test potential KW Apr - test till Sep") while the spend data
+  // still carries the plain one, so the plain label was never recognised as
+  // switched off and kept showing up as a live camp to fix.
+  //
+  // Folding the other way is only safe when Camp_Links does NOT list the shorter
+  // name: a name Camp_Links knows is a campaign in its own right, and collapsing
+  // it would hide a live camp behind a paused sibling — the geo-split trap
+  // ("… Tier 1" vs "… Tier 1 - DE"). Absent from Camp_Links, it is a label
+  // variant, which is exactly the case being fixed here.
+  const linkNames = new Set(
+    campLinks.map((c) => normalizeCampName(c.camp).toLowerCase()).filter(Boolean),
+  );
+  const pausedByExtension = new Set<string>();
+  {
+    const pausedNorm = pausedCamps
+      .map((x) => normalizeCampName(x.camp).toLowerCase())
+      .filter(Boolean);
+    const NOTE_START = /^\s*[-–(]/;
+    for (const raw of shopifyCamps) {
+      const lc = normalizeCampName(raw.camp).toLowerCase();
+      if (!lc || linkNames.has(lc)) continue;
+      for (const q of pausedNorm) {
+        if (q.length > lc.length && q.startsWith(lc) && NOTE_START.test(q.slice(lc.length))) {
+          pausedByExtension.add(lc);
+          break;
+        }
+      }
+    }
+  }
+  const isPausedName = (camp: string): boolean =>
+    pausedResolver.resolve(camp) !== null ||
+    pausedByExtension.has(normalizeCampName(camp).toLowerCase());
   const cpcTol = (params.cpcTolerancePct ?? 0) / 100;
   const cpiTol = (params.cpiTolerancePct ?? 0) / 100;
 
@@ -215,7 +250,7 @@ export function assessCamps(
     // Paused camp — its bid is no longer actionable, so it contributes no
     // spend/clicks. The name is kept so a note filed before the pause can still
     // be found.
-    if (pausedResolver.resolve(c.camp)) {
+    if (isPausedName(c.camp)) {
       g.pausedNames.push(c.camp);
       continue;
     }
