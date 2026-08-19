@@ -17,6 +17,7 @@ import { findCampBidConflicts } from '@/lib/market/campBidConflicts';
 import { normalizeCampName } from '@/lib/sheets/campName';
 import { normKw } from '@/lib/sheets/kwNorm';
 import { CpiCapOverview } from './CpiCapOverview';
+import { CategoryCpiPanel } from './CategoryCpiPanel';
 
 // The campaign shown on a row: a name + optional URL (clickable when known).
 // `fromSheet` = came from the hand-maintained 'Link campaign' column.
@@ -299,6 +300,9 @@ export function BidCapView() {
     <div className="space-y-3">
       {/* Trần CPI theo nước — bối cảnh cho toàn bộ bảng bên dưới. */}
       <CpiCapOverview />
+
+      {/* CPI theo category — grain mà bid thật sự được set ở đó. */}
+      <CategoryCpiPanel />
 
       <div className="text-xs text-slate-500">
         Mức bid <strong>recommend</strong> cho từng <strong>Country × Category</strong> (tính sẵn trong sheet{' '}
