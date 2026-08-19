@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { parseExcludedCountries } from '@/lib/sheets/parsers';
+import { parseExcludedCountries, parseMarketTiers } from '@/lib/sheets/parsers';
 import { fetchShopifyDailyRows, fetchTab, listShopifyTabs, probeShopifyWide } from '@/lib/sheets/client';
 
 // What the two Shopify Ads sources actually contain right now.
@@ -72,15 +72,26 @@ export async function GET(req: Request) {
     out.separateSheet = { error: err instanceof Error ? err.message : 'Unknown error' };
   }
 
-  // Temporary: the exclude column parses locally but returns [] in the payload.
-  // Show what the route actually receives for that tab.
+  // What the route actually receives for PerGeo_CPI_Cap. Kept, not temporary:
+  // both the exclude column and the tier block have already been renamed and
+  // moved once, and Sheets trims trailing empty cells so the header row can be
+  // SHORTER than the rows below it — that combination is what made the exclude
+  // list parse locally and come back empty in the payload. Row widths and the
+  // parsed count together make that visible in one look.
   try {
     const rows = await fetchTab('PerGeo_CPI_Cap');
     out.perGeoTab = {
       rows: rows.length,
-      row0Len: (rows[0] ?? []).length,
-      row0: (rows[0] ?? []).map((c) => String(c ?? '').slice(0, 24)),
-      parsed: parseExcludedCountries(rows).length,
+      // Widest row vs header row: when these differ, a column exists that a
+      // header-length scan would never reach.
+      widestRow: rows.reduce((w, r) => Math.max(w, (r ?? []).length), 0),
+      headerRowLen: (rows[0] ?? []).length,
+      parsedExcluded: parseExcludedCountries(rows).length,
+      parsedTiers: parseMarketTiers(rows).map((t) => ({
+        tier: t.tier,
+        bid: t.bidText,
+        countries: t.countries.length,
+      })),
     };
   } catch (err) {
     out.perGeoTab = { error: err instanceof Error ? err.message : 'Unknown error' };
