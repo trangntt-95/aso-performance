@@ -4,23 +4,59 @@ import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { buildCategoryCpi, type CategoryCpiRow } from '@/lib/market/categoryCpi';
-import { formatNumber, formatPercent } from '@/lib/utils/format';
-import { cn } from '@/lib/utils';
+import {
+  CapHead,
+  CapSection,
+  CapStat,
+  CpiCell,
+  GapCell,
+  RELIABLE_INSTALLS,
+  VerdictBadge,
+  money,
+  money2,
+  type CapTone,
+} from './capTable';
+import { formatPercent } from '@/lib/utils/format';
 
-// CPI per category, next to the ceiling that category is supposed to respect.
+// Actual CPI vs the ceiling, per CATEGORY — the grain bids are actually set at.
+// Deliberately the same shape as the per-country table above it; the shared
+// pieces live in capTable.tsx.
 //
-// Sits on the bid page because category is the grain bids are set at. The whole
-// point is that nothing here is allocated: a campaign has exactly one category,
-// so these are sums, not estimates. The per-keyword version of this table cannot
-// be built honestly and deliberately isn't offered.
+// Category is the finest grain this can be computed at honestly: a campaign
+// belongs to exactly one category, so these are sums of campaign totals. The
+// per-keyword version would require splitting a campaign's spend across ~45
+// keywords with nothing in the data to divide by, so it isn't offered.
 
-const money = (n: number) => `$${formatNumber(Math.round(n))}`;
-const money2 = (n: number | null) => (n === null ? '—' : `$${n.toFixed(2)}`);
-const pct = (n: number | null) => (n === null ? '—' : `${n >= 0 ? '+' : ''}${Math.round(n * 100)}%`);
+type Lens = 'all' | 'over' | 'no-cap';
+
+const LENS_LABEL: Record<Lens, string> = {
+  all: 'Tất cả category',
+  over: 'Đang vượt trần',
+  'no-cap': 'Chưa có trần',
+};
+
+function verdictOf(r: CategoryCpiRow): { label: string; tone: CapTone; title?: string } {
+  if (r.cpi === null) {
+    return r.spend > 0
+      ? { label: 'Tiêu, 0 install', tone: 'bad', title: 'Có chi tiêu nhưng chưa install nào.' }
+      : { label: 'Chưa chạy', tone: 'neutral' };
+  }
+  if (r.cpiCap === null) {
+    return {
+      label: 'Chưa có trần',
+      tone: 'warn',
+      title:
+        'Không ô Country × Category nào của category này có cột CPI Act trong Max bid cap, nên không có gì để so.',
+    };
+  }
+  if (r.vsCap !== null && r.vsCap > 0) return { label: 'Vượt trần', tone: 'bad' };
+  return { label: 'Trong trần', tone: 'good' };
+}
 
 function Row({ r }: { r: CategoryCpiRow }) {
   const [open, setOpen] = useState(false);
-  const overCap = r.vsCap !== null && r.vsCap > 0;
+  const v = verdictOf(r);
+  const over = r.vsCap !== null && r.vsCap > 0;
   return (
     <>
       <tr className="border-t border-slate-100 hover:bg-slate-50">
@@ -28,7 +64,7 @@ function Row({ r }: { r: CategoryCpiRow }) {
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="inline-flex items-center gap-1 text-[12px] font-medium text-slate-800 hover:text-indigo-700"
+            className="inline-flex items-center gap-1 font-medium text-slate-800 hover:text-indigo-700"
           >
             {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
             {r.category}
@@ -38,7 +74,7 @@ function Row({ r }: { r: CategoryCpiRow }) {
             {r.campsInferred > 0 && (
               <span
                 className="ml-1 cursor-help text-amber-600"
-                title={`${r.campsInferred} camp không có category trong Camp_Links / Master KW Lookup — category được suy từ tên camp.`}
+                title={`${r.campsInferred} camp không có category trong Camp_Links / Master KW Lookup — category suy từ tên camp.`}
               >
                 · {r.campsInferred} suy từ tên
               </span>
@@ -52,51 +88,26 @@ function Row({ r }: { r: CategoryCpiRow }) {
         <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-700">
           {r.installs || '—'}
         </td>
-        <td
-          className={cn(
-            'whitespace-nowrap px-2 py-1.5 text-right font-mono text-[12px] font-semibold',
-            overCap ? 'text-rose-600' : 'text-slate-900',
-          )}
-        >
-          {money2(r.cpi)}
-          {r.cpi !== null && !r.reliable && (
-            <span
-              className="ml-1 cursor-help text-[9px] font-normal text-slate-400"
-              title={`Chỉ ${r.installs} install — con số này là một mẫu, chưa phải tỷ lệ.`}
-            >
-              ({r.installs}★)
-            </span>
-          )}
-        </td>
+        <CpiCell cpi={r.cpi} installs={r.installs} over={over} />
         <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-500">
           {money2(r.cpiCap)}
-        </td>
-        <td
-          className={cn(
-            'whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px]',
-            overCap ? 'font-semibold text-rose-600' : 'text-emerald-700',
+          {r.bidRec !== null && (
+            <div
+              className="cursor-help text-[9px] text-slate-400"
+              title={`CPC thực ${money2(r.cpc)} so với Bid Rec trung bình ${money2(r.bidRec)}${
+                r.vsBidRec !== null ? ` (${r.vsBidRec >= 0 ? '+' : ''}${Math.round(r.vsBidRec * 100)}%)` : ''
+              }`}
+            >
+              bid rec {money2(r.bidRec)}
+            </div>
           )}
-        >
-          {pct(r.vsCap)}
         </td>
-        <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-700">
-          {money2(r.cpc)}
-        </td>
-        <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-500">
-          {money2(r.bidRec)}
-        </td>
-        <td
-          className={cn(
-            'whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px]',
-            r.vsBidRec !== null && r.vsBidRec > 0 ? 'text-amber-700' : 'text-slate-500',
-          )}
-        >
-          {pct(r.vsBidRec)}
-        </td>
+        <GapCell gap={r.vsCap} />
+        <VerdictBadge label={v.label} tone={v.tone} title={v.title} />
       </tr>
       {open && (
         <tr className="bg-slate-50/60">
-          <td colSpan={9} className="px-2 py-2">
+          <td colSpan={7} className="px-2 py-2">
             <div className="pl-5 text-[10px] uppercase tracking-wide text-slate-500">
               Camp chi nhiều nhất trong {r.category}
             </div>
@@ -105,10 +116,15 @@ function Row({ r }: { r: CategoryCpiRow }) {
                 <li key={c.camp} className="flex items-baseline gap-2 text-[11px]">
                   <span className="min-w-0 flex-1 truncate text-slate-700">{c.camp}</span>
                   <span className="shrink-0 font-mono text-slate-600">{money(c.spend)}</span>
-                  <span className="w-14 shrink-0 text-right font-mono text-slate-500">
-                    {c.installs} ins
-                  </span>
-                  <span className="w-16 shrink-0 text-right font-mono text-slate-800">
+                  <span className="w-14 shrink-0 text-right font-mono text-slate-500">{c.installs} ins</span>
+                  <span
+                    className={cnCpi(c.cpi, r.cpiCap)}
+                    title={
+                      c.installs > 0 && c.installs < RELIABLE_INSTALLS
+                        ? `Chỉ ${c.installs} install — một mẫu, chưa phải tỷ lệ.`
+                        : undefined
+                    }
+                  >
                     {money2(c.cpi)}
                   </span>
                 </li>
@@ -121,90 +137,112 @@ function Row({ r }: { r: CategoryCpiRow }) {
   );
 }
 
+/** Camp CPI coloured against its own category's ceiling. */
+function cnCpi(cpi: number | null, cap: number | null): string {
+  const base = 'w-16 shrink-0 text-right font-mono';
+  if (cpi === null) return `${base} text-slate-300`;
+  if (cap !== null && cpi > cap) return `${base} font-semibold text-rose-600`;
+  return `${base} text-slate-800`;
+}
+
 export function CategoryCpiPanel() {
   const { data, isLoading } = useSheetData();
   const report = useMemo(() => buildCategoryCpi(data), [data]);
-  const [open, setOpen] = useState(true);
+  const [lens, setLens] = useState<Lens>('all');
+  const pick = (v: Lens) => setLens((cur) => (cur === v ? 'all' : v));
+
+  const rows = useMemo(() => {
+    if (!report) return [];
+    switch (lens) {
+      case 'over':
+        return report.rows.filter((r) => r.vsCap !== null && r.vsCap > 0);
+      case 'no-cap':
+        return report.rows.filter((r) => r.cpiCap === null);
+      default:
+        return report.rows;
+    }
+  }, [report, lens]);
 
   if (isLoading || !report || report.rows.length === 0) return null;
   const overCount = report.rows.filter((r) => r.vsCap !== null && r.vsCap > 0).length;
+  const noCapCount = report.rows.filter((r) => r.cpiCap === null).length;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left"
-      >
-        <span className="text-xs font-semibold text-slate-800">CPI theo category</span>
-        <span className="hidden text-[10px] text-slate-500 sm:inline">
-          — {report.rows.length} category · {money(report.totalSpend)} · CPI chung {money2(report.cpi)}
-          {overCount > 0 && ` · ${overCount} category vượt trần`}
-          {report.range && ` · ${report.range}`}
-        </span>
-        <ChevronDown className={cn('ml-auto h-4 w-4 shrink-0 text-slate-400 transition-transform', open && 'rotate-180')} />
-      </button>
+    <CapSection
+      title="CPI theo category"
+      summary={`${report.rows.length} category · ${money(report.totalSpend)} · CPI chung ${money2(report.cpi)}${
+        report.range ? ` · ${report.range}` : ''
+      }`}
+    >
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <CapStat<Lens>
+          label="Vượt trần"
+          value={overCount}
+          sub={`trên ${report.rows.length} category`}
+          tone={overCount > 0 ? 'text-rose-600' : undefined}
+          pick="over"
+          active={lens === 'over'}
+          onPick={pick}
+        />
+        <CapStat<Lens>
+          label="Chưa có trần"
+          value={noCapCount}
+          sub="không có ô nào trong Max bid cap"
+          tone={noCapCount > 0 ? 'text-amber-700' : undefined}
+          pick="no-cap"
+          active={lens === 'no-cap'}
+          onPick={pick}
+        />
+        <CapStat label="Tổng chi" value={money(report.totalSpend)} sub={`${report.totalInstalls} install`} />
+        <CapStat label="CPI chung" value={money2(report.cpi)} sub="mọi category cộng lại" />
+      </div>
 
-      {open && (
-        <div className="space-y-2 border-t border-slate-200 p-3">
-          <div className="overflow-x-auto rounded border border-slate-200">
-            <table className="w-full text-xs">
-              <thead className="bg-slate-50 text-slate-600">
-                <tr>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">Category</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Chi</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Install</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">CPI thực</th>
-                  <th
-                    className="whitespace-nowrap px-2 py-1.5 text-right font-medium"
-                    title="Trung bình cột 'CPI Act' của các ô Country × Category thuộc category này, trong Max bid cap"
-                  >
-                    Trần CPI
-                  </th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">vs trần</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">CPC thực</th>
-                  <th
-                    className="whitespace-nowrap px-2 py-1.5 text-right font-medium"
-                    title="Trung bình 'Bid Rec ⭐' của các ô thuộc category này"
-                  >
-                    Bid rec
-                  </th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">vs bid rec</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.rows.map((r) => (
-                  <Row key={r.category} r={r} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className="flex items-center gap-2">
+        <select
+          value={lens}
+          onChange={(e) => setLens(e.target.value as Lens)}
+          className="h-7 rounded border border-slate-200 bg-white px-2 text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        >
+          {(Object.keys(LENS_LABEL) as Lens[]).map((k) => (
+            <option key={k} value={k}>
+              {LENS_LABEL[k]}
+            </option>
+          ))}
+        </select>
+        <span className="text-[10px] text-slate-500">{rows.length} category</span>
+      </div>
 
-          <div className="space-y-1 text-[10px] leading-snug text-slate-500">
-            <div>
-              Mỗi camp thuộc <b>đúng một</b> category, nên các con số này là phép <b>cộng</b>, không phải chia hay
-              ước lượng. Bấm vào tên category để xem camp nào đang kéo nó.
-            </div>
-            <div>
-              <b>CPI theo keyword thì không làm được</b> và mình cố ý không dựng: tiền chỉ tồn tại ở mức camp, một camp
-              chứa trung bình ~45 keyword, và không có gì trong dữ liệu nói chi tiêu chia thế nào giữa chúng. Chia đều
-              hay chia theo users của GA4 đều tạo ra một con số trông như phép đo nhưng không phải.
-            </div>
-            {report.inferredCamps > 0 && (
-              <div>
-                {report.inferredCamps} camp không có category trong <code className="text-[9px]">Camp_Links</code> hay{' '}
-                <code className="text-[9px]">Master KW Lookup</code> nên được suy từ tên camp — điền category cho chúng
-                trong sheet sẽ chắc hơn.
-              </div>
-            )}
-            {report.unknownSpend > 0 && (
-              <div className="text-amber-700">
-                {money(report.unknownSpend)} chưa quy được về category nào.
-              </div>
-            )}
-          </div>
+      <div className="overflow-x-auto rounded border border-slate-200">
+        <table className="w-full text-xs">
+          <CapHead nameLabel="Category" />
+          <tbody>
+            {rows.map((r) => (
+              <Row key={r.category} r={r} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="space-y-1 text-[10px] leading-snug text-slate-500">
+        <div>
+          Mỗi camp thuộc <b>đúng một</b> category nên đây là phép <b>cộng</b>, không phải chia hay ước lượng. Bấm tên
+          category để xem camp nào đang kéo nó. <b>Trần</b> là trung bình cột CPI Act của các ô Country × Category
+          thuộc category đó trong <code className="text-[9px]">Max bid cap</code>; Bid Rec nằm trong tooltip của ô trần.
         </div>
-      )}
-    </div>
+        {noCapCount > 0 && (
+          <div className="text-amber-700">
+            {noCapCount} category chưa có trần vì <code className="text-[9px]">Max bid cap</code> không có ô nào mang
+            cột CPI Act cho chúng — không phải dashboard bỏ sót, mà sheet chưa đặt trần cho nhóm đó.
+          </div>
+        )}
+        <div>
+          <b>CPI theo keyword thì không làm được</b> và cố ý không dựng: tiền chỉ tồn tại ở mức camp, một camp chứa
+          trung bình ~45 keyword, và không có gì trong dữ liệu nói chi tiêu chia thế nào giữa chúng.
+        </div>
+        {report.unknownSpend > 0 && (
+          <div className="text-amber-700">{money(report.unknownSpend)} chưa quy được về category nào.</div>
+        )}
+      </div>
+    </CapSection>
   );
 }
