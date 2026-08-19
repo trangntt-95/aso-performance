@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchAllTabs, fetchShopifyAggregateRows, fetchShopifyDailyRows } from '@/lib/sheets/client';
+import { fetchAllTabs, fetchShopifyDailyRows } from '@/lib/sheets/client';
 import { fetchGoogleAdsTabs, parseGoogleAds } from '@/lib/sheets/googleAds';
 import { normalizeCampName } from '@/lib/sheets/campName';
 import {
@@ -37,23 +37,22 @@ export async function GET() {
   try {
     // The per-day Shopify export lives in a second spreadsheet; fetch it
     // alongside the main tabs. It resolves to [] if unconfigured/unreadable.
-    const [raw, shopifyDailyRaw, shopifyAggRaw, gadsRaw] = await Promise.all([
+    const [raw, shopifyDailyRaw, gadsRaw] = await Promise.all([
       fetchAllTabs(),
       fetchShopifyDailyRows(),
-      fetchShopifyAggregateRows(),
       fetchGoogleAdsTabs(),
     ]);
     // Only a recent window ships to the client: the tab goes back to 2025-01
     // (~100k rows) and the impact read only ever looks a few weeks either side
     // of a note.
     const shopifySince = new Date(Date.now() - 200 * 86400000).toISOString().slice(0, 10);
-    // Campaign totals, in order of preference:
-    //   1. summed from the per-day feed over a true L30 window — the only option
-    //      that matches the L30 basis of 'Max bid cap' and what Apple Ads shows
-    //   2. the main sheet's 'Shopify_daily' tab
-    //   3. the separate spreadsheet's range-aggregate block
-    // The 16-day aggregate was being compared against L30 recommendations, which
-    // is what made a camp read as $43/1 install while Apple Ads said $53/0.
+    // Campaign totals come from the per-day feed, summed over a true L30 window
+    // — the only basis that matches 'Max bid cap' (whose columns are L30) and
+    // what Apple Ads shows. Feeding the overbid verdict a 16-day aggregate is
+    // what made a camp read as $43/1 install while Apple Ads said $53/0.
+    //
+    // The main sheet's own 'Shopify_daily' tab stays as a last resort for the
+    // case where the per-day sheet is unreachable; it is currently empty.
     // Only as much history as a 30-day window can need. Parsing the full ~100k
     // rows twice would cost seconds for data the rollup then discards; the
     // export can lag a few days, so 90 leaves margin behind the newest date.
@@ -61,10 +60,8 @@ export async function GET() {
     const recentDaily = parseShopifyDaily(shopifyDailyRaw, rollupSince);
     const l30 = campTotalsFromDaily(recentDaily, 30);
     const mainShopify = parseShopifyCamps(raw['Shopify_daily'] ?? []);
-    const aggShopify = parseShopifyCamps(shopifyAggRaw as string[][]);
 
-    const shopifyCampRows =
-      l30.camps.length > 0 ? l30.camps : mainShopify.length > 0 ? mainShopify : aggShopify;
+    const shopifyCampRows = l30.camps.length > 0 ? l30.camps : mainShopify;
     const dmy = (iso: string) => {
       const [y, m, d] = iso.split('-');
       return `${d}/${m}/${y}`;
@@ -72,9 +69,7 @@ export async function GET() {
     const shopifyRange =
       l30.camps.length > 0
         ? `${dmy(l30.from)} → ${dmy(l30.to)}`
-        : mainShopify.length > 0
-          ? parseShopifyDateRange(raw['Shopify_daily'] ?? [])
-          : parseShopifyDateRange(shopifyAggRaw as string[][]);
+        : parseShopifyDateRange(raw['Shopify_daily'] ?? []);
     // Restrict the per-day rows to the camps the dashboard actually shows. Built
     // from the RESOLVED camp list — building it from the (now empty) main tab
     // would filter every per-day row away.

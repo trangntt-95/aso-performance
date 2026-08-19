@@ -74,19 +74,15 @@ function colLetter(i: number): string {
  * Returned in the fixed shape the parser expects:
  *   [date, campaign, impressions, clicks, installs, spend]
  *
- * Which tab holds this has changed. 'By campaign' used to carry the daily table
- * in A:F; it now holds a single date-range pivot (a From/To block plus totals),
- * so reading A:F returned ~300 aggregate rows and the per-day feed silently went
- * to zero — taking Camp Health's period comparison and the Impact bid column
- * with it. The raw daily table lives in 'Trueprofit 2026', ~100k rows with a
- * 20-column header.
+ * Reads the FIRST tab only, by position rather than by name. That tab is the raw
+ * daily export ("Trueprofit 2026" at the time of writing); the tabs after it are
+ * pivots and older years, and reading one of those is what caused the per-day
+ * feed to silently return aggregate rows. Position survives the yearly rename
+ * that a hardcoded name would not.
  *
- * Columns are resolved from that header and then fetched individually, so the
- * read stays small AND survives a column being inserted. The old tab remains as
- * a fallback: if the layout is ever restored, nothing here needs changing.
+ * The header is validated before anything is read, so a wrong first tab fails
+ * with a named error instead of quietly yielding zero rows.
  */
-const SHOPIFY_DAILY_TAB = 'Trueprofit 2026';
-
 export async function fetchShopifyDailyRows(): Promise<unknown[][]> {
   // Trimmed: a value set through a shell pipe can carry a trailing newline,
   // which the Sheets API rejects as a malformed spreadsheet id.
@@ -95,9 +91,20 @@ export async function fetchShopifyDailyRows(): Promise<unknown[][]> {
   const sheets = getSheetsClient();
 
   try {
+    const info = await sheets.spreadsheets.get({
+      spreadsheetId: id,
+      fields: 'sheets.properties(title,index)',
+    });
+    const tabs = (info.data.sheets ?? [])
+      .map((sh) => ({ title: sh.properties?.title ?? '', index: sh.properties?.index ?? 0 }))
+      .filter((t) => t.title)
+      .sort((a, b) => a.index - b.index);
+    const tab = tabs[0]?.title;
+    if (!tab) throw new Error('Sheet Shopify không có tab nào');
+
     const head = await sheets.spreadsheets.values.get({
       spreadsheetId: id,
-      range: `'${SHOPIFY_DAILY_TAB}'!A1:AZ1`,
+      range: `'${tab}'!A1:AZ1`,
       valueRenderOption: 'UNFORMATTED_VALUE',
     });
     const header = ((head.data.values?.[0] ?? []) as unknown[]).map((h) =>
@@ -122,15 +129,16 @@ export async function fetchShopifyDailyRows(): Promise<unknown[][]> {
     };
     const missing = Object.entries(idx).filter(([, v]) => v < 0).map(([k]) => k);
     if (missing.length > 0) {
-      throw new Error(`'${SHOPIFY_DAILY_TAB}' thiếu cột: ${missing.join(', ')}`);
+      throw new Error(`Tab đầu tiên ('${tab}') thiếu cột: ${missing.join(', ')}`);
     }
 
     const order = ['date', 'camp', 'impressions', 'clicks', 'installs', 'spend'] as const;
     const res = await sheets.spreadsheets.values.batchGet({
       spreadsheetId: id,
+      // Only the six columns needed, so a 100k-row tab stays a small read.
       ranges: order.map((k) => {
         const L = colLetter(idx[k]);
-        return `'${SHOPIFY_DAILY_TAB}'!${L}2:${L}`;
+        return `'${tab}'!${L}2:${L}`;
       }),
       valueRenderOption: 'UNFORMATTED_VALUE',
       majorDimension: 'COLUMNS',
@@ -146,40 +154,13 @@ export async function fetchShopifyDailyRows(): Promise<unknown[][]> {
       if (!iso || !camp) continue;
       out.push([iso, camp, cols[2][i], cols[3][i], cols[4][i], cols[5][i]]);
     }
-    if (out.length > 0) return out;
-    throw new Error(`'${SHOPIFY_DAILY_TAB}' không có dòng nào đọc được`);
+    return out;
   } catch (e) {
-    console.error('fetchShopifyDailyRows (per-day tab) failed:', (e as Error).message);
-  }
-
-  // Fallback: the old location, in case the daily table moves back.
-  try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: id,
-      range: `'By campaign'!A:F`,
-      valueRenderOption: 'UNFORMATTED_VALUE',
-    });
-    return (res.data.values || []) as unknown[][];
-  } catch (e) {
-    console.error('fetchShopifyDailyRows (fallback) failed:', (e as Error).message);
-    return [];
-  }
-}
-
-/** Raw rows of the 'By campaign' range-aggregate block, for campaign totals. */
-export async function fetchShopifyAggregateRows(): Promise<unknown[][]> {
-  const id = process.env.GOOGLE_SHEET_ID_SHOPIFY?.trim();
-  if (!id) return [];
-  try {
-    const sheets = getSheetsClient();
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: id,
-      range: `'By campaign'!A:F`,
-      valueRenderOption: 'UNFORMATTED_VALUE',
-    });
-    return (res.data.values || []) as unknown[][];
-  } catch (e) {
-    console.error('fetchShopifyAggregateRows failed:', (e as Error).message);
+    // No fallback to another tab on purpose: the other tabs hold pivots and
+    // prior years, and silently reading one of those is the failure this
+    // function exists to avoid. Empty here means the screens say "no data",
+    // which is true, instead of showing numbers from the wrong table.
+    console.error('fetchShopifyDailyRows failed:', (e as Error).message);
     return [];
   }
 }
@@ -187,8 +168,9 @@ export async function fetchShopifyAggregateRows(): Promise<unknown[][]> {
 /**
  * Tab names + sizes of the Shopify Ads spreadsheet.
  *
- * fetchShopifyDailyRows targets one tab by name, so a renamed tab, a re-created
- * file or a lost share all produce the same empty array. This distinguishes them.
+ * fetchShopifyDailyRows reads the first tab, so a reordered tab list, a
+ * re-created file or a lost share all produce the same empty array. This
+ * distinguishes them — the list is in tab order.
  */
 export async function listShopifyTabs(): Promise<
   { title: string; rows: number; cols: number }[] | { error: string }
@@ -218,18 +200,33 @@ export async function listShopifyTabs(): Promise<
  * hundred, which means the per-day table no longer starts in column A — this
  * shows what each column actually holds so the real range can be targeted.
  */
-export async function probeShopifyWide(tab = 'By campaign'): Promise<unknown> {
+export async function probeShopifyWide(tab?: string): Promise<unknown> {
   const id = process.env.GOOGLE_SHEET_ID_SHOPIFY?.trim();
   if (!id) return { error: 'GOOGLE_SHEET_ID_SHOPIFY chưa được set' };
   try {
     const sheets = getSheetsClient();
+    // Default to the first tab — the one the daily reader actually uses.
+    let target = tab;
+    if (!target) {
+      const info = await sheets.spreadsheets.get({
+        spreadsheetId: id,
+        fields: 'sheets.properties(title,index)',
+      });
+      const tabs = (info.data.sheets ?? [])
+        .map((sh) => ({ title: sh.properties?.title ?? '', index: sh.properties?.index ?? 0 }))
+        .filter((t) => t.title)
+        .sort((a, b) => a.index - b.index);
+      target = tabs[0]?.title ?? '';
+    }
+    if (!target) return { error: 'không tìm được tab nào' };
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: id,
-      range: tab === 'By campaign' ? `'By campaign'!A1:T40` : `'${tab}'!A1:T25`,
+      range: `'${target}'!A1:T25`,
       valueRenderOption: 'UNFORMATTED_VALUE',
     });
     const rows = (res.data.values ?? []) as unknown[][];
     return {
+      tab: target,
       returnedRows: rows.length,
       // Only the first 20 columns, trimmed, so the shape is readable.
       sample: rows.map((r, i) => ({

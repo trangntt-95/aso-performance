@@ -44,10 +44,10 @@ export async function GET(req: Request) {
   // returns 306, so the per-day table has moved out of those columns. Dump a
   // wider range to find where it went instead of guessing.
   const url = new URL(req.url);
-  const tab = url.searchParams.get('tab') || 'By campaign';
+  const tab = url.searchParams.get('tab') || '';
   try {
     out.probedTab = tab;
-    out.wideProbe = await probeShopifyWide(tab);
+    out.wideProbe = await probeShopifyWide(tab || undefined);
   } catch (err) {
     out.wideProbe = { error: err instanceof Error ? err.message : 'Unknown error' };
   }
