@@ -41,6 +41,7 @@ import { ChannelSplitChart } from './ChannelSplitChart';
 import { DailyTrendChart } from './DailyTrendChart';
 import { TopCountriesChart } from './TopCountriesChart';
 import { CategoryShareDonut } from './CategoryShareDonut';
+import { CategoryCpiStrip } from './CategoryCpiStrip';
 import { TopVolumeMovers } from './TopVolumeMovers';
 import { TopContributors } from './TopContributors';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -1049,6 +1050,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               }}
             />
           )}
+          {/* Tiền, đặt dưới vòng nhu cầu: cùng bộ category, hai phép đo khác nhau. */}
+          {!isLoading && <CategoryCpiStrip />}
         </SectionCard>
       </section>
 
