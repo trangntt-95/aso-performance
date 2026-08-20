@@ -1051,7 +1051,12 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             />
           )}
           {/* Tiền, đặt dưới vòng nhu cầu: cùng bộ category, hai phép đo khác nhau. */}
-          {!isLoading && <CategoryCpiStrip />}
+          {!isLoading && (
+            <CategoryCpiStrip
+              range={dateRange}
+              days={dateRange ? null : windowDays(window)}
+            />
+          )}
         </SectionCard>
       </section>
 

@@ -89,19 +89,82 @@ export interface CategoryCpiReport {
 /** Installs below this make a CPI a sample, not a rate. */
 const RELIABLE_INSTALLS = 3;
 
-export function buildCategoryCpi(data: SheetPayload | null | undefined): CategoryCpiReport | null {
-  const camps: ShopifyCampRow[] = data?.shopifyCamps ?? [];
+export interface CategoryCpiOptions {
+  /** Explicit day range, inclusive. Rolls up the per-day feed instead of using
+   *  the precomputed L30 campaign totals. */
+  range?: { from: string; to: string } | null;
+  /** Trailing window in days, anchored to the newest day the per-day feed HAS.
+   *  Ignored when `range` is given. Anchoring to the data rather than to today
+   *  matters because the export lands a day or two behind. */
+  days?: number | null;
+}
+
+/** Campaign totals for a range, summed from the per-day feed. */
+function campsForRange(
+  data: SheetPayload,
+  opts: CategoryCpiOptions,
+): { camps: ShopifyCampRow[]; range: string } | null {
+  const daily = data.shopifyDaily ?? [];
+  if (daily.length === 0) return null;
+
+  let from = opts.range?.from ?? '';
+  let to = opts.range?.to ?? '';
+  if (!from || !to) {
+    if (!opts.days) return null;
+    let last = '';
+    for (const r of daily) if (r.date > last) last = r.date;
+    if (!last) return null;
+    const anchor = new Date(`${last}T00:00:00Z`);
+    anchor.setUTCDate(anchor.getUTCDate() - (opts.days - 1));
+    from = anchor.toISOString().slice(0, 10);
+    to = last;
+  }
+
+  const acc = new Map<string, ShopifyCampRow>();
+  let seenFrom = '';
+  let seenTo = '';
+  for (const r of daily) {
+    if (r.date < from || r.date > to) continue;
+    if (!seenFrom || r.date < seenFrom) seenFrom = r.date;
+    if (r.date > seenTo) seenTo = r.date;
+    const e = acc.get(r.camp) ?? { camp: r.camp, impressions: 0, clicks: 0, installs: 0, spend: 0 };
+    e.impressions += r.impressions;
+    e.clicks += r.clicks;
+    e.installs += r.installs;
+    e.spend += r.spend;
+    acc.set(r.camp, e);
+  }
+  if (acc.size === 0) return null;
+  const dmy = (iso: string) => {
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  };
+  // Report the days actually PRESENT, not the days asked for — a range whose
+  // tail has no export yet would otherwise read as covered.
+  return { camps: Array.from(acc.values()), range: `${dmy(seenFrom)} → ${dmy(seenTo)}` };
+}
+
+export function buildCategoryCpi(
+  data: SheetPayload | null | undefined,
+  opts: CategoryCpiOptions = {},
+): CategoryCpiReport | null {
+  if (!data) return null;
+  // A requested range rolls up the per-day feed; with no range the precomputed
+  // L30 campaign totals are used as before.
+  const scoped = opts.range || opts.days ? campsForRange(data, opts) : null;
+  const camps: ShopifyCampRow[] = scoped ? scoped.camps : (data.shopifyCamps ?? []);
+  const rangeLabel = scoped ? scoped.range : (data.shopifyDateRange ?? '');
   if (camps.length === 0) return null;
 
   const key = (s: string) => normalizeCampName(s).toLowerCase();
 
   // Camp_Links is the record of what a campaign is; Master KW Lookup fills gaps.
   const byCamp = new Map<string, string>();
-  for (const c of data?.campLinks ?? []) {
+  for (const c of data.campLinks ?? []) {
     const k = key(c.camp);
     if (k && c.category) byCamp.set(k, String(c.category).trim());
   }
-  for (const r of data?.masterKwLookup ?? []) {
+  for (const r of data.masterKwLookup ?? []) {
     const k = key(r.camp);
     if (k && r.category && !byCamp.has(k)) byCamp.set(k, String(r.category).trim());
   }
@@ -150,7 +213,7 @@ export function buildCategoryCpi(data: SheetPayload | null | undefined): Categor
   // The per-category yardsticks from 'Max bid cap'. Averaged across that
   // category's Country × Category cells, since the cap is set per cell.
   const capAcc = new Map<string, { cap: number[]; rec: number[] }>();
-  for (const r of (data?.bidCap ?? []) as BidCapRow[]) {
+  for (const r of (data.bidCap ?? []) as BidCapRow[]) {
     const cat = r.category?.trim();
     if (!cat) continue;
     const e = capAcc.get(cat) ?? { cap: [], rec: [] };
@@ -201,6 +264,6 @@ export function buildCategoryCpi(data: SheetPayload | null | undefined): Categor
     cpi: totalInstalls > 0 ? totalSpend / totalInstalls : null,
     unknownSpend: rows.filter((r) => r.category.startsWith('(')).reduce((s, r) => s + r.spend, 0),
     inferredCamps,
-    range: data?.shopifyDateRange ?? '',
+    range: rangeLabel,
   };
 }

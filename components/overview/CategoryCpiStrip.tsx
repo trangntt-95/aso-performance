@@ -20,9 +20,17 @@ import { cn } from '@/lib/utils';
 
 const money = (n: number) => `$${formatNumber(Math.round(n))}`;
 
-export function CategoryCpiStrip() {
+export function CategoryCpiStrip({
+  range,
+  days,
+}: {
+  /** Page-level date filter, when one is active. */
+  range?: { from: string; to: string } | null;
+  /** Otherwise the page's window, in days. */
+  days?: number | null;
+}) {
   const { data } = useSheetData();
-  const report = useMemo(() => buildCategoryCpi(data), [data]);
+  const report = useMemo(() => buildCategoryCpi(data, { range, days }), [data, range, days]);
   if (!report || report.rows.length === 0) return null;
 
   const max = report.rows.reduce((m, r) => Math.max(m, r.spend), 0);
@@ -86,6 +94,8 @@ export function CategoryCpiStrip() {
         <b>nhu cầu</b> (users/install từ GA4, cả organic và paid); dòng này là <b>tiền</b> — một category chiếm nhiều
         nhu cầu mà ít chi phí, hoặc ngược lại, chính là chỗ đáng xem.
         {' '}<b>★</b> = dưới 3 install, CPI đó chỉ là một mẫu. Đối chiếu với trần CPI nằm ở tab Bid Recommendations.
+        {' '}Khoảng ngày ghi ở trên là khoảng <b>thật sự có dữ liệu</b> export, không phải khoảng bạn chọn — export
+        Shopify Ads thường về sau 1–2 ngày.
       </div>
     </div>
   );
