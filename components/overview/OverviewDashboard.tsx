@@ -1053,8 +1053,13 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           {/* Tiền, đặt dưới vòng nhu cầu: cùng bộ category, hai phép đo khác nhau. */}
           {!isLoading && (
             <CategoryCpiStrip
-              range={dateRange}
-              days={dateRange ? null : windowDays(window)}
+              // The SAME days the rest of the page is using. Each window's real
+              // range is published per tab (windowDates), so L14 here means
+              // exactly the 14 days L14 means everywhere else — deriving it from
+              // a day count would anchor to the Shopify export's own last date
+              // instead, and the two feeds don't always end on the same day.
+              range={dateRange ?? data?.windowDates?.[window] ?? null}
+              days={dateRange || data?.windowDates?.[window] ? null : windowDays(window)}
             />
           )}
         </SectionCard>

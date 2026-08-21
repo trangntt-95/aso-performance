@@ -41,9 +41,23 @@ export function CategoryCpiStrip({
         <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
           Chi phí paid theo category
         </div>
+        {/* Written as the division it is. "CPI chung" read as if it were the
+            average of the rows below, which it isn't — it's weighted by spend,
+            so the biggest spender dominates it. */}
         <div className="text-[10px] text-slate-500">
-          {money(report.totalSpend)} · {report.totalInstalls} install
-          {report.cpi !== null && ` · CPI chung $${report.cpi.toFixed(2)}`}
+          {report.cpi !== null ? (
+            <span
+              className="cursor-help"
+              title={`Tổng chi ÷ tổng install của mọi category. KHÔNG phải trung bình các CPI ở dưới: con số này có trọng số theo chi phí, nên category tiêu nhiều nhất chi phối nó.`}
+            >
+              {money(report.totalSpend)} ÷ {report.totalInstalls} install ={' '}
+              <b className="text-slate-700">${report.cpi.toFixed(2)}</b>/install
+            </span>
+          ) : (
+            <>
+              {money(report.totalSpend)} · chưa có install
+            </>
+          )}
           {report.range && ` · ${report.range}`}
         </div>
       </div>
@@ -94,8 +108,9 @@ export function CategoryCpiStrip({
         <b>nhu cầu</b> (users/install từ GA4, cả organic và paid); dòng này là <b>tiền</b> — một category chiếm nhiều
         nhu cầu mà ít chi phí, hoặc ngược lại, chính là chỗ đáng xem.
         {' '}<b>★</b> = dưới 3 install, CPI đó chỉ là một mẫu. Đối chiếu với trần CPI nằm ở tab Bid Recommendations.
-        {' '}Khoảng ngày ghi ở trên là khoảng <b>thật sự có dữ liệu</b> export, không phải khoảng bạn chọn — export
-        Shopify Ads thường về sau 1–2 ngày.
+        {' '}Khoảng ngày ghi ở trên là khoảng <b>thật sự có dữ liệu</b> export nằm trong window/ngày bạn đang chọn —
+        không phải khoảng bạn yêu cầu. Export Shopify Ads thường về sau 1–2 ngày, nên đuôi của khoảng có thể còn trống;
+        ghi theo khoảng yêu cầu sẽ đọc thành đã phủ đủ.
       </div>
     </div>
   );

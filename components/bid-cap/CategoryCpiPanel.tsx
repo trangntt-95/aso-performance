@@ -170,9 +170,9 @@ export function CategoryCpiPanel() {
   return (
     <CapSection
       title="CPI theo category"
-      summary={`${report.rows.length} category · ${money(report.totalSpend)} · CPI chung ${money2(report.cpi)}${
-        report.range ? ` · ${report.range}` : ''
-      }`}
+      summary={`${report.rows.length} category · ${money(report.totalSpend)} ÷ ${report.totalInstalls} install = ${money2(
+        report.cpi,
+      )}/install${report.range ? ` · ${report.range}` : ''}`}
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <CapStat<Lens>
@@ -194,7 +194,15 @@ export function CategoryCpiPanel() {
           onPick={pick}
         />
         <CapStat label="Tổng chi" value={money(report.totalSpend)} sub={`${report.totalInstalls} install`} />
-        <CapStat label="CPI chung" value={money2(report.cpi)} sub="mọi category cộng lại" />
+        {/* Spelled out as a division: "CPI chung" was read as the average of the
+            rows below, but it is weighted by spend and so tracks the biggest
+            spender, not the middle category. */}
+        <CapStat
+          label="CPI toàn bộ"
+          value={money2(report.cpi)}
+          sub={`${money(report.totalSpend)} ÷ ${report.totalInstalls} install`}
+          title="Tổng chi ÷ tổng install của mọi category. KHÔNG phải trung bình các CPI trong bảng: có trọng số theo chi phí, nên category tiêu nhiều nhất chi phối nó."
+        />
       </div>
 
       <div className="flex items-center gap-2">
