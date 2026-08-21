@@ -96,6 +96,20 @@ export interface SearchTermRow {
   cpc: number | null;
   /** Matched but never added as a keyword — the actionable ones. */
   notAdded: boolean;
+  /** Which campaign + ad group served it, biggest spender first.
+   *
+   *  This is the whole point of keeping the breakdown: for a term that ISN'T a
+   *  keyword (status NONE), the ad group named here is the one whose broad or
+   *  phrase keyword matched it. Nothing else in the data says where a
+   *  broad-matched query came from, and collapsing the term across campaigns
+   *  threw that away. */
+  sources: {
+    campaign: string;
+    adgroup: string;
+    clicks: number;
+    cost: number;
+    impressions: number;
+  }[];
 }
 
 export interface DailyPoint {
@@ -278,11 +292,21 @@ export function buildGoogleAdsReport(p: GoogleAdsPayload): GoogleAdsReport | nul
     .filter((x): x is DestinationSplit => x !== null && (x.clicks > 0 || x.cost > 0));
 
   // Search terms, collapsed across days.
-  interface TermAcc { status: string; impressions: number; clicks: number; cost: number; conversions: number }
+  interface TermAcc {
+    status: string;
+    impressions: number;
+    clicks: number;
+    cost: number;
+    conversions: number;
+    /** campaign||adgroup → its share of this term. */
+    src: Map<string, { campaign: string; adgroup: string; clicks: number; cost: number; impressions: number }>;
+  }
   const byTerm = new Map<string, TermAcc>();
   for (const t of p.searchTerms) {
     const key = t.searchTerm.toLowerCase();
-    const e = byTerm.get(key) ?? { status: t.termStatus, impressions: 0, clicks: 0, cost: 0, conversions: 0 };
+    const e =
+      byTerm.get(key) ??
+      { status: t.termStatus, impressions: 0, clicks: 0, cost: 0, conversions: 0, src: new Map() };
     // NONE = matched but not in the account; that's the status worth surfacing,
     // so it wins over ADDED when a term shows both across days.
     if (t.termStatus === 'NONE') e.status = 'NONE';
@@ -290,6 +314,16 @@ export function buildGoogleAdsReport(p: GoogleAdsPayload): GoogleAdsReport | nul
     e.clicks += t.clicks;
     e.cost += t.cost;
     e.conversions += t.conversions;
+    if (t.campaignName) {
+      const sk = `${t.campaignName}||${t.adgroupName}`;
+      const sv =
+        e.src.get(sk) ??
+        { campaign: t.campaignName, adgroup: t.adgroupName, clicks: 0, cost: 0, impressions: 0 };
+      sv.clicks += t.clicks;
+      sv.cost += t.cost;
+      sv.impressions += t.impressions;
+      e.src.set(sk, sv);
+    }
     byTerm.set(key, e);
   }
   const searchTerms: SearchTermRow[] = Array.from(byTerm.entries())
@@ -302,6 +336,9 @@ export function buildGoogleAdsReport(p: GoogleAdsPayload): GoogleAdsReport | nul
       conversions: e.conversions,
       cpc: e.clicks > 0 ? e.cost / e.clicks : null,
       notAdded: e.status === 'NONE',
+      sources: Array.from(e.src.values()).sort(
+        (x, y) => y.cost - x.cost || y.clicks - x.clicks || y.impressions - x.impressions,
+      ),
     }))
     .sort((a, b) => b.cost - a.cost || b.clicks - a.clicks);
 

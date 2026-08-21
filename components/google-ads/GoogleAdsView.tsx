@@ -494,6 +494,9 @@ export function GoogleAdsView() {
               <th className="px-2 py-2 text-right font-medium">Clicks</th>
               <th className="px-2 py-2 text-right font-medium">CPC</th>
               <th className="px-2 py-2 text-right font-medium">Imp</th>
+              <th className="px-2 py-2 text-left font-medium" title="Campaign / ad group đã phục vụ cụm này. Với cụm 'chưa thêm', đây chính là ad group có keyword broad hoặc phrase khớp ra nó.">
+                Đến từ đâu
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -520,13 +523,45 @@ export function GoogleAdsView() {
                   {money(s.cpc, { compact: true })}
                 </td>
                 <td className="px-2 py-1.5 text-right font-mono text-[11px] text-slate-500">{formatNumber(s.impressions)}</td>
+                <td className="max-w-[22rem] px-2 py-1.5">
+                  {s.sources.length === 0 ? (
+                    <span className="text-[10px] text-slate-300">—</span>
+                  ) : (
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-slate-700" title={s.sources[0].campaign}>
+                        {s.sources[0].campaign}
+                      </div>
+                      <div className="text-[9px] text-slate-400">
+                        {s.sources[0].adgroup || '(không rõ ad group)'}
+                        {s.sources.length > 1 && (
+                          <span
+                            className="ml-1 cursor-help text-amber-600"
+                            title={s.sources
+                              .slice(1)
+                              .map((x) => `${x.campaign} / ${x.adgroup} — ${x.clicks} click`)
+                              .join('\n')}
+                          >
+                            +{s.sources.length - 1} nơi khác
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <div className="border-t px-3 py-2 text-[10px] text-slate-400">
-          <b>chưa thêm</b> = cụm người dùng thật sự gõ, quảng cáo có hiện, nhưng chưa nằm trong danh sách keyword. Đây là
-          chỗ để quyết định: thêm làm keyword, hay thêm negative.
+        <div className="space-y-1 border-t px-3 py-2 text-[10px] leading-snug text-slate-400">
+          <div>
+            <b>chưa thêm</b> = cụm người dùng thật sự gõ, quảng cáo có hiện, nhưng chưa nằm trong danh sách keyword. Đây
+            là chỗ để quyết định: thêm làm keyword, hay thêm negative.
+          </div>
+          <div>
+            Cột <b>Đến từ đâu</b> là campaign / ad group đã phục vụ cụm đó — Google báo sẵn ở mức từng dòng, không phải
+            suy ra. Với cụm <b>chưa thêm</b>, ad group ghi ở đây chính là nơi có keyword <b>broad hoặc phrase</b> khớp ra
+            nó, tức là chỗ cần vào để thêm negative hoặc siết match type.
+          </div>
         </div>
       </div>
     </div>
