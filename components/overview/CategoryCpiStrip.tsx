@@ -103,15 +103,6 @@ export function CategoryCpiStrip({
         ))}
       </ul>
 
-      <div className="mt-2 text-[10px] leading-snug text-slate-400">
-        Mỗi camp thuộc <b>đúng một</b> category nên đây là phép cộng, không phải chia. Vòng tròn phía trên là{' '}
-        <b>nhu cầu</b> (users/install từ GA4, cả organic và paid); dòng này là <b>tiền</b> — một category chiếm nhiều
-        nhu cầu mà ít chi phí, hoặc ngược lại, chính là chỗ đáng xem.
-        {' '}<b>★</b> = dưới 3 install, CPI đó chỉ là một mẫu. Đối chiếu với trần CPI nằm ở tab Bid Recommendations.
-        {' '}Khoảng ngày ghi ở trên là khoảng <b>thật sự có dữ liệu</b> export nằm trong window/ngày bạn đang chọn —
-        không phải khoảng bạn yêu cầu. Export Shopify Ads thường về sau 1–2 ngày, nên đuôi của khoảng có thể còn trống;
-        ghi theo khoảng yêu cầu sẽ đọc thành đã phủ đủ.
-      </div>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Flame,
   HeartPulse,
+  History,
   Route,
   Megaphone,
   GripVertical,
@@ -43,6 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/install-origin', label: 'Nguồn Install', Icon: Route, shortLabel: 'Nguồn' },
   { href: '/google-ads', label: 'Google Ads', Icon: Megaphone, shortLabel: 'GAds' },
   { href: '/bid-cap', label: 'Bid Recommendations', Icon: DollarSign, shortLabel: 'Bids' },
+  { href: '/changelog', label: 'Change log', Icon: History, shortLabel: 'Log' },
 ];
 
 export function Sidebar() {

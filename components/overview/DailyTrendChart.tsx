@@ -28,6 +28,10 @@ interface Props {
   selectedTo?: string | null;
   /** Click a day to pin/unpin it → scopes the whole page to that single date. */
   onDateSelect?: (iso: string | null) => void;
+  /** Change-log entries to mark on the x axis. This is what turns a note from a
+   *  diary line into an explanation: a step in the curve lands next to the
+   *  decision that caused it, on the day the decision was made. */
+  markers?: { date: string; label: string }[];
 }
 
 type Metric = 'users' | 'getApp' | 'cr';
@@ -49,6 +53,7 @@ export function DailyTrendChart({
   selectedFrom,
   selectedTo,
   onDateSelect,
+  markers,
 }: Props) {
   const [metric, setMetric] = useState<Metric>('users');
   const [rangeDays, setRangeDays] = useState<number>(
@@ -277,6 +282,26 @@ export function DailyTrendChart({
                 />
               )
             )}
+            {/* Change-log markers. Rendered before the area so the curve stays
+                on top and the lines read as background annotation. */}
+            {(markers ?? [])
+              .filter((m) => chartData.some((d) => d.date === m.date))
+              .map((m) => (
+                <ReferenceLine
+                  key={`chg-${m.date}-${m.label.slice(0, 12)}`}
+                  x={m.date}
+                  stroke="#0f766e"
+                  strokeWidth={1}
+                  strokeDasharray="2 3"
+                  ifOverflow="extendDomain"
+                  label={{
+                    value: '◆',
+                    position: 'top',
+                    fill: '#0f766e',
+                    fontSize: 9,
+                  }}
+                />
+              ))}
             <Area
               type="monotone"
               dataKey={metric}

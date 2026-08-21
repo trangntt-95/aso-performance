@@ -49,6 +49,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatNumber, formatPercent, composeVerdict, verdictBadgeStyle } from '@/lib/utils/format';
 import { useCategoryDetailStore } from '@/lib/store/categoryDetailStore';
 import { useDashboardContext } from '@/lib/store/dashboardContextStore';
+import { useNotesStore } from '@/lib/store/notesStore';
+import { readChangelog } from '@/lib/store/changelog';
 import { cn } from '@/lib/utils';
 
 function CopyLinkButton({ onClick, copied }: { onClick: () => void; copied: boolean }) {
@@ -250,6 +252,22 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
   // ── Date mode (per-day / per-range snapshot from History_Daily) ──
   const availableDates = useMemo(() => availableDailyDates(data, filters), [data, filters]);
+
+  // Logged changes, marked on the daily trend. Loaded from the same notes store
+  // the rest of the app writes to, so a change typed on the Change log page shows
+  // up here without any extra wiring.
+  const notes = useNotesStore((s) => s.notes);
+  const noteTimes = useNotesStore((s) => s.updatedAt);
+  const notesLoaded = useNotesStore((s) => s.loaded);
+  const loadNotes = useNotesStore((s) => s.load);
+  useEffect(() => {
+    if (!notesLoaded) void loadNotes();
+  }, [notesLoaded, loadNotes]);
+  const changeEntries = useMemo(() => readChangelog(notes, noteTimes), [notes, noteTimes]);
+  const changeMarkers = useMemo(
+    () => changeEntries.map((e) => ({ date: e.date, label: e.text })),
+    [changeEntries],
+  );
 
   // First day of the month containing the newest day that HAS data → that day.
   // Anchored to the data, not to today: the export lands a day or two behind, and
@@ -982,6 +1000,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             selectedFrom={dateRange?.from ?? null}
             selectedTo={dateRange?.to ?? null}
             onDateSelect={pinSingleDay}
+            markers={changeMarkers}
           />
         )}
       </SectionCard>
