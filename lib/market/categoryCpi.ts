@@ -70,6 +70,15 @@ export interface CategoryCpiRow {
   reliable: boolean;
   /** Campaigns in this category, biggest spender first — the drill-down. */
   topCamps: { camp: string; spend: number; installs: number; cpi: number | null }[];
+
+  /** Same figures for the equal-length period immediately before. */
+  installsPrev: number;
+  spendPrev: number;
+  cpiPrev: number | null;
+  /** Relative change vs that period. null when the prior period has no data —
+   *  never 0, since "no baseline" and "flat" are different answers. */
+  installDelta: number | null;
+  spendDelta: number | null;
 }
 
 export interface CategoryCpiReport {
@@ -92,6 +101,11 @@ export interface CategoryCpiReport {
    *  screen has to say this rather than vanish: an empty section reads as a bug,
    *  while "the export only goes to the 20th" is an answer. */
   rangeAheadOfData: boolean;
+  /** The comparison period, as displayed. Empty when there was none. */
+  prevRange: string;
+  /** False when the prior period held no data at all — deltas are then null and
+   *  the UI must not imply a comparison happened. */
+  hasPrev: boolean;
 }
 
 /** Installs below this make a CPI a sample, not a rate. */
@@ -112,13 +126,50 @@ const dmy = (iso: string) => {
   return `${d}/${m}/${y}`;
 };
 
+const shiftDays = (iso: string, n: number): string => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+const spanDays = (from: string, to: string): number =>
+  Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1;
+
+/** Campaign totals for one closed range, plus which days it actually covered. */
+function sumRange(
+  daily: SheetPayload['shopifyDaily'],
+  from: string,
+  to: string,
+): { camps: Map<string, ShopifyCampRow>; seenFrom: string; seenTo: string; days: number } {
+  const acc = new Map<string, ShopifyCampRow>();
+  const days = new Set<string>();
+  let seenFrom = '';
+  let seenTo = '';
+  for (const r of daily ?? []) {
+    if (r.date < from || r.date > to) continue;
+    days.add(r.date);
+    if (!seenFrom || r.date < seenFrom) seenFrom = r.date;
+    if (r.date > seenTo) seenTo = r.date;
+    const e = acc.get(r.camp) ?? { camp: r.camp, impressions: 0, clicks: 0, installs: 0, spend: 0 };
+    e.impressions += r.impressions;
+    e.clicks += r.clicks;
+    e.installs += r.installs;
+    e.spend += r.spend;
+    acc.set(r.camp, e);
+  }
+  return { camps: acc, seenFrom, seenTo, days: days.size };
+}
+
 /** Campaign totals for a range, summed from the per-day feed. */
 function campsForRange(
   data: SheetPayload,
   opts: CategoryCpiOptions,
 ): {
   camps: ShopifyCampRow[];
+  prev: Map<string, ShopifyCampRow>;
   range: string;
+  prevRange: string;
+  hasPrev: boolean;
   requestedRange: string;
   dataEndsAt: string;
   rangeAheadOfData: boolean;
@@ -141,37 +192,42 @@ function campsForRange(
   }
   const requestedRange = `${dmy(from)} → ${dmy(to)}`;
 
-  const acc = new Map<string, ShopifyCampRow>();
-  let seenFrom = '';
-  let seenTo = '';
-  for (const r of daily) {
-    if (r.date < from || r.date > to) continue;
-    if (!seenFrom || r.date < seenFrom) seenFrom = r.date;
-    if (r.date > seenTo) seenTo = r.date;
-    const e = acc.get(r.camp) ?? { camp: r.camp, impressions: 0, clicks: 0, installs: 0, spend: 0 };
-    e.impressions += r.impressions;
-    e.clicks += r.clicks;
-    e.installs += r.installs;
-    e.spend += r.spend;
-    acc.set(r.camp, e);
-  }
+  const cur = sumRange(daily, from, to);
+  const acc = cur.camps;
+  const seenFrom = cur.seenFrom;
+  const seenTo = cur.seenTo;
   if (acc.size === 0) {
     // Asked for days the export doesn't have yet. Returning null here made the
     // whole section disappear, which reads as a broken screen; the caller needs
     // enough to explain it instead.
     return {
       camps: [],
+      prev: new Map(),
       range: '',
+      prevRange: '',
+      hasPrev: false,
       requestedRange,
       dataEndsAt: dataEnds,
       rangeAheadOfData: !!dataEnds && from > dataEnds,
     };
   }
+
+  // The comparison period matches the days the CURRENT one actually covered, not
+  // the days it asked for. With the export four days behind, an L7 window covers
+  // 4 days; comparing those against a full 7-day baseline manufactures a drop
+  // that never happened — the same false-delta trap the date filter had.
+  const span = spanDays(seenFrom, seenTo);
+  const prevTo = shiftDays(seenFrom, -1);
+  const prevFrom = shiftDays(prevTo, -(span - 1));
+  const prior = sumRange(daily, prevFrom, prevTo);
   // Report the days actually PRESENT, not the days asked for — a range whose
   // tail has no export yet would otherwise read as covered.
   return {
     camps: Array.from(acc.values()),
+    prev: prior.camps,
     range: `${dmy(seenFrom)} → ${dmy(seenTo)}`,
+    prevRange: prior.days > 0 ? `${dmy(prevFrom)} → ${dmy(prevTo)}` : '',
+    hasPrev: prior.days > 0,
     requestedRange,
     dataEndsAt: dataEnds,
     rangeAheadOfData: false,
@@ -202,6 +258,8 @@ export function buildCategoryCpi(
         requestedRange: scoped.requestedRange,
         dataEndsAt: scoped.dataEndsAt,
         rangeAheadOfData: true,
+        prevRange: '',
+        hasPrev: false,
       };
     }
     return null;
@@ -232,22 +290,32 @@ export function buildCategoryCpi(
   const acc = new Map<string, Acc>();
   let inferredCamps = 0;
 
+  // Category of a campaign, resolved the same way for both periods so a camp
+  // can't land in one category now and another one before.
+  const categoryOf = (camp: string): { category: string; source: CategorySource } => {
+    const fromSheet = byCamp.get(key(camp));
+    if (fromSheet) return { category: fromSheet, source: 'sheet' };
+    const guess = categoryFromName(camp);
+    if (guess) return { category: guess, source: 'name' };
+    return { category: '(chưa rõ category)', source: 'unknown' };
+  };
+
+  // Prior period, rolled up to categories through the same resolver.
+  const prevByCat = new Map<string, { installs: number; spend: number }>();
+  if (scoped?.prev) {
+    scoped.prev.forEach((c) => {
+      const { category } = categoryOf(c.camp);
+      const e = prevByCat.get(category) ?? { installs: 0, spend: 0 };
+      e.installs += c.installs;
+      e.spend += c.spend;
+      prevByCat.set(category, e);
+    });
+  }
+
   for (const c of camps) {
     if (c.spend <= 0 && c.clicks <= 0 && c.impressions <= 0) continue;
-    let category = byCamp.get(key(c.camp));
-    let source: CategorySource = 'sheet';
-    if (!category) {
-      const guess = categoryFromName(c.camp);
-      if (guess) {
-        category = guess;
-        source = 'name';
-        inferredCamps += 1;
-      }
-    }
-    if (!category) {
-      category = '(chưa rõ category)';
-      source = 'unknown';
-    }
+    const { category, source } = categoryOf(c.camp);
+    if (source === 'name') inferredCamps += 1;
     const e =
       acc.get(category) ??
       { camps: 0, campsInferred: 0, impressions: 0, clicks: 0, installs: 0, spend: 0, members: [] };
@@ -276,7 +344,9 @@ export function buildCategoryCpi(
 
   const totalSpend = Array.from(acc.values()).reduce((s, e) => s + e.spend, 0);
   const rows: CategoryCpiRow[] = [];
+  const hasPrev = scoped?.hasPrev ?? false;
   acc.forEach((e, category) => {
+    const prev = prevByCat.get(category);
     const cpi = e.installs > 0 ? e.spend / e.installs : null;
     const cpc = e.clicks > 0 ? e.spend / e.clicks : null;
     const yard = capAcc.get(category);
@@ -299,6 +369,14 @@ export function buildCategoryCpi(
       vsCap: cpi !== null && cpiCap !== null && cpiCap > 0 ? cpi / cpiCap - 1 : null,
       vsBidRec: cpc !== null && bidRec !== null && bidRec > 0 ? cpc / bidRec - 1 : null,
       reliable: e.installs >= RELIABLE_INSTALLS,
+      installsPrev: prev?.installs ?? 0,
+      spendPrev: prev?.spend ?? 0,
+      cpiPrev: prev && prev.installs > 0 ? prev.spend / prev.installs : null,
+      // Null rather than 0 when there's no baseline: "nothing to compare" and
+      // "unchanged" are different statements and must not render alike.
+      installDelta:
+        hasPrev && prev && prev.installs > 0 ? (e.installs - prev.installs) / prev.installs : null,
+      spendDelta: hasPrev && prev && prev.spend > 0 ? (e.spend - prev.spend) / prev.spend : null,
       topCamps: e.members
         .sort((a, b) => b.spend - a.spend)
         .slice(0, 8)
@@ -319,5 +397,7 @@ export function buildCategoryCpi(
     requestedRange: scoped?.requestedRange ?? rangeLabel,
     dataEndsAt: scoped?.dataEndsAt ?? '',
     rangeAheadOfData: false,
+    prevRange: scoped?.prevRange ?? '',
+    hasPrev,
   };
 }

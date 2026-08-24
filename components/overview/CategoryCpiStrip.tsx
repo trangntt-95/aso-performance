@@ -20,6 +20,20 @@ import { cn } from '@/lib/utils';
 
 const money = (n: number) => `$${formatNumber(Math.round(n))}`;
 
+/** Signed change, or an em dash when there's no baseline to compare against. */
+const delta = (v: number | null) =>
+  v === null ? '—' : `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%`;
+
+/** Spend and installs moving the SAME way is normal; moving apart is the signal.
+ *  Colour follows installs, since that's the outcome — but the pair is what the
+ *  reader is being pointed at, so both are shown together. */
+function deltaTone(installDelta: number | null): string {
+  if (installDelta === null) return 'text-slate-300';
+  if (installDelta > 0.05) return 'text-emerald-600';
+  if (installDelta < -0.05) return 'text-rose-600';
+  return 'text-slate-400';
+}
+
 export function CategoryCpiStrip({
   range,
   days,
@@ -77,6 +91,11 @@ export function CategoryCpiStrip({
             </>
           )}
           {report.range && ` · ${report.range}`}
+          {report.hasPrev && report.prevRange && (
+            <span className="cursor-help text-slate-400" title={`Kỳ so sánh: ${report.prevRange}`}>
+              {' '}· vs {report.prevRange}
+            </span>
+          )}
         </div>
       </div>
 
@@ -100,6 +119,32 @@ export function CategoryCpiStrip({
             </span>
             <span className="w-12 shrink-0 text-right font-mono tabular-nums text-slate-500">
               {r.installs || '—'} ins
+            </span>
+            {/* Install vs the equal-length period before, with spend's own move in
+                the tooltip: chi tăng mà install không theo là chỗ đáng xem. */}
+            <span
+              className={cn('w-20 shrink-0 text-right font-mono tabular-nums', deltaTone(r.installDelta))}
+              title={
+                report.hasPrev
+                  ? `Install ${r.installsPrev} → ${r.installs} (${delta(r.installDelta)})` +
+                    `\nChi ${money(r.spendPrev)} → ${money(r.spend)} (${delta(r.spendDelta)})` +
+                    `\nCPI ${r.cpiPrev === null ? '—' : `$${r.cpiPrev.toFixed(2)}`} → ${
+                      r.cpi === null ? '—' : `$${r.cpi.toFixed(2)}`
+                    }` +
+                    `\nKỳ so sánh: ${report.prevRange}`
+                  : 'Kỳ trước không có dữ liệu nên chưa so được.'
+              }
+            >
+              {r.installDelta === null ? (
+                <span className="text-slate-300">—</span>
+              ) : (
+                <>
+                  {delta(r.installDelta)}
+                  <span className="ml-1 text-[9px] font-normal text-slate-400">
+                    {r.installsPrev}→{r.installs}
+                  </span>
+                </>
+              )}
             </span>
             <span
               className={cn(
