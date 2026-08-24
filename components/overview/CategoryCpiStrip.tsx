@@ -37,11 +37,22 @@ function deltaTone(installDelta: number | null): string {
 export function CategoryCpiStrip({
   range,
   days,
+  activeCategory,
+  onCategoryClick,
+  unsupportedFilters,
 }: {
   /** Page-level date filter, when one is active. */
   range?: { from: string; to: string } | null;
   /** Otherwise the page's window, in days. */
   days?: number | null;
+  /** Category the whole page is focused on, so this strip agrees with it. */
+  activeCategory?: string | null;
+  /** Click a row to focus that category page-wide (click again to clear). */
+  onCategoryClick?: (category: string) => void;
+  /** Page filters this strip CANNOT apply, named so the numbers aren't read as
+   *  filtered. Campaign spend has no country / keyword / surface breakdown —
+   *  money exists per campaign per day and nothing splits it further. */
+  unsupportedFilters?: string[];
 }) {
   const { data } = useSheetData();
   const report = useMemo(() => buildCategoryCpi(data, { range, days }), [data, range, days]);
@@ -65,7 +76,10 @@ export function CategoryCpiStrip({
   }
   if (report.rows.length === 0) return null;
 
+  // A page-level category focus dims the others rather than hiding them: the
+  // share of spend only means something against the full set.
   const max = report.rows.reduce((m, r) => Math.max(m, r.spend), 0);
+  const focused = (c: string) => !activeCategory || c === activeCategory;
 
   return (
     <div className="mt-3 border-t border-slate-200 pt-3">
@@ -99,10 +113,34 @@ export function CategoryCpiStrip({
         </div>
       </div>
 
+      {unsupportedFilters && unsupportedFilters.length > 0 && (
+        <div className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] leading-snug text-amber-900">
+          Chưa lọc theo {unsupportedFilters.join(' / ')} — chi tiêu chỉ tồn tại ở mức camp theo ngày, không có chiều đó
+          để tách. Số dưới đây là <b>toàn bộ</b> trong khoảng ngày đang chọn.
+        </div>
+      )}
+
       <ul className="mt-2 space-y-1.5">
-        {report.rows.map((r) => (
-          <li key={r.category} className="flex items-center gap-2 text-[11px]">
-            <span className="w-28 shrink-0 truncate text-slate-700" title={r.category}>
+        {report.rows.map((r) => {
+          const isActive = activeCategory === r.category;
+          const dim = !focused(r.category);
+          const clickable = !!onCategoryClick && !r.category.startsWith('(');
+          return (
+          <li
+            key={r.category}
+            onClick={clickable ? () => onCategoryClick!(r.category) : undefined}
+            className={cn(
+              'flex items-center gap-2 rounded text-[11px] transition',
+              clickable && 'cursor-pointer hover:bg-slate-50',
+              isActive && 'bg-indigo-50/70 ring-1 ring-indigo-200',
+              dim && 'opacity-40',
+            )}
+            title={clickable ? `Bấm để lọc cả trang theo category ${r.category}` : undefined}
+          >
+            <span
+              className={cn('w-28 shrink-0 truncate', isActive ? 'font-semibold text-indigo-800' : 'text-slate-700')}
+              title={r.category}
+            >
               {r.category}
             </span>
             <div className="relative h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100">
@@ -151,19 +189,13 @@ export function CategoryCpiStrip({
                 'w-16 shrink-0 text-right font-mono tabular-nums font-semibold',
                 r.vsCap !== null && r.vsCap > 0 ? 'text-rose-600' : 'text-slate-800',
               )}
-              title={
-                r.cpi === null
-                  ? 'Chưa có install nào để tính CPI'
-                  : r.reliable
-                    ? undefined
-                    : `Chỉ ${r.installs} install — con số này là một mẫu, chưa phải tỷ lệ.`
-              }
+              title={r.cpi === null ? 'Chưa có install nào để tính CPI' : undefined}
             >
               {r.cpi === null ? '—' : `$${r.cpi.toFixed(2)}`}
-              {r.cpi !== null && !r.reliable && <span className="font-normal text-slate-400">★</span>}
             </span>
           </li>
-        ))}
+          );
+        })}
       </ul>
 
     </div>

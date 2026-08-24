@@ -35,6 +35,18 @@ export interface ChannelStats {
   cpiUsd: number | null;
   /** What "install" means for this channel — shown next to the number. */
   installBasis: string;
+
+  /** Same figures for the equal-length period immediately before. */
+  prevSpendUsd: number | null;
+  prevClicks: number;
+  prevInstalls: number;
+  prevCpiUsd: number | null;
+  /** Relative change vs that period. null when the prior period held nothing —
+   *  never 0, since "no baseline" and "flat" are different statements. */
+  spendDelta: number | null;
+  clicksDelta: number | null;
+  installsDelta: number | null;
+  cpiDelta: number | null;
 }
 
 export interface ChannelComparison {
@@ -50,6 +62,11 @@ export interface ChannelComparison {
   availableTo: string;
   /** True when a page-level date filter is what emptied the comparison. */
   clippedByFilter: boolean;
+  /** The comparison period, or empty when there wasn't one. */
+  prevFrom: string;
+  prevTo: string;
+  /** False when the prior period held no data on either channel. */
+  hasPrev: boolean;
 }
 
 export function compareChannels(
@@ -81,6 +98,9 @@ export function compareChannels(
       days: 0,
       channels: [],
       noOverlap: true,
+      prevFrom: '',
+      prevTo: '',
+      hasPrev: false,
       availableFrom,
       availableTo,
       // Distinguish "the two exports share no days" from "you filtered to days
@@ -90,6 +110,45 @@ export function compareChannels(
   }
   const inRange = (d: string) => d >= from && d <= to;
   const days = new Set<string>();
+
+  // The comparison period matches the days this one actually spans, not the days
+  // the filter asked for. With one export lagging, an L7 window can cover 4 days;
+  // measuring those against a 7-day baseline invents a drop.
+  const shift = (iso: string, n: number) => {
+    const d = new Date(`${iso}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  const span = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1;
+  const prevTo = shift(from, -1);
+  const prevFrom = shift(prevTo, -(span - 1));
+  const inPrev = (d: string) => d >= prevFrom && d <= prevTo;
+  const prevDays = new Set<string>();
+
+  let psSpend = 0, psClicks = 0, psInstalls = 0;
+  for (const r of shopify) {
+    if (!inPrev(r.date)) continue;
+    prevDays.add(r.date);
+    psSpend += r.spend;
+    psClicks += r.clicks;
+    psInstalls += r.installs;
+  }
+  let pgSpend = 0, pgClicks = 0;
+  for (const c of g.campaigns) {
+    if (!inPrev(c.date)) continue;
+    prevDays.add(c.date);
+    pgSpend += c.cost;
+    pgClicks += c.clicks;
+  }
+  let pgInstalls = 0;
+  for (const a of g.convActions) {
+    if (!inPrev(a.date)) continue;
+    if (isInstallAction(a.actionName)) pgInstalls += a.conversions;
+  }
+  const hasPrev = prevDays.size > 0;
+  /** Relative change, or null when there is no baseline to divide by. */
+  const rel = (cur: number, prev: number): number | null =>
+    hasPrev && prev > 0 ? (cur - prev) / prev : null;
 
   let sSpend = 0, sClicks = 0, sImp = 0, sInstalls = 0;
   for (const r of shopify) {
@@ -132,6 +191,17 @@ export function compareChannels(
       cpc: sClicks > 0 ? sSpend / sClicks : null,
       cpiUsd: sInstalls > 0 ? sSpend / sInstalls : null,
       installBasis: 'Install ghi nhận trong export Shopify Ads.',
+      prevSpendUsd: hasPrev ? psSpend : null,
+      prevClicks: psClicks,
+      prevInstalls: psInstalls,
+      prevCpiUsd: psInstalls > 0 ? psSpend / psInstalls : null,
+      spendDelta: rel(sSpend, psSpend),
+      clicksDelta: rel(sClicks, psClicks),
+      installsDelta: rel(sInstalls, psInstalls),
+      cpiDelta:
+        hasPrev && psInstalls > 0 && sInstalls > 0
+          ? sSpend / sInstalls / (psSpend / psInstalls) - 1
+          : null,
     },
     {
       key: 'google',
@@ -145,11 +215,30 @@ export function compareChannels(
       cpc: gClicks > 0 ? gSpend / gClicks : null,
       cpiUsd: gUsd !== null && gInstalls > 0 ? gUsd / gInstalls : null,
       installBasis: 'Chỉ hành động install (app_install / shopify_app_install), không phải tổng conversions.',
+      prevSpendUsd: hasPrev ? toUsd(pgSpend, gCur) : null,
+      prevClicks: pgClicks,
+      prevInstalls: pgInstalls,
+      prevCpiUsd: (() => {
+        const u = toUsd(pgSpend, gCur);
+        return u !== null && pgInstalls > 0 ? u / pgInstalls : null;
+      })(),
+      spendDelta: rel(gSpend, pgSpend),
+      clicksDelta: rel(gClicks, pgClicks),
+      installsDelta: rel(gInstalls, pgInstalls),
+      cpiDelta: (() => {
+        const cu = gUsd !== null && gInstalls > 0 ? gUsd / gInstalls : null;
+        const pu = toUsd(pgSpend, gCur);
+        const pc = pu !== null && pgInstalls > 0 ? pu / pgInstalls : null;
+        return hasPrev && cu !== null && pc !== null && pc > 0 ? cu / pc - 1 : null;
+      })(),
     },
   ];
 
   const dayList = Array.from(days).sort();
   return {
+    prevFrom: hasPrev ? prevFrom : '',
+    prevTo: hasPrev ? prevTo : '',
+    hasPrev,
     from,
     to,
     days: dayList.length,

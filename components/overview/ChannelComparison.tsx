@@ -15,6 +15,26 @@ import { cn } from '@/lib/utils';
 
 const usd = (n: number | null) => (n === null ? '—' : `$${formatNumber(Math.round(n))}`);
 
+/** Signed change vs the prior period, or nothing when there's no baseline. */
+function Delta({ v, invert, title }: { v: number | null; invert?: boolean; title?: string }) {
+  if (v === null) return <span className="text-[9px] text-slate-300">—</span>;
+  // For cost-style metrics (CPI) a rise is bad, so the tone flips.
+  const good = invert ? v < 0 : v > 0;
+  const flat = Math.abs(v) < 0.05;
+  return (
+    <span
+      className={cn(
+        'text-[9px] font-medium',
+        flat ? 'text-slate-400' : good ? 'text-emerald-600' : 'text-rose-600',
+      )}
+      title={title}
+    >
+      {v >= 0 ? '+' : ''}
+      {Math.round(v * 100)}%
+    </span>
+  );
+}
+
 export function ChannelComparisonCard({ data }: { data: Comparison }) {
   if (data.noOverlap || data.channels.length === 0) {
     return (
@@ -25,7 +45,6 @@ export function ChannelComparisonCard({ data }: { data: Comparison }) {
   }
 
   const totalUsd = data.channels.reduce((s, c) => s + (c.spendUsd ?? 0), 0);
-  const totalClicks = data.channels.reduce((s, c) => s + c.clicks, 0);
   const best = data.channels
     .filter((c) => c.cpiUsd !== null)
     .sort((a, b) => (a.cpiUsd as number) - (b.cpiUsd as number))[0];
@@ -34,6 +53,14 @@ export function ChannelComparisonCard({ data }: { data: Comparison }) {
     <div className="space-y-2">
       <div className="text-[11px] text-slate-500" title={`Khoảng mà cả hai kênh đều có dữ liệu. ${FX_NOTE}`}>
         {data.from} → {data.to} · {data.days} ngày · {VND_PER_USD.toLocaleString('vi-VN')}₫ = $1
+        {data.hasPrev && (
+          <span
+            className="cursor-help text-slate-400"
+            title="Kỳ so sánh khớp số ngày mà kỳ này thật sự phủ, không phải số ngày yêu cầu — một export trễ sẽ tạo ra cú giảm giả nếu so với baseline dài hơn."
+          >
+            {' '}· vs {data.prevFrom} → {data.prevTo}
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -58,6 +85,10 @@ export function ChannelComparisonCard({ data }: { data: Comparison }) {
                       {Math.round(c.spendNative).toLocaleString('vi-VN')}₫
                     </div>
                   )}
+                  <div className="text-[9px] text-slate-400">
+                    <Delta v={c.spendDelta} title={`Kỳ trước: ${usd(c.prevSpendUsd)}`} />
+                    {c.prevSpendUsd !== null && <span className="ml-1">vs {usd(c.prevSpendUsd)}</span>}
+                  </div>
                 </div>
                 <div>
                   <div className="text-[10px] text-slate-500">CPI</div>
@@ -69,13 +100,17 @@ export function ChannelComparisonCard({ data }: { data: Comparison }) {
                   >
                     {c.cpiUsd === null ? '—' : `$${c.cpiUsd.toFixed(2)}`}
                   </div>
-                  <div className="text-[9px] text-slate-400">{isBest ? 'rẻ hơn' : 'chi phí / install'}</div>
+                  <div className="text-[9px] text-slate-400">
+                    <Delta v={c.cpiDelta} invert title={`Kỳ trước: ${usd(c.prevCpiUsd)}`} />
+                    {c.prevCpiUsd !== null && <span className="ml-1">vs {usd(c.prevCpiUsd)}</span>}
+                  </div>
                 </div>
                 <div>
                   <div className="text-[10px] text-slate-500">Clicks</div>
                   <div className="font-mono text-sm text-slate-800">{formatNumber(c.clicks)}</div>
                   <div className="text-[9px] text-slate-400">
-                    {totalClicks > 0 ? formatPercent(c.clicks / totalClicks) : '—'} tổng click
+                    <Delta v={c.clicksDelta} title={`Kỳ trước: ${formatNumber(c.prevClicks)} click`} />
+                    <span className="ml-1">vs {formatNumber(c.prevClicks)}</span>
                   </div>
                 </div>
                 <div>
@@ -83,8 +118,12 @@ export function ChannelComparisonCard({ data }: { data: Comparison }) {
                   <div className="font-mono text-sm text-slate-800">
                     {c.installs % 1 === 0 ? c.installs : c.installs.toFixed(1)}
                   </div>
-                  <div className="cursor-help text-[9px] text-slate-400" title={c.installBasis}>
-                    ⓘ
+                  <div className="text-[9px] text-slate-400">
+                    <Delta v={c.installsDelta} title={`Kỳ trước: ${c.prevInstalls} install`} />
+                    <span className="ml-1">vs {c.prevInstalls}</span>
+                    <span className="ml-1 cursor-help" title={c.installBasis}>
+                      ⓘ
+                    </span>
                   </div>
                 </div>
               </div>
