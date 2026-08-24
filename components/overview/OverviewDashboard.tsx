@@ -361,9 +361,17 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
   // Paid channels side by side. Returns null until both sources have data, so
   // the section simply doesn't render on a dashboard without Google Ads wired up.
-  // Both channels are per-day, so unlike the window-based sections this one can
-  // and does honour the page's date filter.
-  const channelCompare = useMemo(() => compareChannels(data, dateRange), [data, dateRange]);
+  //
+  // Both channels are per-day, so this follows the page scope the same way the
+  // category spend does: a pinned range wins, otherwise the selected window's
+  // REAL dates (published per tab in windowDates) — passing only the pinned range
+  // meant picking L14 left this section on the full two-channel overlap, silently
+  // showing a different period from everything around it.
+  const channelRange = useMemo(
+    () => dateRange ?? data?.windowDates?.[window] ?? null,
+    [dateRange, data?.windowDates, window],
+  );
+  const channelCompare = useMemo(() => compareChannels(data, channelRange), [data, channelRange]);
 
   const openCategoryDetail = useCategoryDetailStore((s) => s.openCategory);
 
@@ -837,7 +845,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       >
         <div className="flex items-end justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">Channel mix · {kpiSuffix}</h2>
+            <h2 className="text-sm font-semibold text-slate-900">Shopify search · {kpiSuffix}</h2>
             <p className="text-[11px] text-slate-500">
             </p>
           </div>
