@@ -31,7 +31,25 @@ export function CategoryCpiStrip({
 }) {
   const { data } = useSheetData();
   const report = useMemo(() => buildCategoryCpi(data, { range, days }), [data, range, days]);
-  if (!report || report.rows.length === 0) return null;
+  if (!report) return null;
+
+  // The window is newer than the export. Saying so beats disappearing: an empty
+  // section reads as a bug, "the export only reaches the 20th" is an answer.
+  if (report.rangeAheadOfData) {
+    const ends = report.dataEndsAt ? report.dataEndsAt.split('-').reverse().join('/') : '?';
+    return (
+      <div className="mt-3 border-t border-slate-200 pt-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+          Chi phí paid theo category
+        </div>
+        <div className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-snug text-amber-900">
+          Khoảng đang chọn (<b>{report.requestedRange}</b>) nằm sau ngày mới nhất của export Shopify Ads (
+          <b>{ends}</b>), nên chưa có ngày nào để tính. Chọn window dài hơn, hoặc chạy lại export.
+        </div>
+      </div>
+    );
+  }
+  if (report.rows.length === 0) return null;
 
   const max = report.rows.reduce((m, r) => Math.max(m, r.spend), 0);
 

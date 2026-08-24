@@ -84,6 +84,14 @@ export interface CategoryCpiReport {
   inferredCamps: number;
   /** Date range of the underlying campaign totals. */
   range: string;
+  /** The range that was ASKED for, when it differs from what data exists for. */
+  requestedRange: string;
+  /** Newest day the per-day export actually has. */
+  dataEndsAt: string;
+  /** True when the requested window is entirely newer than the export. The
+   *  screen has to say this rather than vanish: an empty section reads as a bug,
+   *  while "the export only goes to the 20th" is an answer. */
+  rangeAheadOfData: boolean;
 }
 
 /** Installs below this make a CPI a sample, not a rate. */
@@ -99,26 +107,39 @@ export interface CategoryCpiOptions {
   days?: number | null;
 }
 
+const dmy = (iso: string) => {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+};
+
 /** Campaign totals for a range, summed from the per-day feed. */
 function campsForRange(
   data: SheetPayload,
   opts: CategoryCpiOptions,
-): { camps: ShopifyCampRow[]; range: string } | null {
+): {
+  camps: ShopifyCampRow[];
+  range: string;
+  requestedRange: string;
+  dataEndsAt: string;
+  rangeAheadOfData: boolean;
+} | null {
   const daily = data.shopifyDaily ?? [];
   if (daily.length === 0) return null;
+
+  let dataEnds = '';
+  for (const r of daily) if (r.date > dataEnds) dataEnds = r.date;
 
   let from = opts.range?.from ?? '';
   let to = opts.range?.to ?? '';
   if (!from || !to) {
     if (!opts.days) return null;
-    let last = '';
-    for (const r of daily) if (r.date > last) last = r.date;
-    if (!last) return null;
-    const anchor = new Date(`${last}T00:00:00Z`);
+    if (!dataEnds) return null;
+    const anchor = new Date(`${dataEnds}T00:00:00Z`);
     anchor.setUTCDate(anchor.getUTCDate() - (opts.days - 1));
     from = anchor.toISOString().slice(0, 10);
-    to = last;
+    to = dataEnds;
   }
+  const requestedRange = `${dmy(from)} → ${dmy(to)}`;
 
   const acc = new Map<string, ShopifyCampRow>();
   let seenFrom = '';
@@ -134,14 +155,27 @@ function campsForRange(
     e.spend += r.spend;
     acc.set(r.camp, e);
   }
-  if (acc.size === 0) return null;
-  const dmy = (iso: string) => {
-    const [y, m, d] = iso.split('-');
-    return `${d}/${m}/${y}`;
-  };
+  if (acc.size === 0) {
+    // Asked for days the export doesn't have yet. Returning null here made the
+    // whole section disappear, which reads as a broken screen; the caller needs
+    // enough to explain it instead.
+    return {
+      camps: [],
+      range: '',
+      requestedRange,
+      dataEndsAt: dataEnds,
+      rangeAheadOfData: !!dataEnds && from > dataEnds,
+    };
+  }
   // Report the days actually PRESENT, not the days asked for — a range whose
   // tail has no export yet would otherwise read as covered.
-  return { camps: Array.from(acc.values()), range: `${dmy(seenFrom)} → ${dmy(seenTo)}` };
+  return {
+    camps: Array.from(acc.values()),
+    range: `${dmy(seenFrom)} → ${dmy(seenTo)}`,
+    requestedRange,
+    dataEndsAt: dataEnds,
+    rangeAheadOfData: false,
+  };
 }
 
 export function buildCategoryCpi(
@@ -154,7 +188,24 @@ export function buildCategoryCpi(
   const scoped = opts.range || opts.days ? campsForRange(data, opts) : null;
   const camps: ShopifyCampRow[] = scoped ? scoped.camps : (data.shopifyCamps ?? []);
   const rangeLabel = scoped ? scoped.range : (data.shopifyDateRange ?? '');
-  if (camps.length === 0) return null;
+  if (camps.length === 0) {
+    // Empty because the window is ahead of the export — reportable, not nothing.
+    if (scoped && scoped.rangeAheadOfData) {
+      return {
+        rows: [],
+        totalSpend: 0,
+        totalInstalls: 0,
+        cpi: null,
+        unknownSpend: 0,
+        inferredCamps: 0,
+        range: '',
+        requestedRange: scoped.requestedRange,
+        dataEndsAt: scoped.dataEndsAt,
+        rangeAheadOfData: true,
+      };
+    }
+    return null;
+  }
 
   const key = (s: string) => normalizeCampName(s).toLowerCase();
 
@@ -265,5 +316,8 @@ export function buildCategoryCpi(
     unknownSpend: rows.filter((r) => r.category.startsWith('(')).reduce((s, r) => s + r.spend, 0),
     inferredCamps,
     range: rangeLabel,
+    requestedRange: scoped?.requestedRange ?? rangeLabel,
+    dataEndsAt: scoped?.dataEndsAt ?? '',
+    rangeAheadOfData: false,
   };
 }
