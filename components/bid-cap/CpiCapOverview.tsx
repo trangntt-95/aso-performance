@@ -71,7 +71,7 @@ export function CpiCapOverview() {
 
   return (
     <CapSection
-      title="CPI theo country"
+      title="1 · Nước nào đang trả quá trần CPI"
       summary={`${t.configured} nước có trần · ${t.withSpend} nước đang tiêu · ${t.overCount} vượt trần`}
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -171,7 +171,7 @@ export function CpiCapOverview() {
                     <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-700">
                       {r.installs || '—'}
                     </td>
-                    <CpiCell cpi={r.cpi} installs={r.installs} over={over} />
+                    <CpiCell cpi={r.cpi} over={over} />
                     <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-500">
                       {r.cap > 0 ? money(r.cap) : '—'}
                       {r.valuePerInstall !== null && (
@@ -209,11 +209,6 @@ export function CpiCapOverview() {
       )}
 
       <div className="space-y-1 text-[10px] leading-snug text-slate-500">
-        <div>
-          <b>Trần</b> lấy từ <code className="text-[9px]">PerGeo_CPI_Cap</code>: khi khối cột trần trống thì đọc khối
-          tier — trần của tier là đầu trên của khoảng, ghi đè theo từng nước thì thắng. <b>CPI thực</b> = chi ÷ install
-          (L30). <b>★</b> = dưới 3 install, con số đó là một mẫu chứ chưa phải tỷ lệ.
-        </div>
         {overview.uncapped.length > 0 && (
           <div className="text-amber-700">
             {overview.uncapped.length} nước đang tiêu tiền mà chưa được đặt trần:{' '}

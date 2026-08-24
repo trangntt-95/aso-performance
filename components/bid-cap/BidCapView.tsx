@@ -184,6 +184,7 @@ export function BidCapView() {
     [data],
   );
   const [conflictsOpen, setConflictsOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   // Load saved notes from the Bid_Notes sheet tab once on mount.
   const loadNotes = useBidNoteStore((s) => s.load);
@@ -304,14 +305,6 @@ export function BidCapView() {
       {/* CPI theo category — grain mà bid thật sự được set ở đó. */}
       <CategoryCpiPanel />
 
-      <div className="text-xs text-slate-500">
-        Mức bid <strong>recommend</strong> cho từng <strong>Country × Category</strong> (tính sẵn trong sheet{' '}
-        <code className="text-[10px]">Max bid cap</code>). <strong>Bid rec</strong> = mức nên set;{' '}
-        <strong>Bid hiện tại</strong> = median bid thực đang set (từ Master KW Lookup, theo category);{' '}
-        <strong>Action</strong> = so bid hiện tại với bid rec → <span className="text-emerald-700">RAISE</span> /{' '}
-        <span className="text-rose-600">REDUCE</span> / HOLD. Filter theo tier / country / category / status.
-      </div>
-
       {/* Alert: 1 campaign target nhiều nước có bid rec lệch nhau → 1 bid không tối ưu cho hết. */}
       {!isLoading && conflicts.length > 0 && (
         <div className="rounded-lg border border-amber-300 bg-amber-50">
@@ -374,8 +367,28 @@ export function BidCapView() {
         </div>
       )}
 
-      {/* Filters */}
+      {/* Step 3 — the full grid. A reference table, not something to read top to
+          bottom, so it stays closed until asked for. */}
       {!isLoading && rows.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setDetailOpen((o) => !o)}
+          className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-slate-400"
+        >
+          <span className="text-xs font-semibold text-slate-800">
+            3 · Bid nên set cho từng Country × Category
+          </span>
+          <span className="hidden text-[10px] text-slate-500 sm:inline">
+            — bảng chi tiết {rows.length} dòng, tra khi cần set bid
+          </span>
+          <ChevronDown
+            className={cn('ml-auto h-4 w-4 shrink-0 text-slate-400 transition-transform', detailOpen && 'rotate-180')}
+          />
+        </button>
+      )}
+
+      {/* Filters */}
+      {detailOpen && !isLoading && rows.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
           <div className="relative flex-1 min-w-[180px] max-w-xs">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
@@ -429,7 +442,7 @@ export function BidCapView() {
         </div>
       )}
 
-      {isLoading ? (
+      {!detailOpen ? null : isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-12" />

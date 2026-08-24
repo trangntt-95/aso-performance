@@ -88,7 +88,7 @@ function Row({ r }: { r: CategoryCpiRow }) {
         <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-700">
           {r.installs || '—'}
         </td>
-        <CpiCell cpi={r.cpi} installs={r.installs} over={over} />
+        <CpiCell cpi={r.cpi} over={over} />
         <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-500">
           {money2(r.cpiCap)}
           {r.bidRec !== null && (
@@ -169,7 +169,7 @@ export function CategoryCpiPanel() {
 
   return (
     <CapSection
-      title="CPI theo category"
+      title="2 · Category nào đang trả quá trần CPI"
       summary={`${report.rows.length} category · ${money(report.totalSpend)} ÷ ${report.totalInstalls} install = ${money2(
         report.cpi,
       )}/install${report.range ? ` · ${report.range}` : ''}`}
@@ -231,26 +231,6 @@ export function CategoryCpiPanel() {
         </table>
       </div>
 
-      <div className="space-y-1 text-[10px] leading-snug text-slate-500">
-        <div>
-          Mỗi camp thuộc <b>đúng một</b> category nên đây là phép <b>cộng</b>, không phải chia hay ước lượng. Bấm tên
-          category để xem camp nào đang kéo nó. <b>Trần</b> là trung bình cột CPI Act của các ô Country × Category
-          thuộc category đó trong <code className="text-[9px]">Max bid cap</code>; Bid Rec nằm trong tooltip của ô trần.
-        </div>
-        {noCapCount > 0 && (
-          <div className="text-amber-700">
-            {noCapCount} category chưa có trần vì <code className="text-[9px]">Max bid cap</code> không có ô nào mang
-            cột CPI Act cho chúng — không phải dashboard bỏ sót, mà sheet chưa đặt trần cho nhóm đó.
-          </div>
-        )}
-        <div>
-          <b>CPI theo keyword thì không làm được</b> và cố ý không dựng: tiền chỉ tồn tại ở mức camp, một camp chứa
-          trung bình ~45 keyword, và không có gì trong dữ liệu nói chi tiêu chia thế nào giữa chúng.
-        </div>
-        {report.unknownSpend > 0 && (
-          <div className="text-amber-700">{money(report.unknownSpend)} chưa quy được về category nào.</div>
-        )}
-      </div>
     </CapSection>
   );
 }

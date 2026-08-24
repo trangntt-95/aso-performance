@@ -67,16 +67,12 @@ export function CapHead({ nameLabel, extra }: { nameLabel: string; extra?: React
   );
 }
 
-/** The measured rate, marked when it rests on too few installs to be a rate. */
-export function CpiCell({
-  cpi,
-  installs,
-  over,
-}: {
-  cpi: number | null;
-  installs: number;
-  over: boolean;
-}) {
+/**
+ * The measured rate. Deliberately unadorned: the install count it was divided by
+ * sits in the column immediately left, so a "few installs" marker here repeated
+ * what the reader can already see.
+ */
+export function CpiCell({ cpi, over }: { cpi: number | null; over: boolean }) {
   return (
     <td
       className={cn(
@@ -85,14 +81,6 @@ export function CpiCell({
       )}
     >
       {money2(cpi)}
-      {cpi !== null && installs < RELIABLE_INSTALLS && (
-        <span
-          className="ml-1 cursor-help text-[9px] font-normal text-slate-400"
-          title={`Chỉ ${installs} install — con số này là một mẫu, chưa phải tỷ lệ.`}
-        >
-          ({installs}★)
-        </span>
-      )}
     </td>
   );
 }
