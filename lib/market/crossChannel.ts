@@ -67,6 +67,19 @@ export interface ChannelComparison {
   prevTo: string;
   /** False when the prior period held no data on either channel. */
   hasPrev: boolean;
+
+  // ── Why this window may be shorter than the one you picked ──────────────
+  // The two channels are separate exports that land at different times, so a
+  // 7-day filter routinely resolves to 6 days of comparable data. Reporting the
+  // shortfall is what stops that reading as a real drop in the paid channels.
+  /** Days the page filter asked for; null when no filter is active. */
+  requestedDays: number | null;
+  /** Dates inside the requested range that no comparison could cover, earliest
+   *  first. Empty when the filter was honoured in full. */
+  missingDays: string[];
+  /** For each missing day, the channels that had no data on it. Lets the UI name
+   *  the export that is behind instead of just saying a day is gone. */
+  missingBecause: { date: string; channels: ('appstore' | 'google')[] }[];
 }
 
 export function compareChannels(
@@ -106,6 +119,12 @@ export function compareChannels(
       // Distinguish "the two exports share no days" from "you filtered to days
       // one of them doesn't have" — they need different words.
       clippedByFilter: availableFrom <= availableTo,
+      requestedDays:
+        range?.from && range?.to
+          ? Math.round((Date.parse(`${range.to}T00:00:00Z`) - Date.parse(`${range.from}T00:00:00Z`)) / 86400000) + 1
+          : null,
+      missingDays: [],
+      missingBecause: [],
     };
   }
   const inRange = (d: string) => d >= from && d <= to;
@@ -235,6 +254,30 @@ export function compareChannels(
   ];
 
   const dayList = Array.from(days).sort();
+
+  // Which of the requested days ended up with nothing behind them, and which
+  // export is responsible. Two separate causes are folded together here on
+  // purpose, because the fix is the same either way — wait for the late sheet:
+  //   * the day fell outside the two channels' overlap, and
+  //   * the day is inside the overlap but one export simply has no rows for it.
+  const requestedDays =
+    range?.from && range?.to
+      ? Math.round((Date.parse(`${range.to}T00:00:00Z`) - Date.parse(`${range.from}T00:00:00Z`)) / 86400000) + 1
+      : null;
+  const gDateSet = new Set(gDates);
+  const sDateSet = new Set(sDates);
+  const missingBecause: { date: string; channels: ('appstore' | 'google')[] }[] = [];
+  if (range?.from && range?.to) {
+    for (let t = Date.parse(`${range.from}T00:00:00Z`); t <= Date.parse(`${range.to}T00:00:00Z`); t += 86400000) {
+      const iso = new Date(t).toISOString().slice(0, 10);
+      if (days.has(iso)) continue;
+      const lacking: ('appstore' | 'google')[] = [];
+      if (!sDateSet.has(iso)) lacking.push('appstore');
+      if (!gDateSet.has(iso)) lacking.push('google');
+      missingBecause.push({ date: iso, channels: lacking });
+    }
+  }
+
   return {
     prevFrom: hasPrev ? prevFrom : '',
     prevTo: hasPrev ? prevTo : '',
@@ -247,6 +290,9 @@ export function compareChannels(
     availableFrom,
     availableTo,
     clippedByFilter: false,
+    requestedDays,
+    missingDays: missingBecause.map((m) => m.date),
+    missingBecause,
   };
 }
 
