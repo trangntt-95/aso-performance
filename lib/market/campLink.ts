@@ -1,6 +1,7 @@
 import type { CampLinkRow, MasterKwRow } from '@/lib/sheets/types';
 import { buildCampGeoIndex, type CampGeo } from '@/lib/sheets/campGeo';
 import { normalizeCampName } from '@/lib/sheets/campName';
+import { canonicalCategoriesFor } from '@/lib/market/categoryTaxonomy';
 
 // ---------------------------------------------------------------------------
 // Pick ONE campaign link for a Bid Recommendations row (Country × Category).
@@ -15,34 +16,25 @@ import { normalizeCampName } from '@/lib/sheets/campName';
 // the token after "TP - " in the camp name, e.g. "TP - Brandname - Exact - US").
 // ---------------------------------------------------------------------------
 
-// Camp_Links Category column → 'Max bid cap' bid-cap category(ies). The bid-cap
-// table uses: Brand, Profit, Competitor, CPM, Feature, Language, Others, Test.
-// NB 'Others & Test' is ONE camp group that serves BOTH the Others and Test
-// bid-cap categories, so it maps to two. 'Category' (generic Finance/Marketing/
-// Analytics broad camps) has no bid-cap counterpart → unmapped, never suggested.
-const CAT_MAP: Record<string, string[]> = {
-  brandname: ['Brand'],
-  brand: ['Brand'],
-  profit: ['Profit'],
-  competitor: ['Competitor'],
-  cpm: ['CPM'],
-  feature: ['Feature'],
-  language: ['Language'],
-  lang: ['Language'],
-  others: ['Others'],
-  test: ['Test'],
-  'others & test': ['Others', 'Test'],
-};
+// Camp category → the bid-cap categories it can serve. The translation table
+// lives in categoryTaxonomy.ts; this file used to keep its own copy, which then
+// had to be remembered whenever a label was added in either place.
+//
+// A camp keeps ALL its candidates here rather than being filed under one: this
+// picks a link to SUGGEST, so a camp labelled 'Others & Test' should be offered
+// on both an Others row and a Test row. That is the opposite of what the money
+// tables need, where a camp must land in exactly one bucket — hence two
+// functions in that module rather than one.
 
 /** The bid-cap categories a camp can serve: Camp_Links Category column first,
  *  else the token after "TP - " in the camp name. */
 export function campCategories(c: CampLinkRow): string[] {
-  const fromCol = CAT_MAP[c.category.trim().toLowerCase()];
-  if (fromCol) return fromCol;
+  const fromCol = canonicalCategoriesFor(c.category);
+  if (fromCol.length > 0) return [...fromCol];
   const m = c.camp.match(/TP\s*-\s*([A-Za-z& ]+?)\s*-/i);
   if (m) {
-    const mapped = CAT_MAP[m[1].trim().toLowerCase()];
-    if (mapped) return mapped;
+    const mapped = canonicalCategoriesFor(m[1]);
+    if (mapped.length > 0) return [...mapped];
   }
   return [];
 }

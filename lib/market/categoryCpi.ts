@@ -1,5 +1,6 @@
 import type { BidCapRow, SheetPayload, ShopifyCampRow } from '@/lib/sheets/types';
 import { aggregateBidCapCells, bidCapCellsByCategory } from '@/lib/market/bidCapAgg';
+import { canonicalCategoryOf } from '@/lib/market/categoryTaxonomy';
 import { normalizeCampName } from '@/lib/sheets/campName';
 
 // CPI per CATEGORY — the grain that bidding decisions are actually made at.
@@ -17,7 +18,12 @@ import { normalizeCampName } from '@/lib/sheets/campName';
 // an inferred category is a weaker claim than a recorded one.
 
 /** Category → the naming pattern that identifies it. Order matters: the first
- *  match wins, so the catch-all "Test" rule sits last. */
+ *  match wins, so the catch-all "Test" rule sits last.
+ *
+ *  These produce the SHEET's vocabulary (Brandname, Others & Test, Category),
+ *  not the canonical one, on purpose: a camp name and the Camp_Links column
+ *  speak the same dialect, so both go through one translation afterwards rather
+ *  than each carrying its own. canonicalCategoryOf does that translation. */
 const NAME_RULES: [RegExp, string][] = [
   [/^tp\s*[-_]\s*profit/i, 'Profit'],
   [/^tp\s*[-_]\s*feature/i, 'Feature'],
@@ -293,11 +299,28 @@ export function buildCategoryCpi(
 
   // Category of a campaign, resolved the same way for both periods so a camp
   // can't land in one category now and another one before.
+  //
+  // Whatever the raw label turns out to be, it is translated to the canonical
+  // 'Max bid cap' vocabulary before being used as a key. That translation is what
+  // lets the yardstick join below actually find a match: while these rows were
+  // keyed 'Brandname' / 'Others & Test' / 'Category', three of the eight looked up
+  // a cap and a recommended bid that the sheet does hold, under the names Brand /
+  // Others / Test, and came back with nothing.
+  //
+  // 'Others & Test' is one group in the sheets and two categories here, so the
+  // camp NAME decides which half a campaign is filed under — money has to land in
+  // exactly one bucket or the total stops adding up.
   const categoryOf = (camp: string): { category: string; source: CategorySource } => {
     const fromSheet = byCamp.get(key(camp));
-    if (fromSheet) return { category: fromSheet, source: 'sheet' };
+    if (fromSheet) {
+      const canon = canonicalCategoryOf(fromSheet, camp);
+      // An unrecognised label is still a recorded one; keep it visible as itself
+      // instead of hiding it in Others, so a new sheet label shows up as a row to
+      // be mapped rather than silently joining the catch-all.
+      return { category: canon ?? fromSheet, source: 'sheet' };
+    }
     const guess = categoryFromName(camp);
-    if (guess) return { category: guess, source: 'name' };
+    if (guess) return { category: canonicalCategoryOf(guess, camp) ?? guess, source: 'name' };
     return { category: '(chưa rõ category)', source: 'unknown' };
   };
 

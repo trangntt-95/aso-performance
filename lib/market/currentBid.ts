@@ -1,4 +1,5 @@
 import type { MasterKwRow } from '@/lib/sheets/types';
+import { canonicalCategoriesFor } from '@/lib/market/categoryTaxonomy';
 
 // "Current bid" we actually have set, derived from the `Bid (max)` column of
 // Master KW Lookup. Master has NO country dimension, so this is a CATEGORY-level
@@ -11,20 +12,15 @@ export interface CurrentBidStat {
   count: number;
 }
 
-// Master KW Lookup category label → 'Max bid cap' category. 'Others & Test' is
-// combined in Master but split in the bid-cap sheet → feeds both.
-const MASTER_TO_BIDCAP: Record<string, string[]> = {
-  brandname: ['Brand'],
-  brand: ['Brand'],
-  profit: ['Profit'],
-  competitor: ['Competitor'],
-  cpm: ['CPM'],
-  feature: ['Feature'],
-  language: ['Language'],
-  others: ['Others'],
-  test: ['Test'],
-  'others & test': ['Others', 'Test'],
-};
+// Master KW Lookup labels its categories in the sheets' dialect ('Brandname',
+// 'Others & Test'); the bid-cap categories these bids are compared against use
+// the canonical one. The translation lives in categoryTaxonomy.ts — this file
+// used to carry a second copy of it, and the two could drift apart without
+// anything failing loudly.
+//
+// A label feeding SEVERAL categories is correct here: 'Others & Test' is one
+// group in Master and two in the bid-cap sheet, and a bid recorded against that
+// group is evidence for both.
 
 export function currentBidByCategory(
   master: MasterKwRow[],
@@ -36,8 +32,8 @@ export function currentBidByCategory(
     if (pausedSet.has(r.camp)) continue; // skip paused camps
     const bid = Number(r.bidMax);
     if (!Number.isFinite(bid) || bid <= 0) continue;
-    const targets = MASTER_TO_BIDCAP[r.category.trim().toLowerCase()];
-    if (!targets) continue;
+    const targets = canonicalCategoriesFor(r.category);
+    if (targets.length === 0) continue;
     for (const t of targets) {
       const arr = groups.get(t) ?? [];
       arr.push(bid);

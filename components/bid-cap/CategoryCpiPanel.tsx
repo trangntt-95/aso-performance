@@ -231,6 +231,19 @@ export function CategoryCpiPanel() {
         </table>
       </div>
 
+      <div className="text-[10px] leading-snug text-slate-500">
+        Category dùng chung một bộ tên với sheet <code className="text-[9px]">Max bid cap</code> nên
+        mỗi dòng tra được trần và bid rec của chính nó: <b>Brandname</b> trong Camp_Links về{' '}
+        <b>Brand</b>, và <b>Others &amp; Test</b> tách làm hai theo tên camp — camp{' '}
+        <code className="text-[9px]">TP - Others - …</code> vào <b>Others</b>, camp có{' '}
+        <code className="text-[9px]">[dd.mm]</code> hoặc chữ &ldquo;test&rdquo; vào <b>Test</b>. Các
+        camp category rộng (<code className="text-[9px]">TP - Category - Finance App</code>,
+        Analytics, Marketing…) không có category tương ứng trong Max bid cap nên nằm trong{' '}
+        <b>Others</b>; mở drill-down của dòng Others để thấy từng camp. Category share ở Overview
+        vẫn phân loại theo <b>nghĩa của keyword</b> nên không có slice Test — bảng này đo tiền đi
+        đâu, bảng kia đo nhu cầu nằm ở đâu.
+      </div>
+
     </CapSection>
   );
 }

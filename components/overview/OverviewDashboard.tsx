@@ -371,6 +371,30 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     () => dateRange ?? data?.windowDates?.[window] ?? null,
     [dateRange, data?.windowDates, window],
   );
+
+  // Does the focused category exist on the KEYWORD side at all?
+  //
+  // One page filter is set from two tables that count different things. The
+  // donut answers "where is the demand" from the All_L* Category column, which
+  // is semantic; the spend strip answers "where is the money" from the campaign
+  // that bought it. They now share one vocabulary, so Brand · Profit ·
+  // Competitor · Feature · Language · Others line up on both sides.
+  //
+  // Two do not, and cannot: CPM keywords sit under Others semantically, and Test
+  // is a budget bucket rather than a meaning — a Profit keyword being trialled is
+  // still about profit. Clicking either on the strip is a legitimate thing to
+  // want (it focuses the money view) but leaves every keyword section with
+  // nothing to draw, which reads as "no data" when the truth is "that category
+  // doesn't exist over here". So the filter still applies, and we say so.
+  // Both share lists deliberately ignore the category filter (so the donut keeps
+  // every slice), which is exactly what makes them usable as the "does this
+  // category exist on the keyword side" test — filtered lists would always
+  // contain only the focused category or nothing at all.
+  const categoryHasKeywords = useMemo(() => {
+    if (!categoryFocus) return true;
+    const shares = dateRange ? dateCategoryShares : categoryShares;
+    return shares.some((c) => c.category === categoryFocus);
+  }, [categoryFocus, dateRange, dateCategoryShares, categoryShares]);
   const channelCompare = useMemo(() => compareChannels(data, channelRange), [data, channelRange]);
 
   const openCategoryDetail = useCategoryDetailStore((s) => s.openCategory);
@@ -597,6 +621,19 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               >
                 {categoryFocus} <span className="text-slate-500">✕</span>
               </button>
+            )}
+            {categoryFocus && !categoryHasKeywords && (
+              <span
+                className="inline-flex max-w-[420px] items-center gap-1 rounded-md bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-900"
+                title={
+                  `Không có keyword nào được phân loại là "${categoryFocus}" trong các tab All_L*, nên mọi khối tính từ keyword ` +
+                  `(nhu cầu, KPI, mix, top contributor…) sẽ trống. Khối chi phí paid vẫn đúng.\n\n` +
+                  `Lý do: bảng chi phí paid phân loại theo CAMP đã mua keyword, còn phía keyword phân loại theo NGHĨA của keyword. ` +
+                  `"Test" là túi ngân sách chứ không phải một nghĩa, và keyword của camp CPM về mặt nghĩa nằm trong Others.`
+                }
+              >
+                ⚠ chỉ có ở phía chi phí paid — các khối tính từ keyword sẽ trống
+              </span>
             )}
             {dateRange && (
               <button
