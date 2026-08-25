@@ -78,7 +78,9 @@ const VERDICT_TAG: Record<Exclude<CampVerdict, 'overbid'>, { label: string; cls:
   'no-benchmark': {
     label: '❓ chưa có benchmark',
     cls: 'bg-slate-100 text-slate-500',
-    title: 'Không map được camp sang category trong Max bid cap, hoặc category đó chưa có Bid Rec → không so được.',
+    title:
+      'Không map được camp sang category trong Max bid cap, hoặc cả category đó không còn cluster nào có Bid Rec ⭐ → không có mốc để so. ' +
+      'Hiện CPM, Language và Others đang ở tình trạng này: sheet để trống Bid Rec cho toàn bộ cluster của chúng.',
   },
 };
 
@@ -297,8 +299,11 @@ export function OverbidView() {
         <Flame className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
         <div>
           <b>Camp bị overbid</b> — camp trong <code className="text-[10px]">Shopify_daily</code> có{' '}
-          <b>CPC thực tế (Spend/Clicks)</b> vượt <b>bid cho phép</b> hoặc <b>CPI</b> vượt CPI cho phép (tab{' '}
-          <code className="text-[10px]">Max bid cap</code>). → nên <b>hạ bid</b>. Nước target lấy từ cột{' '}
+          <b>CPC thực tế (Spend/Clicks)</b> vượt <b>bid cho phép</b> (<code className="text-[10px]">Bid Rec ⭐</code>)
+          hoặc <b>CPI</b> vượt <b>CPI cho phép</b> (<code className="text-[10px]">CPI cap</code>, tab{' '}
+          <code className="text-[10px]">Max bid cap</code>) → nên <b>hạ bid</b>. Từ 8/2026 mốc CPI lấy từ cột{' '}
+          <b>CPI cap</b> (trần đã đặt) thay cho CPI đã tiêu của sheet cũ — so với chính số mình từng tiêu thì
+          category nào cũng &ldquo;đạt chuẩn&rdquo;. Nước target lấy từ cột{' '}
           <b>Geo</b> trong <code className="text-[10px]">Camp_Links</code> (🎯, so với trung bình các nước đó); camp
           không điền Geo coi là <b>general</b> → so với <b>trung bình cả category</b> (🌐). Các dòng{' '}
           <code className="text-[10px]">Shopify_daily</code> <b>cùng 1 campaign</b> (cùng URL, do đổi tên/thêm ghi
@@ -413,7 +418,7 @@ export function OverbidView() {
             ? 'Không có camp nào khớp filter.'
             : view === 'fixed'
               ? 'Chưa có camp nào: ghi note vào camp ở tab 🔥 Đang overbid, khi nó ra khỏi list (đã hạ bid / pause) sẽ xuất hiện ở đây.'
-              : 'Không tìm thấy camp overbid (kiểm tra tab Shopify_daily đã có data + Max bid cap có Bid Rec).'}
+              : 'Không tìm thấy camp overbid (kiểm tra tab Shopify_daily đã có data + Max bid cap còn cluster có Bid Rec ⭐).'}
         </div>
       ) : (
         <div className="border rounded-lg bg-white overflow-auto max-h-[75vh]">
@@ -433,8 +438,8 @@ export function OverbidView() {
                   />
                 )}
                 <SortHead label="Category" col="category" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                <SortHead label="CPC / cho phép" col="cpc" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="CPC thực tế / bid cho phép (avg Bid Rec)" />
-                <SortHead label="CPI / cho phép" col="cpi" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="CPI thực tế / CPI cho phép (avg)" />
+                <SortHead label="CPC / cho phép" col="cpc" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="CPC thực tế (Spend/Clicks) / bid cho phép = trung bình Bid Rec ⭐ trên các nước target" />
+                <SortHead label="CPI / cho phép" col="cpi" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="CPI thực tế (Spend/Installs) / CPI cho phép = trung bình cột 'CPI cap' trên các nước target. Mốc là trần đã đặt, không phải CPI đã tiêu." />
                 <SortHead label="Clicks" col="clicks" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Inst" col="installs" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Spend" col="spend" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -546,7 +551,10 @@ export function OverbidView() {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            CPC = Spend/Clicks (proxy cho bid đang trả) · CPI = Spend/Installs · bid/CPI cho phép = trung bình từ Max bid cap ·
+            CPC = Spend/Clicks (proxy cho bid đang trả) · CPI = Spend/Installs · bid cho phép = trung bình{' '}
+            <code className="text-[9px]">Bid Rec ⭐</code>, CPI cho phép = trung bình{' '}
+            <code className="text-[9px]">CPI cap</code>, lấy trên các nước target — mỗi nước tính 1 lần sau khi gộp
+            các cluster keyword của nó (sheet đổi grain 8/2026), cluster nào sheet bảo cắt thì không tính vào mốc ·
             🎯 = nước target từ Geo (Camp_Links), <span className="text-amber-600">🌐</span> = general (avg cả category) ·
             <b> Impact bid</b> = 14 ngày trước note vs 14 ngày sau (export Shopify theo ngày): đường vẽ là
             <b> impressions/ngày</b>, kèm <b>CPC</b> và <b>CPI</b> dạng số;

@@ -14,14 +14,13 @@ import { useBidNoteStore } from '@/lib/store/bidNoteStore';
 import { currentBidByCategory, deriveBidAction } from '@/lib/market/currentBid';
 import { buildCampLinkIndex } from '@/lib/market/campLink';
 import { findCampBidConflicts } from '@/lib/market/campBidConflicts';
-import { normalizeCampName } from '@/lib/sheets/campName';
-import { normKw } from '@/lib/sheets/kwNorm';
 import { CpiCapOverview } from './CpiCapOverview';
 import { CategoryCpiPanel } from './CategoryCpiPanel';
 
 // The campaign shown on a row: a name + optional URL (clickable when known).
-// `fromSheet` = came from the hand-maintained 'Link campaign' column.
-type RowCamp = { name: string; url?: string; fromSheet: boolean } | null;
+// The sheet's hand-maintained 'Link campaign' column is gone as of Aug 2026, so
+// this is always the auto-detected camp for the row's Country × Category.
+type RowCamp = { name: string; url?: string } | null;
 
 // BidCapRow + the current set bid (median from Master KW Lookup), a derived
 // action, and the campaign to show for this country × category.
@@ -31,13 +30,14 @@ type BidCapRowX = BidCapRow & {
   camp: RowCamp;
 };
 
-// Camp identity key: strip trailing "(CPI …)" tag, lowercase, collapse spaces —
-// so a hand-typed name still matches its Camp_Links row to recover the URL.
-const campKey = (s: string) => normKw(normalizeCampName(s));
-const isUrl = (s: string) => /^https?:\/\//i.test(s);
-
 // Editable note cell, auto-saved to the Bid_Notes sheet tab (server-side, shared
 // across users). Optimistic + debounced; shows a tiny "lưu…" while in flight.
+//
+// Keyed by country + category, NOT by keyword cluster. The sheet split each cell
+// into up to 14 cluster rows in Aug 2026, and re-keying notes per cluster would
+// have orphaned every note already written against the old two-part key. So one
+// note is shared by a cell's clusters, and the same text shows on each of its
+// rows — see the footnote under the table, which says so out loud.
 function NoteCell({ country, category }: { country: string; category: string }) {
   const rowKey = `${country}||${category}`;
   const note = useBidNoteStore((s) => s.notes[rowKey] ?? '');
@@ -58,9 +58,16 @@ function NoteCell({ country, category }: { country: string; category: string }) 
 }
 
 // ---------------------------------------------------------------------------
-// Bid Recommendations — mức bid recommend cho từng Country × Category.
-// Toàn bộ số đã được tính sẵn trong tab 'Max bid cap' (Apps Script); page này
-// chỉ đọc + filter + trình bày, KHÔNG tính lại.
+// Bid Recommendations — mức bid recommend cho từng Country × Category × Keyword
+// Cluster. Toàn bộ số đã được tính sẵn trong tab 'Max bid cap' (Apps Script);
+// page này chỉ đọc + filter + trình bày, KHÔNG tính lại.
+//
+// Sheet đổi schema 8/2026: mỗi dòng giờ là 1 KEYWORD CLUSTER trong 1 cặp
+// Country × Category (tối đa 14 cluster/cặp), kèm cột 'Example keywords',
+// 'CPI cap' và 'Tier ceil.'. Các cột cũ Status / CR used / Imp / Spend /
+// Max Allowed / Link campaign đã bị xoá khỏi sheet — bảng dưới bỏ hẳn chúng
+// thay vì hiện cột rỗng, vì một cột luôn '—' đọc như "chưa có dữ liệu" chứ
+// không phải "cột này không còn tồn tại".
 // ---------------------------------------------------------------------------
 
 const money = (n: number | null | undefined): string =>
@@ -72,27 +79,29 @@ function catStyle(category: string) {
   return categoryStyle(norm);
 }
 
-// Status badge tone, keyed by substring (NO CAMP / IMP ONLY / ACTIVE / …).
-function statusStyle(status: string): { bg: string; text: string } {
-  const s = status.toUpperCase();
-  if (s.includes('NO CAMP')) return { bg: 'bg-rose-100', text: 'text-rose-800' };
-  if (s.includes('IMP ONLY') || s.includes('NO CLICK') || s.includes('NO CONV'))
+// Action badge tone. The sheet writes Vietnamese verdicts — Giữ / Hạ mạnh /
+// Cắt / Cắt / Pause — having replaced the old English Status column, so both
+// vocabularies are matched: the sheet's own wording first, then the legacy
+// English tokens, so an older export still colours correctly.
+function actionStyle(action: string): { bg: string; text: string } {
+  const a = action.toLowerCase();
+  if (!a) return { bg: 'bg-slate-100', text: 'text-slate-500' };
+  if (/c[ắa]t|pause/.test(a)) return { bg: 'bg-rose-100', text: 'text-rose-800' };
+  if (/h[ạa]\s*m[ạa]nh|h[ạa]\b|reduce|lower/.test(a))
     return { bg: 'bg-amber-100', text: 'text-amber-800' };
-  if (s.includes('EARLY')) return { bg: 'bg-sky-100', text: 'text-sky-800' };
-  if (s.includes('PAUSE')) return { bg: 'bg-slate-200', text: 'text-slate-600' };
-  if (s.includes('PROVEN') || s.includes('ACTIVE') || s.includes('OK') || s.includes('BIDDING'))
-    return { bg: 'bg-emerald-100', text: 'text-emerald-800' };
+  if (/gi[ữu]|hold|keep|ok/.test(a)) return { bg: 'bg-emerald-100', text: 'text-emerald-800' };
+  if (/t[ăa]ng|raise|scale|create|expand/.test(a))
+    return { bg: 'bg-sky-100', text: 'text-sky-800' };
   return { bg: 'bg-slate-100', text: 'text-slate-600' };
 }
 
-// Action tone — green = create/scale, amber = monitor/review, slate = hold/none.
+// Same vocabulary, as a text tone for the derived-action column.
 function actionTone(action: string): string {
-  const a = action.toUpperCase();
-  if (a.includes('CREATE') || a.includes('SCALE') || a.includes('RAISE') || a.includes('EXPAND'))
-    return 'text-emerald-700';
-  if (a.includes('REDUCE') || a.includes('LOWER') || a.includes('PAUSE')) return 'text-rose-700';
-  if (a.includes('MONITOR') || a.includes('REVIEW') || a.includes('AUDIT') || a.includes('WAIT'))
-    return 'text-amber-700';
+  const a = action.toLowerCase();
+  if (/c[ắa]t|pause/.test(a)) return 'text-rose-700';
+  if (/h[ạa]\s*m[ạa]nh|h[ạa]\b|reduce|lower/.test(a)) return 'text-amber-700';
+  if (/t[ăa]ng|raise|scale|create|expand/.test(a)) return 'text-emerald-700';
+  if (/gi[ữu]|hold|keep/.test(a)) return 'text-slate-600';
   return 'text-slate-600';
 }
 
@@ -100,10 +109,12 @@ type SortKey =
   | 'tier'
   | 'country'
   | 'category'
-  | 'status'
+  | 'cluster'
   | 'bid'
   | 'bidnow'
-  | 'crused'
+  | 'cpicap'
+  | 'ceil'
+  | 'cr'
   | 'installs'
   | 'action';
 type SortDir = 'asc' | 'desc';
@@ -133,10 +144,15 @@ const SORT_COLS: Record<SortKey, { kind: 'num' | 'text'; get: (r: BidCapRowX) =>
   tier: { kind: 'text', get: (r) => (r.tier ? String(TIER_RANK[r.tier] ?? 98).padStart(2, '0') : '') },
   country: { kind: 'text', get: (r) => r.country },
   category: { kind: 'text', get: (r) => r.category },
-  status: { kind: 'text', get: (r) => r.status },
-  bid: { kind: 'num', get: (r) => r.bidRecommended },
+  cluster: { kind: 'text', get: (r) => r.keywordCluster },
+  // 0 = the sheet left the cell blank (it does on every 'Cắt / Pause' row), which
+  // is an absence, not a bid of zero — hand back null so those rows sink to the
+  // bottom under either sort direction instead of masquerading as the cheapest.
+  bid: { kind: 'num', get: (r) => (r.bidRecommended > 0 ? r.bidRecommended : null) },
   bidnow: { kind: 'num', get: (r) => r.bidNow },
-  crused: { kind: 'num', get: (r) => r.crUsed },
+  cpicap: { kind: 'num', get: (r) => (r.cpiCap > 0 ? r.cpiCap : null) },
+  ceil: { kind: 'num', get: (r) => (r.tierCeiling > 0 ? r.tierCeiling : null) },
+  cr: { kind: 'num', get: (r) => (r.crActual > 0 ? r.crActual : null) },
   installs: { kind: 'num', get: (r) => r.installsL30 },
   action: { kind: 'text', get: (r) => r.action },
 };
@@ -146,25 +162,14 @@ export function BidCapView() {
   const rows: BidCapRowX[] = useMemo(() => {
     const cur = currentBidByCategory(data?.masterKwLookup ?? [], data?.pausedKw ?? []);
     const campIdx = buildCampLinkIndex(data?.campLinks ?? [], data?.pausedKw ?? []);
-    // Camp_Links lookups to make a hand-typed name/URL clickable.
-    const urlByName = new Map<string, string>();
-    const nameByUrl = new Map<string, string>();
-    for (const c of data?.campLinks ?? []) {
-      if (c.camp && c.url) {
-        if (!urlByName.has(campKey(c.camp))) urlByName.set(campKey(c.camp), c.url);
-        if (!nameByUrl.has(c.url)) nameByUrl.set(c.url, c.camp);
-      }
-    }
-    // Resolve the row's campaign: the sheet's 'Link campaign' column wins; only
-    // if it's blank do we fall back to the auto-detected camp (non-destructive).
+    // Resolve the row's campaign. The sheet used to carry a hand-filled 'Link
+    // campaign' column which took priority; that column is gone as of Aug 2026,
+    // so this is now purely the auto-detected camp for the Country × Category.
+    // Detection is per cell, not per cluster — a campaign covers a whole
+    // category in a market, so every cluster row of a cell shows the same camp.
     const resolveCamp = (r: BidCapRow): RowCamp => {
-      const raw = r.linkCampaign?.trim();
-      if (raw) {
-        if (isUrl(raw)) return { name: nameByUrl.get(raw) ?? raw, url: raw, fromSheet: true };
-        return { name: raw, url: urlByName.get(campKey(raw)), fromSheet: true };
-      }
       const auto = campIdx.pick(r.country, r.category);
-      return auto ? { name: auto.camp, url: auto.url, fromSheet: false } : null;
+      return auto ? { name: auto.camp, url: auto.url } : null;
     };
     return (data?.bidCap ?? []).map((r) => {
       const bidNow = cur.get(r.category)?.median ?? null;
@@ -196,7 +201,7 @@ export function BidCapView() {
   const [tierFilter, setTierFilter] = useState('all');
   const [countryFilter, setCountryFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [actionFilter, setActionFilter] = useState('all');
   const [sortKey, setSortKey] = useState<SortKey>('bid');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
@@ -211,22 +216,22 @@ export function BidCapView() {
     }
   };
 
-  const { tiers, countries, categories, statuses } = useMemo(() => {
+  const { tiers, countries, categories, actions } = useMemo(() => {
     const t = new Set<string>();
     const c = new Set<string>();
     const cat = new Set<string>();
-    const st = new Set<string>();
+    const ac = new Set<string>();
     rows.forEach((r) => {
       if (r.tier) t.add(r.tier);
       if (r.country) c.add(r.country);
       if (r.category) cat.add(r.category);
-      if (r.status) st.add(r.status);
+      if (r.actionRecommended) ac.add(r.actionRecommended);
     });
     return {
       tiers: Array.from(t).sort((a, b) => (TIER_RANK[a] ?? 98) - (TIER_RANK[b] ?? 98)),
       countries: Array.from(c).sort(),
       categories: Array.from(cat).sort(),
-      statuses: Array.from(st).sort(),
+      actions: Array.from(ac).sort(),
     };
   }, [rows]);
 
@@ -236,9 +241,12 @@ export function BidCapView() {
       if (tierFilter !== 'all' && r.tier !== tierFilter) return false;
       if (countryFilter !== 'all' && r.country !== countryFilter) return false;
       if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
-      if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      if (actionFilter !== 'all' && r.actionRecommended !== actionFilter) return false;
       if (q) {
-        const hay = `${r.country} ${r.countryCode} ${r.category} ${r.status} ${r.actionRecommended}`.toLowerCase();
+        // Example keywords are in the haystack on purpose: the cluster labels are
+        // codes ("C. hyros", "P4. Biên lợi nhuận"), so searching the actual
+        // keyword is how you find the row you mean.
+        const hay = `${r.country} ${r.countryCode} ${r.category} ${r.keywordCluster} ${r.exampleKeywords} ${r.actionRecommended}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -265,23 +273,25 @@ export function BidCapView() {
       (a, b) =>
         cmp(a, b) ||
         b.bidRecommended - a.bidRecommended ||
-        a.country.localeCompare(b.country),
+        a.country.localeCompare(b.country) ||
+        a.category.localeCompare(b.category) ||
+        a.keywordCluster.localeCompare(b.keywordCluster),
     );
     return out;
-  }, [rows, search, tierFilter, countryFilter, categoryFilter, statusFilter, sortKey, sortDir]);
+  }, [rows, search, tierFilter, countryFilter, categoryFilter, actionFilter, sortKey, sortDir]);
 
   const dirty =
     search !== '' ||
     tierFilter !== 'all' ||
     countryFilter !== 'all' ||
     categoryFilter !== 'all' ||
-    statusFilter !== 'all';
+    actionFilter !== 'all';
   const resetAll = () => {
     setSearch('');
     setTierFilter('all');
     setCountryFilter('all');
     setCategoryFilter('all');
-    setStatusFilter('all');
+    setActionFilter('all');
   };
 
   if (error) {
@@ -317,8 +327,8 @@ export function BidCapView() {
             <span className="text-xs font-semibold text-amber-900">
               {conflicts.length} campaign target nhiều nước nhưng bid rec lệch nhau
             </span>
-            <span className="text-[10px] text-amber-700 hidden sm:inline">
-              — 1 camp chỉ set được 1 bid → cân nhắc tách camp theo nước
+            <span className="hidden text-[10px] text-amber-700 sm:inline">
+              — 1 camp chỉ set được 1 bid cho cả nước → cân nhắc tách camp theo nước
             </span>
             <ChevronDown
               className={cn('h-4 w-4 text-amber-600 ml-auto transition-transform', conflictsOpen && 'rotate-180')}
@@ -353,7 +363,10 @@ export function BidCapView() {
                       </span>
                     )}
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-slate-600">
+                  <div
+                    className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-slate-600"
+                    title="Bid mỗi nước là trung bình các cluster keyword của nước đó (sheet đổi grain 8/2026). Trong cùng 1 nước, bid giữa các cluster lệch nhau còn nhiều hơn giữa các nước — nhưng bid theo cluster đặt riêng được cho từng keyword nên đó là chủ ý, không phải xung đột; xung đột thật là giữa các nước, vì 1 camp chỉ set 1 bid cho cả nước."
+                  >
                     {c.perCountry.map((p) => (
                       <span key={p.country}>
                         {p.country} <span className="font-semibold text-slate-800">${p.bid.toFixed(2)}</span>
@@ -376,7 +389,7 @@ export function BidCapView() {
           className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-slate-400"
         >
           <span className="text-xs font-semibold text-slate-800">
-            3 · Bid nên set cho từng Country × Category
+            3 · Bid nên set cho từng Country × Category × Keyword Cluster
           </span>
           <span className="hidden text-[10px] text-slate-500 sm:inline">
             — bảng chi tiết {rows.length} dòng, tra khi cần set bid
@@ -395,7 +408,7 @@ export function BidCapView() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm country, category, action…"
+              placeholder="Tìm country, category, cluster, keyword…"
               className="pl-7 h-7 text-xs"
             />
           </div>
@@ -419,10 +432,10 @@ export function BidCapView() {
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls} title="Status">
-            <option value="all">Status: All</option>
-            {statuses.map((s) => (
-              <option key={s} value={s}>{s}</option>
+          <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className={selectCls} title="Action sheet đề xuất">
+            <option value="all">Action: All</option>
+            {actions.map((a) => (
+              <option key={a} value={a}>{a}</option>
             ))}
           </select>
           <span className="text-[10px] text-slate-400 hidden sm:inline">Click cột để sort</span>
@@ -438,7 +451,7 @@ export function BidCapView() {
       {!isLoading && (
         <div className="text-xs text-slate-500">
           {filtered.length}
-          {filtered.length !== rows.length ? ` / ${rows.length}` : ''} dòng (country × category)
+          {filtered.length !== rows.length ? ` / ${rows.length}` : ''} dòng (country × category × keyword cluster)
         </div>
       )}
 
@@ -460,14 +473,16 @@ export function BidCapView() {
                 {(
                   [
                     { k: 'tier', label: 'Tier', align: 'left', title: 'Sort theo tier (Tier 1 Strong → Excluded)', extra: 'pl-3 min-w-[7rem]' },
-                    { k: 'country', label: 'Country', align: 'left', title: 'Sort theo country', extra: 'min-w-[11rem]' },
+                    { k: 'country', label: 'Country', align: 'left', title: 'Sort theo country', extra: 'min-w-[10rem]' },
                     { k: 'category', label: 'Category', align: 'left', title: 'Sort theo category' },
-                    { k: 'status', label: 'Status', align: 'left', title: 'Sort theo status' },
-                    { k: 'bid', label: 'Bid rec', align: 'right', title: 'Mức bid nên set (Bid Rec ⭐)' },
-                    { k: 'bidnow', label: 'Bid hiện tại', align: 'right', title: 'Median bid thực đang set (Master KW Lookup, theo category — không có data theo country)' },
-                    { k: 'crused', label: 'CR used', align: 'right', title: 'Conversion rate dùng để tính bid' },
-                    { k: 'installs', label: 'L30 imp/clk/inst', align: 'right', title: 'L30: Imp / Clicks / Installs — sort theo Installs' },
-                    { k: 'action', label: 'Action', align: 'left', title: 'Sort theo action', extra: 'min-w-[14rem]' },
+                    { k: 'cluster', label: 'Keyword cluster', align: 'left', title: 'Nhóm keyword trong category — grain mà bid được set ở đó. Hover để xem keyword ví dụ.', extra: 'min-w-[13rem]' },
+                    { k: 'bid', label: 'Bid rec', align: 'right', title: 'Mức bid nên set (Bid Rec ⭐). Trống = sheet bảo cắt cluster này, không phải bid = 0.' },
+                    { k: 'bidnow', label: 'Bid hiện tại', align: 'right', title: 'Median bid thực đang set (Master KW Lookup, theo category — không có data theo country hay cluster)' },
+                    { k: 'cpicap', label: 'CPI cap', align: 'right', title: 'Trần CPI cho cluster này (cột CPI cap). Là trần cho phép, KHÔNG phải CPI đã tiêu — sheet không còn cột Spend.' },
+                    { k: 'ceil', label: 'Tier ceil.', align: 'right', title: 'Trần bid do tier của nước áp xuống. Bid rec = Tier ceil. → tier đang quyết định bid, không phải thị trường.' },
+                    { k: 'cr', label: 'CR %', align: 'right', title: 'Conversion rate dùng để tính bid' },
+                    { k: 'installs', label: 'Clicks/inst /mo', align: 'right', title: 'Clicks/mo · Inst/mo · (Inst L90) — sort theo Inst/mo' },
+                    { k: 'action', label: 'Action', align: 'left', title: 'Sort theo action sheet đề xuất', extra: 'min-w-[8rem]' },
                   ] as { k: SortKey; label: string; align: 'left' | 'right'; title: string; extra?: string }[]
                 ).map(({ k, label, align, title, extra }) => {
                   const active = sortKey === k;
@@ -492,7 +507,7 @@ export function BidCapView() {
                     </th>
                   );
                 })}
-                <th className="px-2 py-2 text-left font-medium min-w-[12rem]" title="Link campaign lấy từ cột trong sheet Max bid cap (bạn tự điền) — click để mở chỉnh bid">
+                <th className="px-2 py-2 text-left font-medium min-w-[11rem]" title="Campaign auto-detect theo Country × Category (Camp_Links) — click để mở chỉnh bid. Cột 'Link campaign' tự điền đã bị xoá khỏi sheet 8/2026.">
                   Campaign
                 </th>
                 <th className="px-2 py-2 text-left font-medium min-w-[9rem]" title="Ghi chú của bạn (tự lưu)">
@@ -503,9 +518,12 @@ export function BidCapView() {
             <tbody>
               {filtered.map((r, i) => {
                 const cs = catStyle(r.category);
-                const ss = statusStyle(r.status);
+                const as = actionStyle(r.actionRecommended);
                 return (
-                  <tr key={`${r.country}|${r.category}|${i}`} className="border-t hover:bg-slate-50">
+                  <tr
+                    key={`${r.country}|${r.category}|${r.keywordCluster}|${i}`}
+                    className="border-t hover:bg-slate-50"
+                  >
                     <td className="px-3 py-1.5 align-top">
                       {r.tier ? (
                         (() => {
@@ -530,12 +548,39 @@ export function BidCapView() {
                       </span>
                     </td>
                     <td className="px-2 py-1.5 align-top">
-                      <span className={cn('inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap', ss.bg, ss.text)}>
-                        {r.status || '—'}
-                      </span>
+                      {r.keywordCluster ? (
+                        <>
+                          <div className="text-[11px] font-medium leading-snug text-slate-800">
+                            {r.keywordCluster}
+                          </div>
+                          {r.exampleKeywords && (
+                            <div
+                              className="max-w-[13rem] truncate text-[10px] text-slate-400"
+                              title={r.exampleKeywords}
+                            >
+                              {r.exampleKeywords}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-slate-300" title="Sheet để trống cột Keyword Cluster ở dòng này">
+                          —
+                        </span>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 align-top text-right whitespace-nowrap">
-                      <span className="font-mono font-semibold text-sm text-indigo-700">{money(r.bidRecommended)}</span>
+                      {r.bidRecommended > 0 ? (
+                        <span className="font-mono text-sm font-semibold text-indigo-700">
+                          {money(r.bidRecommended)}
+                        </span>
+                      ) : (
+                        <span
+                          className="font-mono text-[11px] text-slate-300"
+                          title="Sheet không đưa bid rec cho cluster này (thường vì Action = Cắt / Pause) — không phải bid $0"
+                        >
+                          —
+                        </span>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 align-top text-right whitespace-nowrap">
                       {r.bidNow === null ? (
@@ -544,28 +589,93 @@ export function BidCapView() {
                         <span
                           className={cn(
                             'font-mono text-[11px] font-medium',
-                            r.bidNow < r.bidRecommended * 0.85
-                              ? 'text-emerald-700'
-                              : r.bidNow > r.bidRecommended * 1.15
-                                ? 'text-rose-600'
-                                : 'text-slate-700',
+                            // Only colour against a recommendation that exists. A
+                            // blank rec arrives as 0, and comparing to it would
+                            // paint every cut cluster red for "over budget".
+                            r.bidRecommended <= 0
+                              ? 'text-slate-700'
+                              : r.bidNow < r.bidRecommended * 0.85
+                                ? 'text-emerald-700'
+                                : r.bidNow > r.bidRecommended * 1.15
+                                  ? 'text-rose-600'
+                                  : 'text-slate-700',
                           )}
+                          title={
+                            r.bidRecommended <= 0
+                              ? 'Không có bid rec để so — sheet bảo cắt cluster này'
+                              : undefined
+                          }
                         >
                           {money(r.bidNow)}
                         </span>
                       )}
                     </td>
                     <td className="px-2 py-1.5 align-top text-right whitespace-nowrap">
-                      <span className="font-mono text-[11px] text-slate-700">{r.crUsed ? `${r.crUsed}%` : '—'}</span>
-                    </td>
-                    <td className="px-2 py-1.5 align-top text-right whitespace-nowrap font-mono text-[10px] text-slate-500">
-                      {formatNumber(r.impL30, { compact: true })} / {formatNumber(r.clicksL30, { compact: true })} /{' '}
-                      <span className={r.installsL30 > 0 ? 'text-emerald-700 font-medium' : ''}>
-                        {formatNumber(r.installsL30, { compact: true })}
+                      <span className="font-mono text-[11px] text-slate-700">
+                        {r.cpiCap > 0 ? money(r.cpiCap) : <span className="text-slate-300">—</span>}
                       </span>
                     </td>
+                    <td className="px-2 py-1.5 align-top text-right whitespace-nowrap">
+                      {r.tierCeiling > 0 ? (
+                        <span
+                          className={cn(
+                            'font-mono text-[11px]',
+                            // Rec pinned at the ceiling: the tier is what set the
+                            // bid, so raising it means moving the tier, not the bid.
+                            r.bidRecommended > 0 && r.bidRecommended >= r.tierCeiling * 0.98
+                              ? 'font-medium text-amber-700'
+                              : 'text-slate-500',
+                          )}
+                          title={
+                            r.bidRecommended > 0 && r.bidRecommended >= r.tierCeiling * 0.98
+                              ? 'Bid rec đang bị trần tier chặn — muốn bid cao hơn thì phải đổi tier của nước này'
+                              : undefined
+                          }
+                        >
+                          {money(r.tierCeiling)}
+                        </span>
+                      ) : (
+                        <span className="font-mono text-[11px] text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top text-right whitespace-nowrap">
+                      <span className="font-mono text-[11px] text-slate-700">
+                        {r.crActual > 0 ? `${r.crActual}%` : <span className="text-slate-300">—</span>}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5 align-top text-right whitespace-nowrap font-mono text-[10px] text-slate-500">
+                      {formatNumber(r.clicksL30, { compact: true })} /{' '}
+                      <span className={r.installsL30 > 0 ? 'font-medium text-emerald-700' : ''}>
+                        {formatNumber(r.installsL30, { compact: true })}
+                      </span>
+                      {r.instL90 > 0 && (
+                        <span className="text-slate-400" title="Inst L90 — installs 90 ngày">
+                          {' '}
+                          ({formatNumber(r.instL90, { compact: true })})
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 align-top">
-                      <span className={cn('text-[11px] font-medium', actionTone(r.action))}>{r.action || '—'}</span>
+                      {r.actionRecommended ? (
+                        <span
+                          className={cn(
+                            'inline-flex items-center whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium',
+                            as.bg,
+                            as.text,
+                          )}
+                        >
+                          {r.actionRecommended}
+                        </span>
+                      ) : (
+                        // No verdict in the sheet — fall back to the one derived
+                        // from current bid vs recommendation, and mark it as ours.
+                        <span
+                          className={cn('text-[11px] font-medium', actionTone(r.action))}
+                          title="Sheet không ghi action cho dòng này — đây là action suy ra từ bid hiện tại vs bid rec"
+                        >
+                          {r.action || '—'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 align-top">
                       {r.camp ? (
@@ -583,13 +693,13 @@ export function BidCapView() {
                         ) : (
                           <span
                             className="inline-block max-w-[15rem] text-[10px] leading-snug break-words text-slate-600"
-                            title="Tên camp từ sheet nhưng chưa tìm được URL trong Camp_Links"
+                            title="Tìm được tên camp nhưng chưa có URL trong Camp_Links"
                           >
                             {r.camp.name}
                           </span>
                         )
                       ) : (
-                        <span className="text-[11px] text-slate-300" title="Chưa điền Link campaign trong sheet Max bid cap (và không auto-detect được)">
+                        <span className="text-[11px] text-slate-300" title="Không auto-detect được campaign nào cho Country × Category này trong Camp_Links">
                           —
                         </span>
                       )}
@@ -600,12 +710,16 @@ export function BidCapView() {
               })}
             </tbody>
           </table>
-          <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            Bid rec / Bid hiện tại = USD · Bid hiện tại <span className="text-emerald-700">xanh</span> = đang thấp hơn rec (nên tăng),{' '}
-            <span className="text-rose-600">đỏ</span> = cao hơn rec (nên giảm) · Bid hiện tại là median theo category (Master KW Lookup không có data theo country) ·
-            CR used = CR dùng để tính bid · L30 = Imp / Clicks / Installs 30 ngày ·{' '}
-            <span className="text-indigo-700">Campaign</span> = lấy từ cột <b>Link campaign</b> bạn tự điền trong sheet Max bid cap (URL → link thẳng; tên camp → tự tra URL trong Camp_Links để click được, không tra ra thì hiện tên); ô nào chưa điền thì tạm auto-detect; trống (—) = chưa có ·
-            Note = tự lưu vào Google Sheet (tab Bid_Notes), share cho cả team
+          <div className="border-t px-3 py-2 text-[10px] text-slate-400">
+            Mỗi dòng = 1 <b>keyword cluster</b> trong 1 cặp Country × Category (sheet đổi grain 8/2026) ·
+            Bid rec / CPI cap / Tier ceil. = USD · Bid rec trống (—) = sheet bảo <b>cắt</b> cluster đó,{' '}
+            <b>không</b> phải bid $0 · Bid hiện tại <span className="text-emerald-700">xanh</span> = thấp hơn rec (nên tăng),{' '}
+            <span className="text-rose-600">đỏ</span> = cao hơn rec (nên giảm); là median theo category (Master KW Lookup không có data theo country/cluster) ·{' '}
+            <span className="text-amber-700">Tier ceil. vàng</span> = bid rec đang bị trần tier chặn ·
+            CPI cap là <b>trần cho phép</b>, không phải CPI đã tiêu — sheet không còn cột Spend nên không đo được CPI thật theo nước ·
+            Clicks/inst = Clicks/mo · Inst/mo · (Inst L90) ·{' '}
+            <span className="text-indigo-700">Campaign</span> = auto-detect theo Country × Category từ Camp_Links (cột Link campaign tự điền đã bị xoá khỏi sheet) ·
+            Note = lưu theo Country × Category nên các cluster trong cùng 1 cặp <b>dùng chung</b> 1 note; tự lưu vào tab Bid_Notes, share cho cả team
           </div>
         </div>
       )}

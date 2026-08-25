@@ -577,15 +577,36 @@ export function parseMasterKw(rows: string[][]): MasterKwRow[] {
 }
 
 // ---------------------------------------------------------------------------
-// Max bid cap — one recommended bid per Country × Category, computed by Apps
-// Script. Row 0 = header, row 1+ = data. Columns mapped by header NAME (not
-// fixed index) so Trang re-ordering columns in the sheet won't break parsing.
-// Each field is matched against several candidate names (exact, then prefix)
-// so cosmetic header tweaks ("CR used %" → "CR used") stay parseable.
-// Header (current): Tier | Country | Code | Category | Status | # KW | Imp |
-//   Clicks | Inst | Spend | CR act % | CPC act | CPI act | Avg Pos | % Top-3 |
-//   Bid p75 | CR used % | Max Allowed | Bid Rec ⭐ | Est Pos @ Rec | Ceil Blk |
-//   Action
+// Max bid cap — one recommended bid per Country × Category × KEYWORD CLUSTER.
+// Row 0 = a title banner, row 1 = header, row 2+ = data. Columns are mapped by
+// header NAME (not fixed index) so re-ordering columns won't break parsing.
+//
+// Header (verified live 2026-08-25, 15 columns):
+//   Tier | Country | Code | Category | Keyword Cluster | Example keywords |
+//   Inst L90 | Clicks/mo | Inst/mo | CR % | CPI cap | Tier ceil. |
+//   Bid Rec ⭐ | Action | Bid Rec ⭐
+//
+// Two things about this layout bite if you don't plan for them:
+//
+// 1. The grain changed. It used to be one row per Country × Category; it is now
+//    one row per CLUSTER inside that cell, so a Country × Category is a group of
+//    up to 14 rows. Anything that averages over raw rows silently weights a
+//    country by how many clusters it happens to have — aggregate per country
+//    FIRST (see aggregateBidCapByCountry in lib/market/bidCapAgg.ts).
+//
+// 2. 'Bid Rec ⭐' appears TWICE — column M (676 filled rows, 65 countries) and
+//    column O (274 rows, 11 countries). M is the live recommendation; O is stale
+//    leftover data and is deliberately NOT parsed. Because of the duplicate,
+//    every lookup below matches on the FIRST hit, and `find` must never be given
+//    a bare prefix that could land on the wrong twin.
+//
+// Columns the old schema had and this one does NOT: Status, # KW, Imp, Spend,
+// CPC act, CPI act, Avg Pos, % Top-3, Bid p75, CR used %, Max Allowed,
+// Est Pos @ Rec, Ceil Blk, Link campaign. In particular there is no longer any
+// spend anywhere in this tab, so no measured CPC/CPI can come out of it — 'CPI
+// cap' is a ceiling, not an outcome. Readers that used to compute actual CPI per
+// country have to say they can't rather than divide by a zero that used to be
+// money (that silent-zero path is what makes a panel render all-idle).
 // ---------------------------------------------------------------------------
 
 /**
@@ -886,8 +907,10 @@ export function parseMarketTiers(rows: string[][]): MarketTierRow[] {
 export function parseBidCap(rows: string[][]): BidCapRow[] {
   if (!rows || rows.length < 2) return [];
   const norm = (c: unknown): string => str(c).trim().toLowerCase();
+  // The header is row 1 (row 0 is a title banner), but scan a few rows so an
+  // extra banner line inserted above it doesn't break parsing.
   let headerIdx = -1;
-  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+  for (let i = 0; i < Math.min(rows.length, 6); i++) {
     const r = (rows[i] ?? []).map(norm);
     const hasBidRec = r.some((h) => h.startsWith('bid rec') || h === 'bid_recommended');
     if (r.includes('country') && r.includes('category') && (hasBidRec || r.includes('action'))) {
@@ -898,6 +921,8 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
   if (headerIdx < 0) return [];
   const header = (rows[headerIdx] ?? []).map(norm);
   // Match a column by trying each candidate as an exact header, then as a prefix.
+  // Candidates are listed most-specific first: 'cpi cap' has to be tried before
+  // any bare 'cpi', or the ceiling gets read as though it were a measured CPI.
   const find = (...cands: string[]): number => {
     for (const c of cands) {
       const i = header.indexOf(c);
@@ -914,30 +939,32 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
     country: find('country'),
     countryCode: find('code', 'country_code'),
     category: find('category'),
-    status: find('status'),
-    nKw: find('# kw', 'n_kw'),
-    // Newer 'Max bid cap' schema uses per-month columns (Imp/mo, Clicks/mo,
-    // Inst/mo, Spend/mo) — list those first so 'Inst/mo' wins over 'Inst L90'.
-    impL30: find('imp/mo', 'imp_l30', 'imp'),
+    keywordCluster: find('keyword cluster', 'cluster'),
+    exampleKeywords: find('example keywords', 'example kw', 'example'),
+    instL90: find('inst l90', 'installs l90'),
     clicksL30: find('clicks/mo', 'clicks_l30', 'clicks'),
-    installsL30: find('inst/mo', 'installs_l30', 'inst'),
-    spendL30: find('spend/mo', 'spend_l30', 'spend'),
-    crActual: find('cr act', 'cr_actual', 'cr %', 'cr'),
-    cpcActual: find('cpc act', 'cpc_actual', 'cpc'),
-    cpiActual: find('cpi act', 'cpi_actual', 'cpi'),
-    avgPosition: find('avg pos', 'avg_position'),
-    visibility: find('% top-3', '% top3', 'top-3', 'visibility'),
-    bidFloorTop3: find('bid p75', 'bid_floor_top3', 'bid floor'),
-    crUsed: find('cr used', 'cr_used'),
-    maxBidCeiling: find('max allowed', 'max_bid_ceiling', 'max bid ceiling'),
+    // 'Inst/mo' must win over 'Inst L90' — hence the explicit order.
+    installsL30: find('inst/mo', 'installs/mo', 'installs_l30'),
+    crActual: find('cr %', 'cr act', 'cr_actual'),
+    cpiCap: find('cpi cap', 'cpi_cap'),
+    tierCeiling: find('tier ceil', 'tier_ceiling'),
+    // 'bid rec' appears twice; find() returns the FIRST match, which is the live
+    // column M. The stale column O twin is intentionally left unparsed.
     bidRecommended: find('bid rec', 'bid_recommended'),
-    estPosAtRec: find('est pos', 'est_pos_at_rec'),
-    ceilBlocked: find('ceil blk', 'ceil blocked', 'ceiling blocked'),
     actionRecommended: find('action', 'action_recommended'),
-    // Hand-maintained campaign link column. Match several likely header names.
-    linkCampaign: find('link campaign', 'campaign link', 'link camp', 'camp link', 'link', 'campaign', 'camp'),
   };
   const at = (row: string[], idx: number): unknown => (idx >= 0 ? row[idx] : undefined);
+  // The sheet writes an em dash where it has nothing to say. Treat it as blank so
+  // it doesn't show up as a cluster literally named '—'.
+  const text = (v: unknown): string => {
+    const t = str(v).trim();
+    return t === '—' || t === '-' ? '' : t;
+  };
+  // Every numeric cell in this tab is TEXT ("$68.24", "35.2%", "0.0"), so the
+  // shared num() helper — which deliberately leaves '%' alone to avoid rescaling
+  // — returns 0 for the CR column. Strip the sign here and keep the value in
+  // percent units, which is how the column is labelled and displayed.
+  const pct = (v: unknown): number => num(str(v).replace('%', ''));
   return rows
     .slice(headerIdx + 1)
     .map((row): BidCapRow | null => {
@@ -949,25 +976,16 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
         country,
         countryCode: str(at(row, ci.countryCode)).trim(),
         category,
-        status: str(at(row, ci.status)).trim(),
-        nKw: num(at(row, ci.nKw)),
-        impL30: num(at(row, ci.impL30)),
+        keywordCluster: text(at(row, ci.keywordCluster)),
+        exampleKeywords: text(at(row, ci.exampleKeywords)),
+        instL90: num(at(row, ci.instL90)),
         clicksL30: num(at(row, ci.clicksL30)),
         installsL30: num(at(row, ci.installsL30)),
-        spendL30: num(at(row, ci.spendL30)),
-        crActual: num(at(row, ci.crActual)),
-        cpcActual: num(at(row, ci.cpcActual)),
-        cpiActual: num(at(row, ci.cpiActual)),
-        avgPosition: numOrNull(at(row, ci.avgPosition)),
-        visibility: numOrNull(at(row, ci.visibility)),
-        bidFloorTop3: numOrNull(at(row, ci.bidFloorTop3)),
-        crUsed: num(at(row, ci.crUsed)),
-        maxBidCeiling: num(at(row, ci.maxBidCeiling)),
+        crActual: pct(at(row, ci.crActual)),
+        cpiCap: num(at(row, ci.cpiCap)),
+        tierCeiling: num(at(row, ci.tierCeiling)),
         bidRecommended: num(at(row, ci.bidRecommended)),
-        estPosAtRec: numOrNull(at(row, ci.estPosAtRec)),
-        ceilBlocked: /^true$/i.test(str(at(row, ci.ceilBlocked)).trim()),
-        actionRecommended: str(at(row, ci.actionRecommended)).trim(),
-        linkCampaign: str(at(row, ci.linkCampaign)).trim(),
+        actionRecommended: text(at(row, ci.actionRecommended)),
       };
     })
     .filter((r): r is BidCapRow => r !== null);

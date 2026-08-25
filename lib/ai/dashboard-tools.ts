@@ -446,13 +446,20 @@ export function makeDashboardTools(data: SheetPayload) {
     }),
 
     get_cpi_caps: tool({
+      // The description spells out what this tool can NO LONGER answer. The model
+      // will otherwise keep reporting a per-country CPI, because that is what this
+      // tool used to return and what the question usually asks for. Since Aug 2026
+      // the 'Max bid cap' tab has no Spend column and no other tab splits spend by
+      // country, so per-country measured CPI does not exist in this dataset.
       description:
-        'Per-country CPI ceilings vs what each country actually cost, plus what one install is WORTH there (revenue per install). Use for questions about bid caps, which countries overpay, or whether a ceiling is set correctly at all.',
+        'Per-country CPI ceilings: the ceiling the bid model works to (from Max bid cap) vs the ceiling configured in PerGeo_CPI_Cap, plus what one install is WORTH there (revenue per install). Use for questions about bid caps and whether a ceiling is set correctly. IMPORTANT: this returns ALLOWANCES, not outcomes — there is no measured CPI or spend per country anywhere in this data (the sheet dropped its Spend column), so never report cpi_cap_sheet as money actually paid, and say so if asked for actual CPI by country. For real spend, use the per-campaign or per-category tools instead.',
       inputSchema: z.object({
         only: z
-          .enum(['all', 'over-cap', 'cap-above-value', 'spending'])
+          .enum(['all', 'over-cap', 'cap-above-value', 'bidding'])
           .default('over-cap')
-          .describe('over-cap = measured CPI above ceiling; cap-above-value = the ceiling itself exceeds what an install earns.'),
+          .describe(
+            "over-cap = the bid sheet's CPI ceiling sits above the configured one; cap-above-value = the ceiling itself exceeds what an install earns; bidding = countries that still carry a live Bid Rec.",
+          ),
         limit: z.number().min(1).max(60).default(20),
       }),
       execute: async ({ only, limit }) => {
@@ -462,30 +469,36 @@ export function makeDashboardTools(data: SheetPayload) {
           switch (only) {
             case 'over-cap': return ov.rows.filter((r) => r.verdict === 'over');
             case 'cap-above-value': return ov.rows.filter((r) => r.capHeadroom !== null && r.capHeadroom < 0);
-            case 'spending': return ov.rows.filter((r) => r.spend > 0);
+            case 'bidding': return ov.rows.filter((r) => r.bidRec !== null);
             default: return ov.rows;
           }
         })();
         return {
+          note:
+            'cpi_cap_sheet là mức CPI model bid được phép chạy tới, KHÔNG phải CPI đã tiêu. ' +
+            "Sheet 'Max bid cap' bỏ cột Spend từ 8/2026 nên không có spend/CPI thực theo nước.",
           totals: {
             countries_configured: ov.totals.configured,
-            countries_with_spend: ov.totals.withSpend,
-            spend: round(ov.totals.spend, 0),
+            countries_with_live_bid: ov.totals.withBid,
+            countries_with_installs: ov.totals.withInstalls,
             installs: ov.totals.installs,
-            blended_cpi: round(ov.totals.cpi, 2),
-            overspend_vs_cap: round(ov.totals.overspend, 0),
-            countries_over_cap: ov.totals.overCount,
+            countries_sheet_cap_over_config: ov.totals.overCount,
+            worst_gap_pct: round(ov.totals.worstGapPct, 3),
             countries_cap_above_value: ov.totals.capAboveValue,
           },
           countries: pick.slice(0, limit).map((r) => ({
             country: r.country,
             revenue_rank: r.rank,
             tier1: r.tier1,
-            cpi_cap: r.cap,
-            cpi_actual: round(r.cpi, 2),
-            cpi_reliable: r.cpiReliable,
-            installs: r.installs,
-            spend: round(r.spend, 0),
+            cpi_cap_config: r.cap,
+            cpi_cap_sheet: round(r.sheetCpiCap, 2),
+            bid_rec: round(r.bidRec, 2),
+            tier_ceiling: round(r.tierCeiling, 2),
+            gap_vs_config_pct: round(r.vsCapPct, 3),
+            installs_per_month: r.installs,
+            installs_l90: r.instL90,
+            keyword_clusters: r.clusters,
+            clusters_to_cut: r.clustersToCut,
             value_per_install: round(r.valuePerInstall, 2),
             cap_headroom: round(r.capHeadroom, 2),
             verdict: r.verdict,

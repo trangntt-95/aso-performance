@@ -224,53 +224,66 @@ function WinCell({ stat }: { stat: WinStat | null }) {
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
+// What this column can claim changed with the sheet. It used to read measured
+// CPC (spend ÷ clicks per Country × Category) against Bid Rec ⭐ — "we are paying
+// above the recommendation here". 'Max bid cap' dropped its Spend column in
+// Aug 2026, so that comparison has no left-hand side any more and the column now
+// reports whether the recommendation itself is pinned at the tier ceiling.
+//
+// The two are NOT interchangeable and the wording keeps them apart: "bị trần
+// tier chặn" says the tier is deciding the bid, not that we are overspending.
+// Presenting the new number under the old label would have turned a config
+// observation into a phantom overspend alert.
 function BidPressureCell({ row }: { row: CoverageRow }) {
   const p = row.bidPressure;
-  if (!p || (p.over.length === 0 && p.under.length === 0)) {
+  if (!p || (p.capped.length === 0 && p.headroom.length === 0)) {
     return (
       <td
         className="px-2 py-1.5 text-center text-slate-300"
-        title="Chưa có nước nào của keyword này ghi nhận spend + clicks thật trong 'Max bid cap' (L30) để tính CPC."
+        title={
+          "Không nước nào của keyword này có bid rec còn hiệu lực trong 'Max bid cap' (đủ clicks/mo) để xét. " +
+          'Lưu ý: CPC thực theo nước không còn đo được — sheet đã bỏ cột Spend từ 8/2026.'
+        }
       >
         —
       </td>
     );
   }
-  if (p.over.length === 0) {
-    const best = p.under[0];
+  if (p.capped.length === 0) {
+    const tightest = p.headroom[0];
     return (
       <td className="px-2 py-1.5 align-top">
         <span
           className="text-[10px] text-emerald-700"
-          title={`Mọi nước đo được đều trả dưới Bid Rec. Sát nhất: ${best.country} ${money(best.cpc)} vs ${money(best.bidRec)} (${Math.round(best.overPct * 100)}%).`}
+          title={`Bid rec ở mọi nước đo được vẫn còn khoảng trống dưới trần tier. Sát trần nhất: ${tightest.country} ${money(tightest.bidRec)} / trần ${money(tightest.tierCeiling)} (${Math.round(tightest.ceilingUsePct * 100)}%).`}
         >
-          ✓ trong ngưỡng ({p.under.length} nước)
+          ✓ còn dưới trần ({p.headroom.length} nước)
         </span>
       </td>
     );
   }
-  const worst = p.over[0];
-  const tone = worst.overPct >= 0.5 ? 'text-rose-700' : 'text-amber-700';
+  const worst = p.capped[0];
   const title = [
-    `Trả trên Bid Rec ở ${p.over.length} nước (CPC = spend/clicks L30 của Category × Country):`,
-    ...p.over.map(
+    `Bid rec bị trần tier chặn ở ${p.capped.length} nước (Category × Country):`,
+    ...p.capped.map(
       (c) =>
-        `  ${c.country}: ${money(c.cpc)} vs Bid Rec ${money(c.bidRec)} = +${Math.round(c.overPct * 100)}% · ${c.clicksL30} clicks · $${Math.round(c.spendL30)}${c.status ? ` · ${c.status}` : ''}`,
+        `  ${c.country}: bid rec ${money(c.bidRec)} = trần tier ${money(c.tierCeiling)} · ${c.clicksL30} clicks/mo · ${c.clusters} cluster${c.clustersToCut > 0 ? `, ${c.clustersToCut} bị cắt` : ''}`,
     ),
-    p.under.length > 0 ? `Trong ngưỡng ở ${p.under.length} nước.` : '',
-    p.unmeasured.length > 0 ? `Chưa đo được ${p.unmeasured.length} nước (không có spend L30).` : '',
-    'Độ phân giải là Category × Country, không phải theo từng keyword — sheet không có spend theo keyword.',
+    p.headroom.length > 0 ? `Còn khoảng trống ở ${p.headroom.length} nước.` : '',
+    p.unmeasured.length > 0 ? `Chưa xét được ${p.unmeasured.length} nước (không có bid rec / quá ít clicks).` : '',
+    'Độ phân giải là Category × Country, không phải theo từng keyword — sheet không có số theo keyword.',
+    'Đây KHÔNG phải CPC thực: sheet bỏ cột Spend từ 8/2026 nên không đo được tiền đã trả theo nước.',
   ]
     .filter(Boolean)
     .join('\n');
   return (
     <td className="px-2 py-1.5 align-top">
-      <span className={cn('text-[10px] font-medium cursor-help', tone)} title={title}>
-        ⚠ {worst.country} +{Math.round(worst.overPct * 100)}%
-        {p.over.length > 1 && ` +${p.over.length - 1} nước`}
+      <span className={cn('cursor-help text-[10px] font-medium text-amber-700')} title={title}>
+        ⚠ {worst.country} sát trần
+        {p.capped.length > 1 && ` +${p.capped.length - 1} nước`}
       </span>
-      <div className="text-[9px] text-slate-400 font-mono">
-        {money(worst.cpc)} / {money(worst.bidRec)}
+      <div className="font-mono text-[9px] text-slate-400">
+        {money(worst.bidRec)} / {money(worst.tierCeiling)}
       </div>
     </td>
   );
@@ -320,8 +333,9 @@ export function PaidCoverageView() {
         // strict variant: also EXCLUDES paused camp (chưa từng được bid thật sự).
         if (statusFilter === 'not_in_paid_strict' && (r.inPaid || r.negative || r.paused)) return false;
         if (statusFilter === 'over_bid') {
-          if (!r.bidPressure || r.bidPressure.over.length === 0) return false;
-          if (countryFilter !== 'all' && !r.bidPressure.over.some((c) => c.country === countryFilter)) return false;
+          if (!r.bidPressure || r.bidPressure.capped.length === 0) return false;
+          if (countryFilter !== 'all' && !r.bidPressure.capped.some((c) => c.country === countryFilter))
+            return false;
         } else if (countryFilter !== 'all' && !r.countries.some((c) => c.name === countryFilter)) {
           return false;
         }
@@ -405,7 +419,7 @@ export function PaidCoverageView() {
             <option value="in_paid">📌 In Paid (Master)</option>
             <option value="manual">✍️ Added (manual)</option>
             <option value="negative">🚫 Negative list</option>
-            <option value="over_bid">💸 Trả trên Bid Rec (theo nước)</option>
+            <option value="over_bid">🚧 Bid rec bị trần tier chặn (theo nước)</option>
             <option value="all">Status: All</option>
           </select>
           <select
@@ -531,9 +545,13 @@ export function PaidCoverageView() {
                 <th className="px-2 py-2 text-left font-medium">Paid?</th>
                 <th
                   className="px-2 py-2 text-left font-medium"
-                  title="CPC thực (spend/clicks L30 của Category × Country trong 'Max bid cap') so với Bid Rec ⭐ của chính nước đó. Chỉ hiện nước có spend thật; ô '—' = chưa đủ dữ liệu để nói."
+                  title={
+                    "Bid Rec ⭐ của Category × Country so với trần tier ('Tier ceil.') của nước đó — " +
+                    'sát trần nghĩa là tier đang quyết định bid chứ không phải thị trường. ' +
+                    "KHÔNG phải CPC thực: sheet 'Max bid cap' đã bỏ cột Spend từ 8/2026 nên không tính được tiền trả thật theo nước."
+                  }
                 >
-                  Bid vs Rec
+                  Bid vs trần tier
                 </th>
               </tr>
             </thead>

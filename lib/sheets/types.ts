@@ -355,36 +355,34 @@ export interface BidCapRow {
   country: string;
   countryCode: string;
   category: string;
-  /** Coverage status: PROVEN / EARLY SIGNAL / NO CAMP / IMP ONLY / … */
-  status: string;
-  nKw: number;
-  impL30: number;
+  /** Keyword cluster inside the category ("B1. Brand chính xác", "C. hyros", …).
+   *  Added 2026-08: the sheet used to hold ONE row per Country × Category and now
+   *  holds one per Country × Category × Cluster, so a Country × Category is a
+   *  GROUP of rows (up to 14) — never assume a single row per cell. '—' when the
+   *  sheet leaves the cluster blank. */
+  keywordCluster: string;
+  /** Sample keywords of the cluster, comma-separated, as typed in the sheet. */
+  exampleKeywords: string;
+  /** Installs over the last 90 days ('Inst L90' col). */
+  instL90: number;
+  /** Clicks per month ('Clicks/mo' col). */
   clicksL30: number;
+  /** Installs per month ('Inst/mo' col). */
   installsL30: number;
-  spendL30: number;
+  /** Conversion rate the bid was computed from ('CR %' col), in percent. */
   crActual: number;
-  cpcActual: number;
-  cpiActual: number;
-  avgPosition: number | null;
-  /** % of impressions in top-3 ('% Top-3' col). */
-  visibility: number | null;
-  /** p75 of bids ('Bid p75' col). */
-  bidFloorTop3: number | null;
-  crUsed: number;
-  /** Ceiling = max bid allowed ('Max Allowed' col). */
-  maxBidCeiling: number;
-  /** The headline number: bid to set ('Bid Rec ⭐' col). */
+  /** Allowed CPI ceiling for this cell ('CPI cap' col). 0 = the sheet left it
+   *  blank, which it does on every row it tells you to cut. NOT a measured CPI —
+   *  the sheet no longer carries actual spend, so no CPI can be measured. */
+  cpiCap: number;
+  /** Tier-level bid ceiling this cell is capped by ('Tier ceil.' col). */
+  tierCeiling: number;
+  /** The headline number: bid to set ('Bid Rec ⭐' col). 0 = blank, which the
+   *  sheet leaves on 'Cắt / Pause' rows (825 of 1501 as of 2026-08). Guard with
+   *  `> 0` rather than treating 0 as a real recommendation of zero. */
   bidRecommended: number;
-  /** Estimated avg position at the recommended bid ('Est Pos @ Rec' col). */
-  estPosAtRec: number | null;
-  /** True if the recommendation was capped by the ceiling ('Ceil Blk' col). */
-  ceilBlocked: boolean;
+  /** 'Action' col — Giữ / Hạ mạnh / Cắt / Cắt / Pause / —. */
   actionRecommended: string;
-  /** Campaign link the user maintains by hand in the 'Max bid cap' sheet
-   *  ('Link campaign' col). Raw cell text — a campaign NAME (values.get can't
-   *  read a hyperlink's URL, only its display text) or a pasted URL. Shown as-is
-   *  on the dashboard, taking priority over the auto-detected camp link. */
-  linkCampaign: string;
 }
 
 /**

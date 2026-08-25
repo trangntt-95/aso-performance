@@ -1,5 +1,6 @@
 import type { BidCapRow, CampLinkRow, MasterKwRow, ShopifyCampRow } from '@/lib/sheets/types';
 import { buildCampGeoIndex, isNeverTargeted, type CampGeo } from '@/lib/sheets/campGeo';
+import { aggregateBidCapCells, bidCapCellsByCategory } from '@/lib/market/bidCapAgg';
 import { normalizeCampName, buildCampNameResolver } from '@/lib/sheets/campName';
 
 // Detect OVERBID campaigns: paid camps (from Shopify_daily) whose effective
@@ -14,8 +15,19 @@ import { normalizeCampName, buildCampNameResolver } from '@/lib/sheets/campName'
 // Target countries come from the Camp_Links **Geo** column (the authoritative
 // targeting). When a camp's Geo is blank / it isn't in Camp_Links, it's treated
 // as GENERAL targeting → we compare against the AVERAGE allowed CPC/CPI across
-// the whole category. NB: in 'Max bid cap' the CPC column == Bid Rec ⭐ (verified
-// live), so "allowed CPC" = Bid Rec.
+// the whole category.
+//
+// The two benchmarks come straight from the sheet's own ceilings: "allowed CPC"
+// is Bid Rec ⭐ and "allowed CPI" is the CPI cap column. Before Aug 2026 the CPI
+// benchmark was the tab's *measured* CPI, which made the comparison circular —
+// a category that had been overpaying set its own bar at what it had overpaid.
+// The sheet no longer carries spend at all, so the ceiling is both the only
+// available number and the right one.
+//
+// One row of that tab is now a Country × Category × keyword-cluster, not a
+// Country × Category, so the cells are collapsed per country first (see
+// bidCapAgg): averaging raw rows would weight each country by how finely its
+// keywords happen to be split rather than treating countries as peers.
 
 /** Why a camp is / isn't on the overbid list. Only 'overbid' rows are actionable;
  *  the rest exist so a camp you noted can still be found after it leaves the list
@@ -45,7 +57,8 @@ export interface OverbidRow {
   cpi: number | null;
   /** Allowed bid (avg Bid Rec across the camp's countries / category). */
   targetBid: number | null;
-  /** Allowed CPI (avg CPI across the camp's countries / category). */
+  /** Allowed CPI — mean of the sheet's 'CPI cap' ceiling across the camp's
+   *  countries / category. A ceiling we set, not a CPI we measured. */
   targetCpi: number | null;
   cpcOverPct: number | null;
   cpiOverPct: number | null;
@@ -175,14 +188,19 @@ export function assessCamps(
   const cpcTol = (params.cpcTolerancePct ?? 0) / 100;
   const cpiTol = (params.cpiTolerancePct ?? 0) / 100;
 
-  // Bid-cap cells grouped by category (each holds per-country allowed bid/CPI).
+  // Bid-cap cells grouped by category, ONE entry per country: cluster rows are
+  // collapsed first so a country counts once no matter how many clusters it has.
+  // A country whose every cluster is marked "Cắt / Pause" carries no bid and no
+  // cap; it stays in the list but contributes nothing, because avg() skips
+  // non-positive values — that keeps a market we've stopped buying from dragging
+  // the allowed bid down and flagging live camps against a bar nobody bids into.
   const cellsByCat = new Map<string, Cell[]>();
-  for (const r of bidCap) {
-    if (!r.category || !r.country) continue;
-    const list = cellsByCat.get(r.category) ?? [];
-    list.push({ country: r.country, bid: r.bidRecommended, cpi: r.cpiActual });
-    cellsByCat.set(r.category, list);
-  }
+  bidCapCellsByCategory(aggregateBidCapCells(bidCap)).forEach((cells, cat) => {
+    cellsByCat.set(
+      cat,
+      cells.map((c) => ({ country: c.country, bid: c.bid, cpi: c.cpiCap })),
+    );
+  });
   // Same cells minus the markets the account never advertises in. This is the
   // benchmark for camps that DON'T name their countries (blank Geo, "all", or
   // an exclude list): they run everywhere except the account-level negative geo,

@@ -16,6 +16,14 @@ import { cn } from '@/lib/utils';
 // The agreed column order, left to right: what it is → how much it cost → what
 // it bought → the rate → the ceiling → the gap → the verdict. Money before
 // outcome before rate, because that's the order the numbers are read in.
+//
+// The two tables no longer measure the same thing, so each declares its columns.
+// By category, spend is real: it comes from Shopify_daily, per campaign, and a
+// campaign maps to a category. By country it is not — 'Max bid cap' dropped its
+// Spend column in Aug 2026 and no tab breaks spend down per country, so that
+// table compares two CEILINGS instead of a rate against a ceiling. Keeping one
+// shared column list would have forced the country table to keep printing 'Chi'
+// and 'CPI thực' headers over columns nothing can fill.
 
 /** Whole dollars — for amounts, where cents are noise. */
 export const money = (n: number) => `$${formatNumber(Math.round(n))}`;
@@ -28,35 +36,62 @@ export const pctDelta = (n: number | null) =>
 /** Installs below this make a measured CPI a sample, not a rate. */
 export const RELIABLE_INSTALLS = 3;
 
-export const CAP_COLS = [
-  { key: 'name', label: '', align: 'left' as const },
-  { key: 'spend', label: 'Chi', align: 'right' as const },
-  { key: 'installs', label: 'Install', align: 'right' as const },
-  { key: 'cpi', label: 'CPI thực', align: 'right' as const },
-  { key: 'cap', label: 'Trần', align: 'right' as const },
-  { key: 'gap', label: 'vs trần', align: 'right' as const },
-  { key: 'verdict', label: 'Trạng thái', align: 'left' as const },
+export interface CapCol {
+  key: string;
+  label: string;
+  align: 'left' | 'right';
+  /** Header tooltip — where a column needs to say what it is and isn't. */
+  title?: string;
+}
+
+/** Columns for the by-CATEGORY table, which still has measured spend. */
+export const CAP_COLS: CapCol[] = [
+  { key: 'name', label: '', align: 'left' },
+  { key: 'spend', label: 'Chi', align: 'right' },
+  { key: 'installs', label: 'Install', align: 'right' },
+  { key: 'cpi', label: 'CPI thực', align: 'right', title: 'Chi ÷ install, đo từ dữ liệu thật' },
+  { key: 'cap', label: 'Trần', align: 'right', title: 'Mức trần đang đặt cho nhóm này' },
+  { key: 'gap', label: 'vs trần', align: 'right' },
+  { key: 'verdict', label: 'Trạng thái', align: 'left' },
 ];
 
-/** One header row, so the two tables cannot drift apart. */
-export function CapHead({ nameLabel, extra }: { nameLabel: string; extra?: React.ReactNode }) {
+/** Columns for the by-COUNTRY table, which compares two ceilings. */
+export const COUNTRY_CAP_COLS: CapCol[] = [
+  { key: 'name', label: '', align: 'left' },
+  { key: 'bid', label: 'Bid rec', align: 'right', title: 'Bid trung bình sheet đề xuất cho nước này (Bid Rec ⭐), tính qua các category' },
+  { key: 'installs', label: 'Install/mo', align: 'right', title: 'Inst/mo · trong ngoặc là Inst L90' },
+  {
+    key: 'sheetcap',
+    label: 'Trần CPI sheet',
+    align: 'right',
+    title: "Trần CPI mà model bid đang chạy theo (cột 'CPI cap' của Max bid cap). Là mức CHO PHÉP, không phải CPI đã tiêu — sheet không còn cột Spend.",
+  },
+  { key: 'cap', label: 'Trần cấu hình', align: 'right', title: 'Trần CPI đã đặt trong PerGeo_CPI_Cap' },
+  { key: 'gap', label: 'vs trần', align: 'right', title: 'Trần sheet so với trần cấu hình. Dương = model được phép trả cao hơn mức đã thống nhất.' },
+  { key: 'verdict', label: 'Trạng thái', align: 'left' },
+];
+
+/** One header row, so a table's columns and its cells cannot drift apart. */
+export function CapHead({
+  nameLabel,
+  extra,
+  cols = CAP_COLS,
+}: {
+  nameLabel: string;
+  extra?: React.ReactNode;
+  cols?: CapCol[];
+}) {
   return (
     <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
       <tr>
-        {CAP_COLS.map((c) => (
+        {cols.map((c) => (
           <th
             key={c.key}
             className={cn(
               'whitespace-nowrap px-2 py-1.5 font-medium',
               c.align === 'left' ? 'text-left' : 'text-right',
             )}
-            title={
-              c.key === 'cpi'
-                ? 'Chi ÷ install, đo từ dữ liệu thật'
-                : c.key === 'cap'
-                  ? 'Mức trần đang đặt cho nhóm này'
-                  : undefined
-            }
+            title={c.title}
           >
             {c.key === 'name' ? nameLabel : c.label}
           </th>

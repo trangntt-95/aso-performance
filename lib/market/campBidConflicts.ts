@@ -1,4 +1,5 @@
 import type { BidCapRow, CampLinkRow } from '@/lib/sheets/types';
+import { aggregateBidCapCells, bidCapCellsByCategory } from '@/lib/market/bidCapAgg';
 import { buildCampGeoIndex } from '@/lib/sheets/campGeo';
 import { campCategories } from './campLink';
 
@@ -36,15 +37,20 @@ export function findCampBidConflicts(
   campLinks: CampLinkRow[],
   bidCap: BidCapRow[],
 ): CampBidConflict[] {
-  // category → (country → bidRecommended)
+  // category → (country → recommended bid). The tab holds several keyword-cluster
+  // rows per Country × Category as of Aug 2026, so the rows are collapsed per
+  // country first — assigning straight from raw rows meant whichever cluster
+  // happened to be last in the sheet decided the country's bid, and the spread
+  // this function reports is a difference BETWEEN countries, so a per-country
+  // number is the only input that makes it mean anything.
   const bidByCatCountry = new Map<string, Map<string, number>>();
-  for (const r of bidCap) {
-    if (!r.category || !r.country) continue;
-    if (!Number.isFinite(r.bidRecommended) || r.bidRecommended <= 0) continue;
-    let m = bidByCatCountry.get(r.category);
-    if (!m) { m = new Map(); bidByCatCountry.set(r.category, m); }
-    m.set(r.country, r.bidRecommended);
-  }
+  bidCapCellsByCategory(aggregateBidCapCells(bidCap)).forEach((cells, cat) => {
+    const m = new Map<string, number>();
+    for (const c of cells) {
+      if (Number.isFinite(c.bid) && c.bid > 0) m.set(c.country, c.bid);
+    }
+    if (m.size > 0) bidByCatCountry.set(cat, m);
+  });
 
   const geoIndex = buildCampGeoIndex(campLinks);
   const seen = new Set<string>();

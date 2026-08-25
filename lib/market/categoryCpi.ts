@@ -1,4 +1,5 @@
 import type { BidCapRow, SheetPayload, ShopifyCampRow } from '@/lib/sheets/types';
+import { aggregateBidCapCells, bidCapCellsByCategory } from '@/lib/market/bidCapAgg';
 import { normalizeCampName } from '@/lib/sheets/campName';
 
 // CPI per CATEGORY — the grain that bidding decisions are actually made at.
@@ -329,17 +330,27 @@ export function buildCategoryCpi(
     acc.set(category, e);
   }
 
-  // The per-category yardsticks from 'Max bid cap'. Averaged across that
-  // category's Country × Category cells, since the cap is set per cell.
+  // The per-category yardsticks from 'Max bid cap'. The cap is set per Country ×
+  // Category, so the category figure is the mean across that category's cells —
+  // and a "cell" now spans several keyword-cluster rows, which is why the rows
+  // are collapsed per country first (aggregateBidCapCells). Counting raw rows
+  // would let a country with 14 clusters outvote one with a single cluster.
+  //
+  // The cap comes from the sheet's 'CPI cap' column. It used to come from that
+  // tab's measured CPI, which is gone as of Aug 2026 — and was the wrong number
+  // anyway: comparing what a category spent against what it spent can only ever
+  // say "on target".
   const capAcc = new Map<string, { cap: number[]; rec: number[] }>();
-  for (const r of (data.bidCap ?? []) as BidCapRow[]) {
-    const cat = r.category?.trim();
-    if (!cat) continue;
-    const e = capAcc.get(cat) ?? { cap: [], rec: [] };
-    if (r.cpiActual > 0) e.cap.push(r.cpiActual);
-    if (r.bidRecommended > 0) e.rec.push(r.bidRecommended);
-    capAcc.set(cat, e);
-  }
+  bidCapCellsByCategory(aggregateBidCapCells((data.bidCap ?? []) as BidCapRow[])).forEach(
+    (cells, cat) => {
+      const e = { cap: [] as number[], rec: [] as number[] };
+      for (const c of cells) {
+        if (c.cpiCap > 0) e.cap.push(c.cpiCap);
+        if (c.bid > 0) e.rec.push(c.bid);
+      }
+      capAcc.set(cat, e);
+    },
+  );
   const mean = (xs: number[]) => (xs.length ? xs.reduce((s, v) => s + v, 0) / xs.length : null);
 
   const totalSpend = Array.from(acc.values()).reduce((s, e) => s + e.spend, 0);
