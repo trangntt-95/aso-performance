@@ -67,7 +67,14 @@ interface CoverageRow extends PaidStatus {
   bidPressure: BidPressureSummary | null;
 }
 
-type StatusFilter = 'all' | 'not_in_paid' | 'not_in_paid_strict' | 'paused' | 'in_paid' | 'manual' | 'negative' | 'over_bid';
+// Statuses this tab can filter by. 'manual' and 'negative' are deliberately
+// absent: keywords whose only status comes from KW_Added_Manual or the Negative
+// KW list are dropped from the tab entirely (see the rows memo), because both are
+// lists Trang maintains by hand — a keyword already decided on is not a coverage
+// question. Leaving them in was the worse option in both directions: counted as
+// handled they padded the table, and counted as unhandled they put 101
+// deliberately-excluded keywords into the "not bid yet" list.
+type StatusFilter = 'all' | 'not_in_paid' | 'not_in_paid_strict' | 'paused' | 'in_paid' | 'over_bid';
 type Win = 'l7' | 'l30' | 'l90' | 'l365';
 
 const WIN_LABEL: Record<Win, string> = { l7: 'L7', l30: 'L30', l90: 'L90', l365: 'L365' };
@@ -209,7 +216,19 @@ function buildRows(data: SheetPayload): CoverageRow[] {
       ...status,
     });
   });
-  return out;
+  // Drop the keywords whose only status comes from a hand-maintained list.
+  //
+  // The Negative KW list and KW_Added_Manual are decisions Trang has already
+  // made, so they are not coverage questions — and including them was wrong
+  // either way it was counted. Treated as handled, they padded the table with
+  // rows nobody acts on; treated as unhandled, 101 keywords deliberately
+  // excluded from paid would have flooded the "not bid yet" list, which is the
+  // one list on this page that is supposed to be a to-do.
+  //
+  // Note this drops rows by STATUS, not by membership: a keyword that is bid in
+  // an active Master camp stays, even if it also appears on one of those lists,
+  // because real live spend must never be hidden.
+  return out.filter((r) => !r.negative && r.source !== 'manual');
 }
 
 function WinCell({ stat }: { stat: WinStat | null }) {
@@ -292,7 +311,9 @@ function BidPressureCell({ row }: { row: CoverageRow }) {
 export function PaidCoverageView() {
   const { data, isLoading, error } = useSheetData();
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('not_in_paid');
+  // Opens on the keywords that are genuinely not being bid — paused camps
+  // excluded, since a paused camp is a decision already taken, not a gap.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('not_in_paid_strict');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [minUsers, setMinUsers] = useState<string>('');
@@ -325,13 +346,11 @@ export function PaidCoverageView() {
     return rows
       .filter((r) => {
         if (statusFilter === 'in_paid' && r.source !== 'master') return false;
-        if (statusFilter === 'manual' && r.source !== 'manual') return false;
         if (statusFilter === 'paused' && r.source !== 'paused') return false;
-        if (statusFilter === 'negative' && !r.negative) return false;
-        // not_in_paid INCLUDES paused (camp tắt = đang không bid) but excludes negatives.
-        if (statusFilter === 'not_in_paid' && (r.inPaid || r.negative)) return false;
+        // not_in_paid INCLUDES paused (camp tắt = đang không bid).
+        if (statusFilter === 'not_in_paid' && r.inPaid) return false;
         // strict variant: also EXCLUDES paused camp (chưa từng được bid thật sự).
-        if (statusFilter === 'not_in_paid_strict' && (r.inPaid || r.negative || r.paused)) return false;
+        if (statusFilter === 'not_in_paid_strict' && (r.inPaid || r.paused)) return false;
         if (statusFilter === 'over_bid') {
           if (!r.bidPressure || r.bidPressure.capped.length === 0) return false;
           if (countryFilter !== 'all' && !r.bidPressure.capped.some((c) => c.country === countryFilter))
@@ -355,23 +374,23 @@ export function PaidCoverageView() {
       .sort((a, b) => (b[win]?.users ?? 0) - (a[win]?.users ?? 0));
   }, [rows, search, statusFilter, categoryFilter, countryFilter, minUsers, minInstalls, win]);
 
-  // "Pure" not-in-paid: loại bỏ cả ⏸ paused camp và 🚫 negative — danh sách kw
+  // "Pure" not-in-paid: loại bỏ ⏸ paused camp — danh sách kw
   // thật sự chưa từng / không nên bid, dùng để copy vào camp mới.
   const notInPaidPure = useMemo(
-    () => filtered.filter((r) => !r.paused && !r.negative).map((r) => r.keyword),
+    () => filtered.filter((r) => !r.paused).map((r) => r.keyword),
     [filtered],
   );
 
   const dirty =
     search !== '' ||
-    statusFilter !== 'not_in_paid' ||
+    statusFilter !== 'not_in_paid_strict' ||
     categoryFilter !== 'all' ||
     countryFilter !== 'all' ||
     minUsers !== '' ||
     minInstalls !== '';
   const resetAll = () => {
     setSearch('');
-    setStatusFilter('not_in_paid');
+    setStatusFilter('not_in_paid_strict');
     setCategoryFilter('all');
     setCountryFilter('all');
     setMinUsers('');
@@ -413,12 +432,10 @@ export function PaidCoverageView() {
             className="h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             title="Paid status"
           >
-            <option value="not_in_paid">❌ Not in Paid (gồm ⏸)</option>
             <option value="not_in_paid_strict">❌ Not in Paid (KHÔNG gồm ⏸)</option>
+            <option value="not_in_paid">❌ Not in Paid (gồm ⏸)</option>
             <option value="paused">⏸ Paused camp</option>
             <option value="in_paid">📌 In Paid (Master)</option>
-            <option value="manual">✍️ Added (manual)</option>
-            <option value="negative">🚫 Negative list</option>
             <option value="over_bid">🚧 Bid rec bị trần tier chặn (theo nước)</option>
             <option value="all">Status: All</option>
           </select>
@@ -494,10 +511,7 @@ export function PaidCoverageView() {
               label={statusFilter === 'not_in_paid' ? 'Copy Not-in-Paid (gồm ⏸)' : 'Copy keywords'}
             />
             {statusFilter === 'not_in_paid' && (
-              <CopyKeywordsButton
-                keywords={notInPaidPure}
-                label="Copy (loại ⏸ + 🚫)"
-              />
+              <CopyKeywordsButton keywords={notInPaidPure} label="Copy (loại ⏸)" />
             )}
           </div>
         </div>
@@ -602,11 +616,6 @@ export function PaidCoverageView() {
                     </td>
                     <td className="px-2 py-1.5 align-top">
                       <PaidStatusBadge status={row} />
-                      {row.negative && (
-                        <span className="inline-flex items-center rounded font-medium bg-slate-200 text-slate-600 px-1.5 py-0.5 text-[10px]" title="Trong Negative KW list">
-                          🚫 Negative
-                        </span>
-                      )}
                     </td>
                     <BidPressureCell row={row} />
                   </tr>

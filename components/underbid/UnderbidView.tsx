@@ -51,6 +51,7 @@ type SortKey =
   | 'organicPosL30'
   | 'organicCr'
   | 'paidUsers'
+  | 'paidInstalls'
   | 'paidPos'
   | 'paidPosL30'
   | 'paidShare'
@@ -70,6 +71,7 @@ const SORT_COLS: Record<
   organicPosL30: { kind: 'num', get: (r) => r.organicPosL30 },
   organicCr: { kind: 'num', get: (r) => r.organicCr },
   paidUsers: { kind: 'num', get: (r) => r.paidUsers },
+  paidInstalls: { kind: 'num', get: (r) => r.paidInstalls },
   paidPos: { kind: 'num', get: (r) => r.paidPos },
   paidPosL30: { kind: 'num', get: (r) => r.paidPosL30 },
   paidShare: { kind: 'num', get: (r) => r.paidShare },
@@ -84,6 +86,7 @@ function SortHead({
   onSort,
   align = 'left',
   extra,
+  title,
 }: {
   label: string;
   col: SortKey;
@@ -92,11 +95,14 @@ function SortHead({
   onSort: (k: SortKey) => void;
   align?: 'left' | 'right';
   extra?: string;
+  /** Header tooltip, for a column whose label can't carry its own caveat. */
+  title?: string;
 }) {
   const active = sortKey === col;
   return (
     <th
       onClick={() => onSort(col)}
+      title={title}
       className={cn(
         'px-2 py-2 font-medium cursor-pointer select-none hover:text-slate-900',
         align === 'right' ? 'text-right' : 'text-left',
@@ -300,6 +306,9 @@ export function UnderbidView() {
 
   // Time range the analysis runs on (default L365 = long-term demand).
   const [window, setWindow] = useState<UnderbidWindow>('L365');
+  // On the L30 window the "… pos L30" columns repeat the window columns exactly,
+  // so they are dropped instead of printed twice (see the header comment).
+  const isL30Window = window === 'L30';
   // Detection thresholds (tunable).
   const [minOrganic, setMinOrganic] = useState('5');
   const [maxShare, setMaxShare] = useState('30');
@@ -515,11 +524,20 @@ export function UnderbidView() {
                 <SortHead label="Org users" col="organicUsers" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Org install" col="organicInstalls" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label={`Org pos ${window}`} col="organicPos" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                <SortHead label="Org pos L30" col="organicPosL30" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                {/* The L30 columns exist to put a RECENT reading next to a longer
+                    one. On the L30 window they would be that same reading twice,
+                    so they are dropped rather than printed as a second identical
+                    column — which read as two different measurements agreeing. */}
+                {!isL30Window && (
+                  <SortHead label="Org pos L30" col="organicPosL30" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                )}
                 <SortHead label="Org CR" col="organicCr" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Paid users" col="paidUsers" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortHead label="Paid install" col="paidInstalls" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="Install từ paid trong window đang chọn. 0 install trong khi vẫn có click nghĩa là traffic paid đang không chuyển đổi — nâng bid sẽ chỉ mua thêm click." />
                 <SortHead label={`Paid pos ${window}`} col="paidPos" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                <SortHead label="Paid pos L30" col="paidPosL30" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                {!isL30Window && (
+                  <SortHead label="Paid pos L30" col="paidPosL30" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                )}
                 <SortHead label="Paid share" col="paidShare" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <th className="px-2 py-2 text-left font-medium min-w-[12rem]">Camp (đang bid)</th>
                 <th
@@ -565,9 +583,11 @@ export function UnderbidView() {
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-500">
                       {formatPos(r.organicPos)}
                     </td>
-                    <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-500">
-                      {formatPos(r.organicPosL30)}
-                    </td>
+                    {!isL30Window && (
+                      <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-500">
+                        {formatPos(r.organicPosL30)}
+                      </td>
+                    )}
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">
                       {formatPercent(r.organicCr)}
                     </td>
@@ -576,12 +596,35 @@ export function UnderbidView() {
                         {formatNumber(r.paidUsers, { compact: true })}
                       </span>
                     </td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px]">
+                      {/* Paid clicks with zero installs is the one reading that argues
+                          AGAINST raising the bid, so it is called out rather than left
+                          as a plain 0 among the other numbers. */}
+                      <span
+                        className={
+                          r.paidUsers > 0 && r.paidInstalls === 0
+                            ? 'font-medium text-rose-600'
+                            : r.paidInstalls > 0
+                              ? 'text-emerald-700'
+                              : 'text-slate-400'
+                        }
+                        title={
+                          r.paidUsers > 0 && r.paidInstalls === 0
+                            ? 'Có click paid nhưng chưa install nào — nâng bid ở đây chỉ mua thêm click, xem lại keyword/landing trước.'
+                            : undefined
+                        }
+                      >
+                        {formatNumber(r.paidInstalls, { compact: true })}
+                      </span>
+                    </td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-500">
                       {formatPos(r.paidPos)}
                     </td>
-                    <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-500">
-                      {formatPos(r.paidPosL30)}
-                    </td>
+                    {!isL30Window && (
+                      <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-500">
+                        {formatPos(r.paidPosL30)}
+                      </td>
+                    )}
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       <span className="font-mono text-[11px] font-semibold text-amber-700">{formatPercent(r.paidShare)}</span>
                     </td>

@@ -69,6 +69,11 @@ export interface UnderbidRow {
   /** Organic installs (getApp) in the selected window. */
   organicInstalls: number;
   paidUsers: number;
+  /** Paid installs (getApp) in the selected window. The paid side had users but
+   *  no installs reported next to them, which left the most direct question —
+   *  "is the paid traffic we already buy converting?" — unanswerable on a screen
+   *  whose whole purpose is deciding where to bid more. */
+  paidInstalls: number;
   /** paid / (organic + paid) — low means paid is under-represented. */
   paidShare: number;
   organicPos: number | null;
@@ -203,6 +208,7 @@ export function findUnderbidKeywords(
       organicUsers,
       organicInstalls: a.organic?.getApp ?? 0,
       paidUsers,
+      paidInstalls: a.paid?.getApp ?? 0,
       paidShare,
       organicPos: a.organic?.pos ?? null,
       organicPosL30: l30?.organic ?? null,
