@@ -1,7 +1,6 @@
 'use client';
 
 import { formatNumber, formatPercent } from '@/lib/utils/format';
-import { FX_NOTE, VND_PER_USD } from '@/lib/config/fx';
 import type { ChannelComparison as Comparison } from '@/lib/market/crossChannel';
 import { cn } from '@/lib/utils';
 
@@ -51,18 +50,6 @@ export function ChannelComparisonCard({ data }: { data: Comparison }) {
 
   return (
     <div className="space-y-2">
-      <div className="text-[11px] text-slate-500" title={`Khoảng mà cả hai kênh đều có dữ liệu. ${FX_NOTE}`}>
-        {data.from} → {data.to} · {data.days} ngày · {VND_PER_USD.toLocaleString('vi-VN')}₫ = $1
-        {data.hasPrev && (
-          <span
-            className="cursor-help text-slate-400"
-            title="Kỳ so sánh khớp số ngày mà kỳ này thật sự phủ, không phải số ngày yêu cầu — một export trễ sẽ tạo ra cú giảm giả nếu so với baseline dài hơn."
-          >
-            {' '}· vs {data.prevFrom} → {data.prevTo}
-          </span>
-        )}
-      </div>
-
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {data.channels.map((c) => {
           const shareOfSpend = totalUsd > 0 ? (c.spendUsd ?? 0) / totalUsd : null;
