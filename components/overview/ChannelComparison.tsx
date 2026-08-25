@@ -47,64 +47,82 @@ function briefDates(dates: string[], max = 3): string {
 }
 
 /**
- * Says so when the window actually compared is shorter than the one picked.
+ * The window this card is really reporting, and a red flag when that is not the
+ * window the page filter asked for.
  *
  * The two channels are separate exports covering different spans, so the
- * comparison is clipped to the days both of them have. Silent, that shortfall
- * reads as the paid channels having a quiet stretch; named, it reads as one
- * export not going back that far — which is what it is. Renders nothing when the
- * filter was honoured in full, so the ordinary case stays uncluttered.
+ * comparison is clipped to the days both of them have — picking L7 routinely
+ * yields six days, and picking L90 yields twenty-four. Left unsaid, the card
+ * looks like it answers the filter while quietly answering something else, and a
+ * short window reads as the paid channels having gone quiet. So the range is
+ * always printed, and it turns red exactly when it disagrees with the filter.
+ *
+ * Red is reserved for a genuine disagreement in the DATES. A window that matches
+ * the filter is neutral even if individual days inside it are thin, because that
+ * is a data-volume question, not a "this card is answering a different question"
+ * one.
  *
  * The missing days get split by WHERE they fall, because the three cases have
  * different answers. Days before the overlap starts mean one export doesn't go
  * back that far (a 90-day filter against a 25-day Google export). Days after it
- * ends mean an export is behind by a day or two — that one resolves itself.
- * Blaming the tail for a head-shaped shortfall was the trap here: the channel
- * missing the most recent day is usually not the one missing the other sixty.
+ * ends mean an export is behind by a day or two — that one resolves itself. Days
+ * in between are scattered gaps. Blaming the tail for a head-shaped shortfall
+ * was the trap here: the channel missing the most recent day is usually not the
+ * one missing the other sixty.
  */
-function ShortfallBadge({ data }: { data: Comparison }) {
-  const asked = data.requestedDays;
-  if (asked === null || data.missingDays.length === 0 || data.days >= asked) return null;
+function RangeLine({ data }: { data: Comparison }) {
+  const asked = data.requestedFrom && data.requestedTo;
+  const mismatch = asked && (data.from !== data.requestedFrom || data.to !== data.requestedTo);
 
-  const head = data.missingBecause.filter((m) => m.date < data.availableFrom);
-  const tail = data.missingBecause.filter((m) => m.date > data.availableTo);
-  const gaps = data.missingBecause.filter(
-    (m) => m.date >= data.availableFrom && m.date <= data.availableTo,
-  );
+  const reason = (() => {
+    if (!mismatch) return '';
+    const head = data.missingBecause.filter((m) => m.date < data.availableFrom);
+    const tail = data.missingBecause.filter((m) => m.date > data.availableTo);
+    const gaps = data.missingBecause.filter(
+      (m) => m.date >= data.availableFrom && m.date <= data.availableTo,
+    );
+    const nameFor = (ms: { channels: ('appstore' | 'google')[] }[]): string => {
+      const all = new Set(ms.flatMap((m) => m.channels));
+      if (all.size === 0) return 'một trong hai export';
+      return Array.from(all).map((k) => CHANNEL_SOURCE[k]).join(' và ');
+    };
+    const parts: string[] = [];
+    if (head.length > 0) parts.push(`${nameFor(head)} chỉ có data từ ${data.availableFrom}`);
+    if (tail.length > 0) parts.push(`${nameFor(tail)} chưa có ${briefDates(tail.map((m) => m.date))}`);
+    if (gaps.length > 0) parts.push(`thiếu rời rạc ${briefDates(gaps.map((m) => m.date))}`);
+    return parts.join(' · ');
+  })();
 
-  const nameFor = (ms: { channels: ('appstore' | 'google')[] }[]): string => {
-    const all = new Set(ms.flatMap((m) => m.channels));
-    if (all.size === 0) return 'một trong hai export';
-    return Array.from(all).map((k) => CHANNEL_SOURCE[k]).join(' và ');
-  };
-
-  const parts: string[] = [];
-  if (head.length > 0) {
-    parts.push(`${nameFor(head)} chỉ có data từ ${data.availableFrom}`);
-  }
-  if (tail.length > 0) {
-    parts.push(`${nameFor(tail)} chưa có ${briefDates(tail.map((m) => m.date))}`);
-  }
-  if (gaps.length > 0) {
-    parts.push(`thiếu rời rạc ${briefDates(gaps.map((m) => m.date))}`);
-  }
+  const title = mismatch
+    ? `Filter đang chọn ${data.requestedFrom} → ${data.requestedTo}, nhưng bảng này chỉ so được ` +
+      `${data.from} → ${data.to}.\n\n` +
+      `Lý do: chỉ những ngày mà CẢ HAI kênh đều có dữ liệu mới được tính, để không kênh nào bị ` +
+      `tính những ngày kênh kia chưa thấy. Kỳ so sánh cũng khớp ${data.days} ngày thật chứ không ` +
+      `phải ${data.requestedDays} — so ${data.days} ngày với baseline ${data.requestedDays} ngày sẽ ` +
+      `tạo ra một cú giảm giả.\n\n` +
+      `Khoảng cả hai kênh cùng có: ${data.availableFrom} → ${data.availableTo}\n` +
+      `Thiếu ${data.missingDays.length} ngày: ${briefDates(data.missingDays, 8)}`
+    : `Khoảng đang so, khớp với filter của trang. Chỉ tính những ngày cả hai kênh đều có dữ liệu.`;
 
   return (
-    <div
-      className="flex flex-wrap items-baseline gap-x-1.5 text-[10px]"
-      title={
-        `Bảng này chỉ so những ngày mà CẢ HAI kênh đều có dữ liệu, nên không kênh nào bị tính những ` +
-        `ngày kênh kia chưa thấy. Kỳ so sánh cũng khớp ${data.days} ngày thật chứ không phải ${asked} — ` +
-        `so ${data.days} ngày với baseline ${asked} ngày sẽ tạo ra một cú giảm giả.\n\n` +
-        `Khoảng cả hai kênh cùng có: ${data.availableFrom} → ${data.availableTo}\n` +
-        `Đang so: ${data.from} → ${data.to} (${data.days} ngày)\n` +
-        `Thiếu ${data.missingDays.length} ngày: ${briefDates(data.missingDays, 8)}`
-      }
-    >
-      <span className="cursor-help rounded bg-amber-100 px-1 py-0.5 font-medium text-amber-800">
-        {data.days}/{asked} ngày
+    <div className="flex flex-wrap items-baseline gap-x-1.5 text-[10px]">
+      <span
+        className={cn(
+          'cursor-help font-mono',
+          mismatch ? 'rounded bg-rose-100 px-1 py-0.5 font-semibold text-rose-700' : 'text-slate-500',
+        )}
+        title={title}
+      >
+        {data.from} → {data.to}
       </span>
-      <span className="text-slate-500">{parts.join(' · ')}</span>
+      {mismatch && (
+        <>
+          <span className="cursor-help font-medium text-rose-600" title={title}>
+            ≠ filter {data.requestedFrom} → {data.requestedTo}
+          </span>
+          {reason && <span className="text-slate-500">· {reason}</span>}
+        </>
+      )}
     </div>
   );
 }
@@ -125,7 +143,7 @@ export function ChannelComparisonCard({ data }: { data: Comparison }) {
 
   return (
     <div className="space-y-2">
-      <ShortfallBadge data={data} />
+      <RangeLine data={data} />
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {data.channels.map((c) => {

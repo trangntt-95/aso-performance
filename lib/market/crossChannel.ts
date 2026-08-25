@@ -72,6 +72,11 @@ export interface ChannelComparison {
   // The two channels are separate exports that land at different times, so a
   // 7-day filter routinely resolves to 6 days of comparable data. Reporting the
   // shortfall is what stops that reading as a real drop in the paid channels.
+  /** The range the page filter asked for, before any clipping. Empty when no
+   *  filter is active. Kept alongside from/to so the UI can show the window it
+   *  is really reporting and flag it when that isn't the window you picked. */
+  requestedFrom: string;
+  requestedTo: string;
   /** Days the page filter asked for; null when no filter is active. */
   requestedDays: number | null;
   /** Dates inside the requested range that no comparison could cover, earliest
@@ -119,6 +124,8 @@ export function compareChannels(
       // Distinguish "the two exports share no days" from "you filtered to days
       // one of them doesn't have" — they need different words.
       clippedByFilter: availableFrom <= availableTo,
+      requestedFrom: range?.from ?? '',
+      requestedTo: range?.to ?? '',
       requestedDays:
         range?.from && range?.to
           ? Math.round((Date.parse(`${range.to}T00:00:00Z`) - Date.parse(`${range.from}T00:00:00Z`)) / 86400000) + 1
@@ -290,6 +297,8 @@ export function compareChannels(
     availableFrom,
     availableTo,
     clippedByFilter: false,
+    requestedFrom: range?.from ?? '',
+    requestedTo: range?.to ?? '',
     requestedDays,
     missingDays: missingBecause.map((m) => m.date),
     missingBecause,
