@@ -125,3 +125,51 @@ export function canonicalCategoryOf(raw: string, campName = ''): CanonicalCatego
   // test budget with campaigns nobody chose to file as tests.
   return 'Others';
 }
+
+/** Category → the naming pattern that identifies it, in the SHEET's vocabulary.
+ *  Order matters: the first match wins, so the catch-all "test" rule sits last.
+ *
+ *  These used to live in categoryCpi.ts, which meant only the paid-cost table
+ *  could recognise a campaign by its name. Anything else had to look the camp up
+ *  in Camp_Links or Master KW Lookup and got nothing for the many camps absent
+ *  from both — 93 campaigns holding $2,050 of spend, more than half of them test
+ *  camps, came back uncategorised. */
+const NAME_RULES: [RegExp, string][] = [
+  [/^tp\s*[-_]\s*profit/i, 'Profit'],
+  [/^tp\s*[-_]\s*feature/i, 'Feature'],
+  [/^tp\s*[-_]\s*competitor/i, 'Competitor'],
+  // 'Cateogry' is a long-standing typo in the account and has to be matched.
+  [/^tp\s*[-_]\s*(cat[eo]{2}gry|category|cate\s*page)/i, 'Category'],
+  [/^tp\s*[-_]\s*cpm/i, 'CPM'],
+  [/^tp\s*[-_]\s*brand\s*name|^tp\s*[-_]\s*brandname/i, 'Brandname'],
+  // '_' is a word character, so \b after 'languages' never matches
+  // 'TP_Languages_Spanish' — the boundary has to be spelled out as "not a letter".
+  [/^tp[\s_-]*(foreign\s*)?languages?(?![a-z])/i, 'Language'],
+  [/^tp\s*[-_]\s*others?/i, 'Others & Test'],
+  // '[12.04] Test …' — a dated test campaign.
+  [/^\s*\[\d{1,2}[.,]\d{1,2}\]/, 'Others & Test'],
+  [/\btest\b/i, 'Others & Test'],
+];
+
+/** The sheet-vocabulary label a campaign's NAME implies, or null. */
+export function rawCategoryFromCampName(camp: string): string | null {
+  const s = normalizeCampName(camp).replace(/^!+\s*/, '');
+  for (const [re, cat] of NAME_RULES) if (re.test(s)) return cat;
+  return null;
+}
+
+/**
+ * The single canonical category a campaign belongs to, resolved the one way every
+ * table should resolve it: the recorded label first (Camp_Links, else Master KW
+ * Lookup), then the campaign's own name, then nothing.
+ *
+ * `rawLabel` is what the sheets say, or '' when neither lists this camp. Returns
+ * null only when the name says nothing either — a camp genuinely unclassifiable,
+ * which callers should show as unknown rather than fold into Others.
+ */
+export function resolveCampCategory(rawLabel: string, campName: string): CanonicalCategory | null {
+  const fromSheet = canonicalCategoryOf(rawLabel, campName);
+  if (fromSheet) return fromSheet;
+  const guessed = rawCategoryFromCampName(campName);
+  return guessed ? canonicalCategoryOf(guessed, campName) : null;
+}

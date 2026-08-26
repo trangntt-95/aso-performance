@@ -17,6 +17,7 @@ import {
   type HealthBucket,
 } from '@/lib/market/campHealth';
 import { buildCampUrlIndex } from '@/lib/sheets/campUrl';
+import { resolveCampCategory, CANONICAL_CATEGORIES } from '@/lib/market/categoryTaxonomy';
 import {
   CAMP_NOTE_SCOPE,
   buildKeywordNotesByCamp,
@@ -80,7 +81,18 @@ function SortHead({
 
 const ORDER: HealthBucket[] = ['burning', 'wasted-imp', 'losing-imp', 'pricey', 'idle', 'paused', 'rising', 'scale', 'ok'];
 
-const WINDOWS = [7, 14, 30, 60, 90];
+// Comparison-window lengths, plus a whole-span option.
+//
+// 'Toàn kỳ' exists for questions about a campaign's LIFETIME rather than its
+// recent form — "how have the test camps done since we started them" being the
+// one that prompted it. Test camps run for months (the oldest live ones are ~200
+// days), so every fixed window silently answered a different question than the
+// one asked. Passing a length longer than the export makes the current window
+// the whole span; the prior window then has nothing to hold, so the deltas and
+// the two buckets built on them (losing-imp, rising) drop out by themselves —
+// which is correct, since there is no earlier period to compare against.
+const WHOLE_SPAN = 9999;
+const WINDOWS = [7, 14, 30, 60, 90, WHOLE_SPAN];
 
 // Once a camp is noted it drops out of the working list for this many days so
 // the list only shows what still needs doing — then it comes back so the fix
@@ -118,6 +130,7 @@ export function CampHealthView() {
   const [search, setSearch] = useState('');
   const [bucketFilter, setBucketFilter] = useState<HealthBucket | 'all' | 'problems'>('problems');
   const [linkFilter, setLinkFilter] = useState<'all' | 'no-url'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('atRisk');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const toggleSort = (k: SortKey) => {
@@ -131,6 +144,31 @@ export function CampHealthView() {
   // Comparison window, user-chosen. Everything (buckets, deltas, the four
   // headline cards) recomputes against the equal-length window before it.
   const [windowDays, setWindowDays] = useState(30);
+
+  // Campaign → canonical category, resolved exactly the way the paid-cost table
+  // does it (Camp_Links column, else Master KW Lookup, else the camp name), so
+  // filtering to 'Test' here and reading the Test row there mean the same set of
+  // campaigns. Without this the only way to isolate test camps was typing "test"
+  // into the search box, which missed every dated one that doesn't spell the word
+  // — "[16.12] Portugese App LIsting", "[05.12] - Calculator, Metrics",
+  // "[26.11] Shopify - keep low bid".
+  const categoryByCamp = useMemo(() => {
+    const strip = (x: string) =>
+      x.replace(/\s*\((?:CPI|cpi)[^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    const raw = new Map<string, string>();
+    for (const c of data?.campLinks ?? []) {
+      const k = strip(c.camp);
+      if (k && c.category) raw.set(k, String(c.category).trim());
+    }
+    for (const r of data?.masterKwLookup ?? []) {
+      const k = strip(r.camp);
+      if (k && r.category && !raw.has(k)) raw.set(k, String(r.category).trim());
+    }
+    // resolveCampCategory falls back to the campaign's NAME when neither sheet
+    // lists it — without that, the many camps absent from Camp_Links and Master
+    // resolved to nothing and no category filter could ever reach them.
+    return { get: (camp: string) => resolveCampCategory(raw.get(strip(camp)) ?? '', camp) };
+  }, [data?.campLinks, data?.masterKwLookup]);
 
   const result = useMemo(
     () =>
@@ -219,6 +257,7 @@ export function CampHealthView() {
         return false;
       if (bucketFilter !== 'all' && bucketFilter !== 'problems' && r.bucket !== bucketFilter) return false;
       if (linkFilter === 'no-url' && campUrl.get(r.camp)) return false;
+      if (categoryFilter !== 'all' && categoryByCamp.get(r.camp) !== categoryFilter) return false;
       if (q && !r.camp.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -252,7 +291,7 @@ export function CampHealthView() {
           : (va as number) - (vb as number);
       return base * dir || b.atRisk - a.atRisk;
     });
-  }, [result.rows, search, bucketFilter, linkFilter, campUrl, sortKey, sortDir, noteView, hiddenUntil]);
+  }, [result.rows, search, bucketFilter, linkFilter, categoryFilter, categoryByCamp, campUrl, sortKey, sortDir, noteView, hiddenUntil]);
 
   const problemCount = useMemo(
     () =>
@@ -453,6 +492,22 @@ export function CampHealthView() {
             <option value="all">Mọi camp</option>
             <option value="no-url">Chưa có URL ({noUrlCount})</option>
           </select>
+          {/* Category is a property of the campaign, not of the window, so this
+              one stays available even when the export has no date column and the
+              window selector below has to disappear. */}
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="h-7 rounded border border-slate-200 bg-white px-2 text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            title="Category của campaign, cùng cách phân loại với bảng 'Chi phí paid theo category'. Chọn Test để xem các camp thử nghiệm."
+          >
+            <option value="all">Category: All</option>
+            {CANONICAL_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
           {result.periodComparable ? (
             <select
               value={windowDays}
@@ -462,7 +517,7 @@ export function CampHealthView() {
             >
               {WINDOWS.map((w) => (
                 <option key={w} value={w}>
-                  Kỳ: {w} ngày
+                  {w === WHOLE_SPAN ? 'Kỳ: toàn kỳ (không so kỳ trước)' : `Kỳ: ${w} ngày`}
                 </option>
               ))}
             </select>
@@ -476,12 +531,12 @@ export function CampHealthView() {
               {data?.shopifyDateRange || 'cả khoảng'}
             </span>
           )}
-          {(search || bucketFilter !== 'problems' || linkFilter !== 'all') && (
+          {(search || bucketFilter !== 'problems' || linkFilter !== 'all' || categoryFilter !== 'all') && (
             <Button
               variant="ghost"
               size="sm"
               className="h-7 gap-1 text-xs"
-              onClick={() => { setSearch(''); setBucketFilter('problems'); setLinkFilter('all'); setSortKey('atRisk'); setSortDir('desc'); }}
+              onClick={() => { setSearch(''); setBucketFilter('problems'); setLinkFilter('all'); setCategoryFilter('all'); setSortKey('atRisk'); setSortDir('desc'); }}
             >
               <X className="h-3 w-3" />
               Reset

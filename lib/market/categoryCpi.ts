@@ -1,6 +1,6 @@
 import type { BidCapRow, SheetPayload, ShopifyCampRow } from '@/lib/sheets/types';
 import { aggregateBidCapCells, bidCapCellsByCategory } from '@/lib/market/bidCapAgg';
-import { canonicalCategoryOf } from '@/lib/market/categoryTaxonomy';
+import { canonicalCategoryOf, rawCategoryFromCampName } from '@/lib/market/categoryTaxonomy';
 import { normalizeCampName } from '@/lib/sheets/campName';
 
 // CPI per CATEGORY — the grain that bidding decisions are actually made at.
@@ -17,35 +17,9 @@ import { normalizeCampName } from '@/lib/sheets/campName';
 // consistent convention. Which of the two was used is reported per row, because
 // an inferred category is a weaker claim than a recorded one.
 
-/** Category → the naming pattern that identifies it. Order matters: the first
- *  match wins, so the catch-all "Test" rule sits last.
- *
- *  These produce the SHEET's vocabulary (Brandname, Others & Test, Category),
- *  not the canonical one, on purpose: a camp name and the Camp_Links column
- *  speak the same dialect, so both go through one translation afterwards rather
- *  than each carrying its own. canonicalCategoryOf does that translation. */
-const NAME_RULES: [RegExp, string][] = [
-  [/^tp\s*[-_]\s*profit/i, 'Profit'],
-  [/^tp\s*[-_]\s*feature/i, 'Feature'],
-  [/^tp\s*[-_]\s*competitor/i, 'Competitor'],
-  // 'Cateogry' is a long-standing typo in the account and has to be matched.
-  [/^tp\s*[-_]\s*(cat[eo]{2}gry|category|cate\s*page)/i, 'Category'],
-  [/^tp\s*[-_]\s*cpm/i, 'CPM'],
-  [/^tp\s*[-_]\s*brand\s*name|^tp\s*[-_]\s*brandname/i, 'Brandname'],
-  // '_' is a word character, so \b after 'languages' never matches
-  // 'TP_Languages_Spanish' — the boundary has to be spelled out as "not a letter".
-  [/^tp[\s_-]*(foreign\s*)?languages?(?![a-z])/i, 'Language'],
-  [/^tp\s*[-_]\s*others?/i, 'Others & Test'],
-  // '[12.04] Test …' — a dated test campaign.
-  [/^\s*\[\d{1,2}[.,]\d{1,2}\]/, 'Others & Test'],
-  [/\btest\b/i, 'Others & Test'],
-];
-
-function categoryFromName(camp: string): string | null {
-  const s = normalizeCampName(camp).replace(/^!+\s*/, '');
-  for (const [re, cat] of NAME_RULES) if (re.test(s)) return cat;
-  return null;
-}
+// The naming rules and the label translation both live in categoryTaxonomy.ts
+// now, so a campaign resolves to the same category here, on the camp-health
+// screen, and anywhere else that asks.
 
 export type CategorySource = 'sheet' | 'name' | 'unknown';
 
@@ -319,8 +293,10 @@ export function buildCategoryCpi(
       // be mapped rather than silently joining the catch-all.
       return { category: canon ?? fromSheet, source: 'sheet' };
     }
-    const guess = categoryFromName(camp);
-    if (guess) return { category: canonicalCategoryOf(guess, camp) ?? guess, source: 'name' };
+    const guessed = rawCategoryFromCampName(camp);
+    if (guessed) {
+      return { category: canonicalCategoryOf(guessed, camp) ?? guessed, source: 'name' };
+    }
     return { category: '(chưa rõ category)', source: 'unknown' };
   };
 
