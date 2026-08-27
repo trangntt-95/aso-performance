@@ -1,80 +1,236 @@
 import type { SheetPayload } from '@/lib/sheets/types';
 
-// Which per-day feeds are missing days, and which ones are behind the others.
+// What is missing from the data a given screen was drawn from.
 //
-// Every dated screen on this dashboard is assembled from five independent
-// exports that land at different times and are refreshed by different jobs. When
-// one of them is short, nothing breaks — the numbers simply describe a smaller
-// period than the filter asked for, and a quiet stretch in the data is
-// indistinguishable from a quiet stretch in the market. That has already cost
-// one round of confusion (a 7-day filter reporting six days, because the Shopify
-// export was one day behind Google Ads), so the condition is now stated instead
-// of inferred.
+// Every dated screen here is assembled from several independent exports that land
+// at different times and are refreshed by different jobs. When one is short,
+// nothing breaks — the numbers simply describe a smaller period than the filter
+// asked for, and a quiet stretch in the data is indistinguishable from a quiet
+// stretch in the market. That has already cost one round of confusion (a 7-day
+// filter reporting six days, because the Shopify export was a day behind Google
+// Ads), so the condition is stated rather than left to be inferred.
 //
-// Two different faults, deliberately kept apart because they need different
-// responses:
+// Three faults, kept apart because they need different responses:
 //
-//   GAP  — a date missing INSIDE a feed's own range. The job didn't run that
-//          day and the day will not appear on its own. Historical, permanent.
-//   LAG  — a feed whose last day is older than the newest day any feed has. The
-//          export just hasn't caught up; it fixes itself on the next refresh.
+//   GAP   — a date missing INSIDE a feed's own range. The job didn't run that
+//           day and the day will not come back on its own. Permanent.
+//   LAG   — a feed whose last day is older than the newest day any feed has.
+//           The export hasn't caught up; it clears on the next refresh.
+//   EMPTY — a tab with no readable rows at all. Not a missing day: the whole
+//           source is absent, so whatever it feeds is running on a fallback or
+//           not running at all.
 //
-// Lag is measured against the newest day present ACROSS the feeds rather than
-// against today's date on purpose. Every export trails real time by a day or
-// two, so comparing to today would fire permanently and teach the reader to
-// ignore the warning. Comparing feeds to each other only fires when they
-// genuinely disagree, which is exactly when a window gets clipped.
+// Lag is measured against the newest day present ACROSS the feeds, not against
+// today. Every export trails real time by a day or two, so comparing to today
+// would fire permanently and teach the reader to ignore the warning. Comparing
+// feeds to each other only fires when they genuinely disagree — which is exactly
+// when a window gets clipped.
 //
-// For the same reason lag has a floor. Measured live, three of the five feeds sit
-// exactly one day behind the newest on an ordinary day — that is simply how this
-// workbook looks, not a fault, and reporting it would put a warning on the screen
-// every single day. A one-day spread that does clip a window is already called
-// out where it actually bites, in red, on the paid-channel card. Here only a
-// spread of two days or more is worth a footnote.
+// For the same reason lag has a floor. Measured live, three of the five dated
+// feeds sit exactly one day behind the newest on an ordinary day; that is the
+// normal shape of this workbook, not a fault. A one-day spread that does clip a
+// window is already called out in red where it bites, on the paid-channel card.
 const LAG_FLOOR_DAYS = 2;
 
-/** One per-day feed's coverage, and what it drives on screen. */
-export interface FeedCoverage {
-  /** The tab / export name, as the user knows it. */
-  feed: string;
-  /** What breaks or shrinks when this feed is short. */
+// ── Which sources exist, and what each one feeds ───────────────────────────
+//
+// Every screen declares the sources it actually reads (see each page.tsx). That
+// scoping is the point: reporting "History is missing 19 days" on Bid
+// Recommendations — a screen built from 'Max bid cap', which carries no dates at
+// all — is noise, and noise is how a warning stops being read. A page that
+// forgets to declare a source simply says nothing about it, which is a silent
+// omission rather than a false claim.
+
+export type DataSourceKey =
+  // Dated feeds — checked for gaps and lag.
+  | 'historyDaily'
+  | 'historyDailyCountry'
+  | 'history'
+  | 'shopifyDaily'
+  | 'googleAds'
+  // Undated tabs — only "is it there at all".
+  | 'shopifyCamps'
+  | 'bidCap'
+  | 'perGeoCpiCap'
+  | 'perGeoRevenue'
+  | 'marketTiers'
+  | 'masterKwLookup'
+  | 'campLinks'
+  | 'pausedKw'
+  | 'marketIndex'
+  | 'actionQueue'
+  // Tab families — reports which members are empty.
+  | 'allTabs'
+  | 'countryTabs';
+
+interface SourceDef {
+  /** The tab / export name as the user knows it in the sheet. */
+  label: string;
+  /** What shrinks or falls back when this source is short. */
   drives: string;
+  kind: 'dated' | 'tab' | 'tabset';
+  /** Dated: the date cell of every row. Tab: the rows. Tabset: named members. */
+  dates?: (d: SheetPayload) => unknown[];
+  rows?: (d: SheetPayload) => unknown[];
+  members?: (d: SheetPayload) => { name: string; rows: number }[];
+}
+
+const SOURCES: Record<DataSourceKey, SourceDef> = {
+  historyDaily: {
+    label: 'History_Daily',
+    drives: 'biểu đồ theo ngày · chế độ chọn ngày',
+    kind: 'dated',
+    dates: (d) => (d.historyDaily ?? []).map((r) => r.snapshotDate),
+  },
+  historyDailyCountry: {
+    label: 'History_Daily_Country',
+    drives: 'tách theo nước ở chế độ chọn ngày',
+    kind: 'dated',
+    dates: (d) => (d.historyDailyCountry ?? []).map((r) => r.snapshotDate),
+  },
+  history: {
+    label: 'History',
+    drives: 'snapshot L7D theo keyword',
+    kind: 'dated',
+    dates: (d) => (d.history ?? []).map((r) => r.snapshotDate),
+  },
+  shopifyDaily: {
+    label: 'Shopify Ads (per-day)',
+    drives: 'chi phí App Store Ads theo ngày · kênh trả phí · camp health · chi phí theo category',
+    kind: 'dated',
+    dates: (d) => (d.shopifyDaily ?? []).map((r) => r.date),
+  },
+  googleAds: {
+    label: 'Google Ads',
+    drives: 'trang Google Ads · kênh trả phí',
+    kind: 'dated',
+    dates: (d) => (d.googleAds?.campaigns ?? []).map((r) => r.date),
+  },
+
+  shopifyCamps: {
+    label: 'Shopify_daily',
+    drives: 'tổng chi theo camp — overbid · chi phí theo category',
+    kind: 'tab',
+    rows: (d) => d.shopifyCamps ?? [],
+  },
+  bidCap: {
+    label: 'Max bid cap',
+    drives: 'bid đề xuất · mốc so cho overbid · trần CPI theo category',
+    kind: 'tab',
+    rows: (d) => d.bidCap ?? [],
+  },
+  perGeoCpiCap: {
+    label: 'PerGeo_CPI_Cap',
+    drives: 'trần CPI theo nước',
+    kind: 'tab',
+    rows: (d) => d.perGeoCpiCap ?? [],
+  },
+  perGeoRevenue: {
+    label: 'PerGeo_CPI_Cap (block doanh thu)',
+    drives: 'giá trị 1 install theo nước',
+    kind: 'tab',
+    rows: (d) => d.perGeoRevenue ?? [],
+  },
+  marketTiers: {
+    label: 'PerGeo_CPI_Cap (block tier)',
+    drives: 'tier của nước · trần bid theo tier',
+    kind: 'tab',
+    rows: (d) => d.marketTiers ?? [],
+  },
+  masterKwLookup: {
+    label: 'Master KW Lookup',
+    drives: 'keyword đang bid · category của camp',
+    kind: 'tab',
+    rows: (d) => d.masterKwLookup ?? [],
+  },
+  campLinks: {
+    label: 'Camp_Links',
+    drives: 'URL camp · Geo target · category của camp',
+    kind: 'tab',
+    rows: (d) => d.campLinks ?? [],
+  },
+  pausedKw: {
+    label: 'Paused_camp',
+    drives: 'nhận biết camp đã tắt — thiếu nó thì camp đã pause vẫn hiện như đang chạy',
+    kind: 'tab',
+    rows: (d) => d.pausedKw ?? [],
+  },
+  marketIndex: {
+    label: 'Market_Index',
+    drives: 'market health · dynamic basket',
+    kind: 'tab',
+    rows: (d) => d.marketIndex?.summary ?? [],
+  },
+  actionQueue: {
+    label: 'Action_Queue',
+    drives: 'việc cần làm',
+    kind: 'tab',
+    rows: (d) => d.actionQueue ?? [],
+  },
+
+  allTabs: {
+    label: 'All_L* (theo keyword)',
+    drives: 'nhu cầu theo keyword ở mọi window',
+    kind: 'tabset',
+    members: (d) => [
+      { name: 'All_L3', rows: (d.allL3 ?? []).length },
+      { name: 'All_L7', rows: (d.allL7 ?? []).length },
+      { name: 'All_L14', rows: (d.allL14 ?? []).length },
+      { name: 'All_L30', rows: (d.allL30 ?? []).length },
+      { name: 'All_L90', rows: (d.allL90 ?? []).length },
+      { name: 'All_L365', rows: (d.allL365 ?? []).length },
+    ],
+  },
+  countryTabs: {
+    label: 'Country_L* (theo nước)',
+    drives: 'mọi khối tách theo nước',
+    kind: 'tabset',
+    members: (d) => [
+      { name: 'Country_L3', rows: (d.countryL3 ?? []).length },
+      { name: 'Country_L7', rows: (d.countryL7 ?? []).length },
+      { name: 'Country_L14', rows: (d.countryL14 ?? []).length },
+      { name: 'Country_L30', rows: (d.countryL30 ?? []).length },
+      { name: 'Country_L90', rows: (d.countryL90 ?? []).length },
+      { name: 'Country_L365', rows: (d.countryL365 ?? []).length },
+    ],
+  },
+};
+
+/** One source's state, and what it drives on screen. */
+export interface SourceHealth {
+  key: DataSourceKey;
+  label: string;
+  drives: string;
+  kind: SourceDef['kind'];
+  /** Dated sources only. */
   from: string;
   to: string;
-  /** Distinct days present. */
   days: number;
-  /** Days missing between `from` and `to`, earliest first. */
   missing: string[];
-  /** How many days behind the newest day across all feeds. 0 = up to date.
-   *  Always the true figure; whether it is worth showing is `lagWorthNoting`. */
   lagDays: number;
-  /** lagDays at or above LAG_FLOOR_DAYS — a spread bigger than this workbook's
-   *  normal one-day skew between exports. */
   lagWorthNoting: boolean;
-  /** Rows whose date cell could not be read at all. */
   unreadableRows: number;
-  /** True when the feed has no usable rows — a different problem from a gap. */
+  /** True when the source has nothing readable in it. */
   empty: boolean;
+  /** Tab families only: the members that are empty. */
+  emptyMembers: string[];
 }
 
 export interface DataGapReport {
-  /** The newest day any feed covers — the reference lag is measured against. */
+  /** The newest day any DATED source in scope covers — the lag reference. */
   newestDay: string;
-  /** Every feed, in a stable order, whether or not it has a problem. */
-  feeds: FeedCoverage[];
-  /** Feeds with a gap, a lag, or nothing in them — what the UI shows. */
-  problems: FeedCoverage[];
-  /** Total distinct missing days across feeds (a day may be missing in several). */
-  totalMissing: number;
+  sources: SourceHealth[];
+  /** Sources with a gap, a notable lag, missing members, or nothing in them. */
+  problems: SourceHealth[];
 }
 
 const iso = (t: number): string => new Date(t).toISOString().slice(0, 10);
 
 /**
  * Dates arrive in two shapes and both are live in this workbook: parsed
- * 'YYYY-MM-DD' strings, and raw Excel serials that slipped through unconverted
- * (History and History_Daily_Country both carry them). Reading only one shape
- * would report a fully-populated tab as empty.
+ * 'YYYY-MM-DD' strings, and raw Excel serials that never got converted (History
+ * and History_Daily_Country both carry them). Reading only one shape reports a
+ * fully-populated tab as empty.
  */
 function toIso(v: unknown): string | null {
   if (typeof v === 'number' && Number.isFinite(v) && v > 20000 && v < 90000) {
@@ -84,74 +240,97 @@ function toIso(v: unknown): string | null {
   return m ? m[0] : null;
 }
 
-// Coverage is computed per feed in isolation; lag needs every feed's last day,
-// so it is filled in afterwards.
-type FeedSpan = Omit<FeedCoverage, 'lagDays' | 'lagWorthNoting'>;
+const blank = (key: DataSourceKey, def: SourceDef): SourceHealth => ({
+  key,
+  label: def.label,
+  drives: def.drives,
+  kind: def.kind,
+  from: '',
+  to: '',
+  days: 0,
+  missing: [],
+  lagDays: 0,
+  lagWorthNoting: false,
+  unreadableRows: 0,
+  empty: false,
+  emptyMembers: [],
+});
 
-function coverage(feed: string, drives: string, raw: unknown[]): FeedSpan {
-  let unreadableRows = 0;
-  const set = new Set<string>();
-  for (const v of raw) {
-    if (v === undefined || v === null || v === '') continue;
-    const d = toIso(v);
-    if (d) set.add(d);
-    else unreadableRows++;
-  }
-  const days = Array.from(set).sort();
-  if (days.length === 0) {
-    return { feed, drives, from: '', to: '', days: 0, missing: [], unreadableRows, empty: true };
-  }
-  const from = days[0];
-  const to = days[days.length - 1];
-  const missing: string[] = [];
-  for (let t = Date.parse(`${from}T00:00:00Z`); t <= Date.parse(`${to}T00:00:00Z`); t += 86400000) {
-    const k = iso(t);
-    if (!set.has(k)) missing.push(k);
-  }
-  return { feed, drives, from, to, days: days.length, missing, unreadableRows, empty: false };
-}
+export function buildDataGapReport(
+  data: SheetPayload | null | undefined,
+  keys: readonly DataSourceKey[],
+): DataGapReport | null {
+  if (!data || keys.length === 0) return null;
 
-export function buildDataGapReport(data: SheetPayload | null | undefined): DataGapReport | null {
-  if (!data) return null;
+  const sources: SourceHealth[] = keys.map((key) => {
+    const def = SOURCES[key];
+    const h = blank(key, def);
 
-  const parts = [
-    coverage(
-      'History_Daily',
-      'biểu đồ theo ngày, chế độ chọn ngày',
-      (data.historyDaily ?? []).map((r) => r.snapshotDate),
-    ),
-    coverage(
-      'History_Daily_Country',
-      'tách theo nước ở chế độ chọn ngày',
-      (data.historyDailyCountry ?? []).map((r) => r.snapshotDate),
-    ),
-    coverage('History', 'snapshot L7D theo keyword', (data.history ?? []).map((r) => r.snapshotDate)),
-    coverage(
-      'Shopify Ads (per-day)',
-      'chi phí App Store Ads theo ngày · kênh trả phí · chi phí theo category',
-      (data.shopifyDaily ?? []).map((r) => r.date),
-    ),
-    coverage(
-      'Google Ads',
-      'kênh trả phí',
-      (data.googleAds?.campaigns ?? []).map((r) => r.date),
-    ),
-  ];
+    if (def.kind === 'dated' && def.dates) {
+      const set = new Set<string>();
+      for (const v of def.dates(data)) {
+        if (v === undefined || v === null || v === '') continue;
+        const d = toIso(v);
+        if (d) set.add(d);
+        else h.unreadableRows++;
+      }
+      const days = Array.from(set).sort();
+      if (days.length === 0) {
+        h.empty = true;
+        return h;
+      }
+      h.from = days[0];
+      h.to = days[days.length - 1];
+      h.days = days.length;
+      for (let t = Date.parse(`${h.from}T00:00:00Z`); t <= Date.parse(`${h.to}T00:00:00Z`); t += 86400000) {
+        const k = iso(t);
+        if (!set.has(k)) h.missing.push(k);
+      }
+      return h;
+    }
 
-  const newestDay = parts.map((p) => p.to).filter(Boolean).sort().pop() ?? '';
-  const feeds: FeedCoverage[] = parts.map((p) => {
-    const lagDays =
-      p.to && newestDay && p.to < newestDay
-        ? Math.round((Date.parse(`${newestDay}T00:00:00Z`) - Date.parse(`${p.to}T00:00:00Z`)) / 86400000)
-        : 0;
-    return { ...p, lagDays, lagWorthNoting: lagDays >= LAG_FLOOR_DAYS };
+    if (def.kind === 'tab' && def.rows) {
+      h.empty = def.rows(data).length === 0;
+      return h;
+    }
+
+    if (def.kind === 'tabset' && def.members) {
+      const members = def.members(data);
+      h.emptyMembers = members.filter((m) => m.rows === 0).map((m) => m.name);
+      // Every member empty is a different statement from one member empty: the
+      // whole family is gone rather than a single window being unavailable.
+      h.empty = members.length > 0 && h.emptyMembers.length === members.length;
+      return h;
+    }
+
+    return h;
   });
 
-  const problems = feeds.filter(
-    (f) => f.empty || f.missing.length > 0 || f.lagWorthNoting || f.unreadableRows > 0,
-  );
-  const allMissing = new Set<string>();
-  feeds.forEach((f) => f.missing.forEach((d) => allMissing.add(d)));
+  // Only dated sources in scope define "newest". A page that reads none has no
+  // lag to report, and borrowing a date from a feed it never reads would invent
+  // a comparison that means nothing on that screen.
+  const newestDay =
+    sources
+      .filter((s) => s.kind === 'dated')
+      .map((s) => s.to)
+      .filter(Boolean)
+      .sort()
+      .pop() ?? '';
 
-  return { newestDay, feeds, problems, totalMissing: allMissing.size };
+  for (const s of sources) {
+    if (s.kind !== 'dated' || !s.to || !newestDay || s.to >= newestDay) continue;
+    s.lagDays = Math.round((Date.parse(`${newestDay}T00:00:00Z`) - Date.parse(`${s.to}T00:00:00Z`)) / 86400000);
+    s.lagWorthNoting = s.lagDays >= LAG_FLOOR_DAYS;
+  }
+
+  const problems = sources.filter(
+    (s) =>
+      s.empty ||
+      s.missing.length > 0 ||
+      s.lagWorthNoting ||
+      s.unreadableRows > 0 ||
+      s.emptyMembers.length > 0,
+  );
+
+  return { newestDay, sources, problems };
 }

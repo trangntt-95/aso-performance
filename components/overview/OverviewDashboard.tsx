@@ -42,7 +42,8 @@ import { DailyTrendChart } from './DailyTrendChart';
 import { TopCountriesChart } from './TopCountriesChart';
 import { CategoryShareDonut } from './CategoryShareDonut';
 import { CategoryCpiStrip } from './CategoryCpiStrip';
-import { DataGapNote } from './DataGapNote';
+import { DataGapNote } from '@/components/shared/DataGapNote';
+import type { DataSourceKey } from '@/lib/market/dataGaps';
 import { TopVolumeMovers } from './TopVolumeMovers';
 import { TopContributors } from './TopContributors';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -122,6 +123,19 @@ function SectionCard({
 interface OverviewProps {
   embedded?: boolean;
 }
+
+// Everything this screen reads. Declared here rather than inferred so the
+// footnote can never claim a source the page does not actually use.
+const OVERVIEW_SOURCES: readonly DataSourceKey[] = [
+  'historyDaily',
+  'historyDailyCountry',
+  'history',
+  'shopifyDaily',
+  'shopifyCamps',
+  'googleAds',
+  'allTabs',
+  'countryTabs',
+];
 
 export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const { data, isLoading, error } = useSheetData();
@@ -1193,8 +1207,8 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       </SectionCard>
 
       {/* Caveat about the data everything above was drawn from, so it sits last
-          and renders nothing when every per-day export is complete. */}
-      <DataGapNote />
+          and renders nothing when every source is complete. */}
+      <DataGapNote sources={OVERVIEW_SOURCES} />
     </div>
   );
 }
