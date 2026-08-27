@@ -42,6 +42,7 @@ import { DailyTrendChart } from './DailyTrendChart';
 import { TopCountriesChart } from './TopCountriesChart';
 import { CategoryShareDonut } from './CategoryShareDonut';
 import { CategoryCpiStrip } from './CategoryCpiStrip';
+import { DataGapNote } from './DataGapNote';
 import { TopVolumeMovers } from './TopVolumeMovers';
 import { TopContributors } from './TopContributors';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -1190,6 +1191,10 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
           />
         )}
       </SectionCard>
+
+      {/* Caveat about the data everything above was drawn from, so it sits last
+          and renders nothing when every per-day export is complete. */}
+      <DataGapNote />
     </div>
   );
 }
