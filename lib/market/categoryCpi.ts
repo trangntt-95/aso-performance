@@ -1,6 +1,10 @@
 import type { BidCapRow, SheetPayload, ShopifyCampRow } from '@/lib/sheets/types';
 import { aggregateBidCapCells, bidCapCellsByCategory } from '@/lib/market/bidCapAgg';
-import { canonicalCategoryOf, rawCategoryFromCampName } from '@/lib/market/categoryTaxonomy';
+import {
+  canonicalCategoryOf,
+  paidSlice,
+  rawCategoryFromCampName,
+} from '@/lib/market/categoryTaxonomy';
 import { normalizeCampName } from '@/lib/sheets/campName';
 
 // CPI per CATEGORY — the grain that bidding decisions are actually made at.
@@ -51,6 +55,10 @@ export interface CategoryCpiRow {
   reliable: boolean;
   /** Campaigns in this category, biggest spender first — the drill-down. */
   topCamps: { camp: string; spend: number; installs: number; cpi: number | null }[];
+  /** When this row is a folded slice ('Khác'), the raw sheet categories inside it
+   *  with their own spend — so the total can be broken back down. Empty when the
+   *  row IS a single category, which is every row but the bucket. */
+  sliceMembers: { label: string; spend: number; installs: number }[];
 
   /** Same figures for the equal-length period immediately before. */
   installsPrev: number;
@@ -266,7 +274,7 @@ export function buildCategoryCpi(
     clicks: number;
     installs: number;
     spend: number;
-    members: { camp: string; spend: number; installs: number }[];
+    members: { camp: string; spend: number; installs: number; category: string }[];
   }
   const acc = new Map<string, Acc>();
   let inferredCamps = 0;
@@ -304,7 +312,8 @@ export function buildCategoryCpi(
   const prevByCat = new Map<string, { installs: number; spend: number }>();
   if (scoped?.prev) {
     scoped.prev.forEach((c) => {
-      const { category } = categoryOf(c.camp);
+      const { category: rawPrev } = categoryOf(c.camp);
+      const category = rawPrev.startsWith('(') ? rawPrev : paidSlice(rawPrev);
       const e = prevByCat.get(category) ?? { installs: 0, spend: 0 };
       e.installs += c.installs;
       e.spend += c.spend;
@@ -314,8 +323,12 @@ export function buildCategoryCpi(
 
   for (const c of camps) {
     if (c.spend <= 0 && c.clicks <= 0 && c.impressions <= 0) continue;
-    const { category, source } = categoryOf(c.camp);
+    const { category: rawCategory, source } = categoryOf(c.camp);
     if (source === 'name') inferredCamps += 1;
+    // Grouped by SLICE so this table and Category share offer the same filter
+    // list. The raw label rides along in `members`, so a row can still be
+    // expanded to see that 'Khác' is really CPM + Others + Test.
+    const category = rawCategory.startsWith('(') ? rawCategory : paidSlice(rawCategory);
     const e =
       acc.get(category) ??
       { camps: 0, campsInferred: 0, impressions: 0, clicks: 0, installs: 0, spend: 0, members: [] };
@@ -325,7 +338,7 @@ export function buildCategoryCpi(
     e.clicks += c.clicks;
     e.installs += c.installs;
     e.spend += c.spend;
-    e.members.push({ camp: c.camp, spend: c.spend, installs: c.installs });
+    e.members.push({ camp: c.camp, spend: c.spend, installs: c.installs, category: rawCategory });
     acc.set(category, e);
   }
 
@@ -342,12 +355,13 @@ export function buildCategoryCpi(
   const capAcc = new Map<string, { cap: number[]; rec: number[] }>();
   bidCapCellsByCategory(aggregateBidCapCells((data.bidCap ?? []) as BidCapRow[])).forEach(
     (cells, cat) => {
-      const e = { cap: [] as number[], rec: [] as number[] };
+      const slice = paidSlice(cat);
+      const e = capAcc.get(slice) ?? { cap: [] as number[], rec: [] as number[] };
       for (const c of cells) {
         if (c.cpiCap > 0) e.cap.push(c.cpiCap);
         if (c.bid > 0) e.rec.push(c.bid);
       }
-      capAcc.set(cat, e);
+      capAcc.set(slice, e);
     },
   );
   const mean = (xs: number[]) => (xs.length ? xs.reduce((s, v) => s + v, 0) / xs.length : null);
@@ -387,6 +401,21 @@ export function buildCategoryCpi(
       installDelta:
         hasPrev && prev && prev.installs > 0 ? (e.installs - prev.installs) / prev.installs : null,
       spendDelta: hasPrev && prev && prev.spend > 0 ? (e.spend - prev.spend) / prev.spend : null,
+      sliceMembers: (() => {
+        // Only meaningful for a folded slice. Built from the camp members rather
+        // than a second pass, so it cannot disagree with the row's own total.
+        const by = new Map<string, { spend: number; installs: number }>();
+        for (const m of e.members) {
+          const cur = by.get(m.category) ?? { spend: 0, installs: 0 };
+          cur.spend += m.spend;
+          cur.installs += m.installs;
+          by.set(m.category, cur);
+        }
+        if (by.size < 2) return [];
+        return Array.from(by.entries())
+          .map(([label, v]) => ({ label, ...v }))
+          .sort((a, b) => b.spend - a.spend);
+      })(),
       topCamps: e.members
         .sort((a, b) => b.spend - a.spend)
         .slice(0, 8)

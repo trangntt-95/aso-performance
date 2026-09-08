@@ -163,7 +163,26 @@ export function CategoryShareDonut({ data, height = 260, activeCategory, onCateg
               )}
             >
               <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: PALETTE[d.category] ?? '#94a3b8' }} />
-              <span className="text-slate-700 truncate flex-1">{d.category}</span>
+              <span
+                className="text-slate-700 truncate flex-1"
+                // A folded slice says what it is made of on hover. Kept as a
+                // tooltip rather than an expandable row: the legend sits beside a
+                // donut in a fixed-height box, and only one slice ever has
+                // members, so a disclosure control for all of them is more UI
+                // than the information warrants.
+                title={
+                  d.members.length
+                    ? `${d.category} gồm: ${d.members
+                        .map((m) => `${m.label} (${formatNumber(m.users, { compact: true })})`)
+                        .join(' · ')}`
+                    : undefined
+                }
+              >
+                {d.category}
+                {d.members.length > 0 && (
+                  <span className="ml-1 text-[9px] text-slate-400">·{d.members.length}</span>
+                )}
+              </span>
               <span className="text-slate-500 font-mono tabular-nums">{formatPercent(isCr ? d.cr : d.metricShare)}</span>
               {(() => {
                 const dv = d[DELTA_KEY[metric]];

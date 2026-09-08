@@ -1,3 +1,4 @@
+import { inKeywordSlice, keywordSlice } from '@/lib/market/categoryTaxonomy';
 import type {
   ActionQueueRow,
   AlertType,
@@ -96,7 +97,10 @@ function applyFilters(rows: KeywordRow[], opts: OverviewFilters): KeywordRow[] {
     out = out.filter((r) => r.searchTerm.toLowerCase() === kw);
   }
   if (opts.category) {
-    out = out.filter((r) => r.category === opts.category);
+    // The page filter holds a SLICE, not a raw category — 'Khác' stands for
+    // Others + Noise on this side. Comparing the raw label directly is what made
+    // clicking that slice match nothing.
+    out = out.filter((r) => inKeywordSlice(r.category, opts.category as string));
   }
   return out;
 }
@@ -487,7 +491,11 @@ export function countryMarketWeights(
 }
 
 export interface CategoryShare {
+  /** The shared slice — one of SHARED_SLICES. */
   category: string;
+  /** The raw sheet labels folded into this slice, biggest first. Empty when the
+   *  slice IS the label, which is the case for every slice but 'Khác'. */
+  members: { label: string; users: number }[];
   users: number;
   getApp: number;
   share: number;
@@ -508,15 +516,22 @@ export function categoryShareFor(
   const rows = rowsForWindow(data, window, { ...opts, category: null });
   interface Acc { users: number; getApp: number; usersPrior: number; getAppPrior: number }
   const map = new Map<string, Acc>();
+  // Which raw labels ended up inside each slice, so the UI can expand a slice
+  // rather than only showing a total nobody can break down.
+  const members = new Map<string, Map<string, number>>();
   let totalUsers = 0;
   rows.forEach((r) => {
-    const cur = map.get(r.category) ?? { users: 0, getApp: 0, usersPrior: 0, getAppPrior: 0 };
+    const slice = keywordSlice(r.category);
+    const cur = map.get(slice) ?? { users: 0, getApp: 0, usersPrior: 0, getAppPrior: 0 };
+    const mm = members.get(slice) ?? new Map<string, number>();
+    mm.set(r.category || '(rỗng)', (mm.get(r.category || '(rỗng)') ?? 0) + r.usersL);
+    members.set(slice, mm);
     cur.users += r.usersL;
     cur.getApp += r.getAppL;
     cur.usersPrior += r.usersP;
     cur.getAppPrior += r.getAppP;
     totalUsers += r.usersL;
-    map.set(r.category, cur);
+    map.set(keywordSlice(r.category), cur);
   });
   const delta = (curr: number, prev: number): number | null => (prev > 0 ? (curr - prev) / prev : null);
   return Array.from(map.entries())
@@ -525,6 +540,10 @@ export function categoryShareFor(
       const crPrior = c.usersPrior > 0 ? c.getAppPrior / c.usersPrior : 0;
       return {
         category,
+        members: Array.from(members.get(category) ?? new Map())
+          .filter(([label]) => label !== category)
+          .sort((a, b) => b[1] - a[1])
+          .map(([label, users]) => ({ label, users })),
         users: c.users,
         getApp: c.getApp,
         share: totalUsers > 0 ? c.users / totalUsers : 0,
@@ -1051,7 +1070,12 @@ function countryRowsInRange(
     if (r.country !== opts.country) continue;
     if (target && r.surface !== target) continue;
     if (kw && r.searchTerm.toLowerCase() !== kw) continue;
-    if (opts.category && catMap && catMap.get(r.searchTerm.toLowerCase()) !== opts.category) continue;
+    if (
+      opts.category &&
+      catMap &&
+      !inKeywordSlice(catMap.get(r.searchTerm.toLowerCase()) ?? '', opts.category)
+    )
+      continue;
     const iso = isoFromSnapshot(r.snapshotDate);
     if (iso === null || iso < from || iso > to) continue;
     out.push({ keyword: r.searchTerm, surface: r.surface, users: r.usersDaily, getApp: r.getAppDaily });
@@ -1082,7 +1106,12 @@ function dailyRowsInRange(
   for (const r of dedupeDailyRows(data.historyDaily ?? [])) {
     if (target && r.surface !== target) continue;
     if (kw && r.searchTerm.toLowerCase() !== kw) continue;
-    if (opts.category && catMap && catMap.get(r.searchTerm.toLowerCase()) !== opts.category) continue;
+    if (
+      opts.category &&
+      catMap &&
+      !inKeywordSlice(catMap.get(r.searchTerm.toLowerCase()) ?? '', opts.category)
+    )
+      continue;
     const iso = isoFromSnapshot(r.snapshotDate);
     if (iso === null || iso < from || iso > to) continue;
     let users: number;
@@ -1141,7 +1170,12 @@ export function rangeCoverage(
       if (r.country !== opts.country) continue;
       if (target && r.surface !== target) continue;
       if (kw && r.searchTerm.toLowerCase() !== kw) continue;
-      if (opts.category && catMap && catMap.get(r.searchTerm.toLowerCase()) !== opts.category) continue;
+      if (
+      opts.category &&
+      catMap &&
+      !inKeywordSlice(catMap.get(r.searchTerm.toLowerCase()) ?? '', opts.category)
+    )
+      continue;
       const iso = isoFromSnapshot(r.snapshotDate);
       if (iso !== null && iso >= from && iso <= to) hit.add(iso);
     }
@@ -1155,7 +1189,12 @@ export function rangeCoverage(
   for (const r of dedupeDailyRows(data?.historyDaily ?? [])) {
     if (target && r.surface !== target) continue;
     if (kw && r.searchTerm.toLowerCase() !== kw) continue;
-    if (opts.category && catMap && catMap.get(r.searchTerm.toLowerCase()) !== opts.category) continue;
+    if (
+      opts.category &&
+      catMap &&
+      !inKeywordSlice(catMap.get(r.searchTerm.toLowerCase()) ?? '', opts.category)
+    )
+      continue;
     const iso = isoFromSnapshot(r.snapshotDate);
     if (iso === null || iso < from || iso > to) continue;
     if (r.usersDaily !== null || singleDay) hit.add(iso);
@@ -1331,12 +1370,30 @@ export function categoryShareForRange(
   const map = new Map<string, CategoryShare>();
   let totalUsers = 0;
   for (const r of rows) {
-    const cat = (catMap.get(r.keyword.toLowerCase()) ?? 'Unknown') as string;
+    const raw = (catMap.get(r.keyword.toLowerCase()) ?? 'Unknown') as string;
+    // Same slice grouping as the window-based builder, or the date-mode donut
+    // would offer a different filter list from the rest of the page.
+    const cat = keywordSlice(raw);
     const cur =
       map.get(cat) ??
-      { category: cat, users: 0, getApp: 0, share: 0, cr: 0, deltaUsersPct: null, deltaGetAppPct: null, deltaCrPct: null };
+      {
+        category: cat,
+        members: [] as { label: string; users: number }[],
+        users: 0,
+        getApp: 0,
+        share: 0,
+        cr: 0,
+        deltaUsersPct: null,
+        deltaGetAppPct: null,
+        deltaCrPct: null,
+      };
     cur.users += r.users;
     cur.getApp += r.getApp ?? 0;
+    if (raw !== cat) {
+      const m = cur.members.find((x) => x.label === raw);
+      if (m) m.users += r.users;
+      else cur.members.push({ label: raw, users: r.users });
+    }
     totalUsers += r.users;
     map.set(cat, cur);
   }

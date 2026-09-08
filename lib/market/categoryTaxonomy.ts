@@ -173,3 +173,72 @@ export function resolveCampCategory(rawLabel: string, campName: string): Canonic
   const guessed = rawCategoryFromCampName(campName);
   return guessed ? canonicalCategoryOf(guessed, campName) : null;
 }
+
+// ── Display buckets: making the two tables filterable together ──────────────
+//
+// The keyword side and the money side answer different questions, so their slice
+// lists were never going to be identical — 'Test' is a budget bucket rather than
+// a meaning, and 'CPM' keywords sit under Others semantically. That is not a
+// mapping bug and forcing either side onto the other's logic would cost real
+// information (see the notes at the top of this file).
+//
+// What CAN be made identical is the list you filter by. Folding each side's
+// leftovers into one shared bucket leaves both with exactly the same six slices:
+//
+//   Brand · Competitor · Feature · Language · Profit · Khác
+//
+// Verified against live data 2026-09: the two sets match exactly after folding.
+// The members stay addressable underneath, so a row can still be expanded to see
+// which of them the number came from — the bucket hides nothing, it only stops
+// the filter from disagreeing with itself.
+
+/** The bucket shown to the reader when leftovers are folded together. */
+export const OTHER_BUCKET = 'Khác';
+
+/** Canonical money-side labels that fold into the bucket. */
+const PAID_OTHER = new Set(['CPM', 'Others', 'Test']);
+
+/** Keyword-side labels that fold into the bucket. 'Category' / 'CatePage' /
+ *  'Unknown' are listed although the live tabs don't currently emit them: the
+ *  Category type allows them, and a label that appears later must not slip
+ *  through as a slice of its own. */
+const KEYWORD_OTHER = new Set(['Others', 'Noise', 'Unknown', 'Category', 'CatePage', '']);
+
+/** The six slices both sides share, in reading order. */
+export const SHARED_SLICES = [
+  'Brand',
+  'Profit',
+  'Competitor',
+  'Feature',
+  'Language',
+  OTHER_BUCKET,
+] as const;
+
+/** Money-side category → the slice it is filtered and grouped under. */
+export function paidSlice(category: string): string {
+  const c = (category ?? '').trim();
+  if (!c) return OTHER_BUCKET;
+  // An unrecognised label — a new sheet category — is left as itself so it shows
+  // up as a row to be mapped rather than vanishing into the bucket.
+  if (PAID_OTHER.has(c)) return OTHER_BUCKET;
+  return c;
+}
+
+/** Keyword-side category → the slice it is filtered and grouped under. */
+export function keywordSlice(category: string): string {
+  const c = (category ?? '').trim();
+  if (KEYWORD_OTHER.has(c)) return OTHER_BUCKET;
+  return c;
+}
+
+/**
+ * Does a row belong to the slice currently focused?
+ *
+ * The page-level filter holds a SLICE, not a category, so every comparison has
+ * to go through this rather than testing string equality. Comparing directly is
+ * what made clicking the bucket match nothing at all.
+ */
+export const inPaidSlice = (category: string, slice: string): boolean =>
+  paidSlice(category) === slice;
+export const inKeywordSlice = (category: string, slice: string): boolean =>
+  keywordSlice(category) === slice;

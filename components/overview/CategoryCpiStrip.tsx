@@ -120,7 +120,27 @@ export function CategoryCpiStrip({
         </div>
       )}
 
-      <ul className="mt-2 space-y-1.5">
+      {/* Column headers. The rows are a flex strip, not a table, so the widths
+          here are the same literals the cells use — they must move together.
+          Without them the strip is seven unlabelled numbers and the reader has to
+          guess which is spend and which is CPI. */}
+      <div className="mt-2 flex items-center gap-2 border-b border-slate-100 pb-1 text-[9px] uppercase tracking-wide text-slate-400">
+        <span className="w-28 shrink-0">Category</span>
+        <span className="min-w-0 flex-1">tỉ lệ chi</span>
+        <span className="w-14 shrink-0 text-right">Chi</span>
+        <span className="w-10 shrink-0 text-right" title="% chi phí của category này trên tổng chi">
+          %
+        </span>
+        <span className="w-12 shrink-0 text-right">Install</span>
+        <span className="w-20 shrink-0 text-right" title="Thay đổi install so với kỳ trước liền kề, cùng độ dài">
+          Δ install
+        </span>
+        <span className="w-16 shrink-0 text-right" title="Chi ÷ install. Đỏ = vượt trần CPI của category">
+          CPI
+        </span>
+      </div>
+
+      <ul className="mt-1 space-y-1.5">
         {report.rows.map((r) => {
           const isActive = activeCategory === r.category;
           const dim = !focused(r.category);

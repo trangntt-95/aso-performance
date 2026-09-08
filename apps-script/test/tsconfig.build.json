@@ -13,5 +13,10 @@
     "jsx": "preserve",
     "outDir": "./.build"
   },
-  "include": ["../../lib/market/paidCategoryTrend.ts", "../../lib/sheets/paidCategoryBoard.ts"]
+  "include": [
+    "../../lib/market/paidCategoryTrend.ts",
+    "../../lib/sheets/paidCategoryBoard.ts",
+    "../../lib/market/categoryTaxonomy.ts",
+    "../../lib/sheets/campName.ts"
+  ]
 }
