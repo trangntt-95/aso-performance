@@ -6,21 +6,22 @@ import { usePathname } from 'next/navigation';
 import {
   BarChart3,
   BookOpen,
-  LayoutDashboard,
+  Check,
   Crosshair,
   DollarSign,
-  TrendingUp,
-  Flame,
-  HeartPulse,
-  History,
-  Route,
-  Megaphone,
-  GripVertical,
-  RotateCcw,
   Eye,
   EyeOff,
+  Flame,
+  GripVertical,
+  HeartPulse,
+  History,
+  LayoutDashboard,
+  LayoutGrid,
+  Megaphone,
+  RotateCcw,
+  Route,
   Settings2,
-  Check,
+  TrendingUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { applyHidden, applyOrder, useNavLayout } from '@/lib/store/navOrderStore';
@@ -44,6 +45,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/install-origin', label: 'Nguồn Install', Icon: Route, shortLabel: 'Nguồn' },
   { href: '/google-ads', label: 'Google Ads', Icon: Megaphone, shortLabel: 'GAds' },
   { href: '/bid-cap', label: 'Bid Recommendations', Icon: DollarSign, shortLabel: 'Bids' },
+  { href: '/paid-categories', label: 'Paid theo Category', Icon: LayoutGrid, shortLabel: 'Cats' },
   { href: '/changelog', label: 'Change log', Icon: History, shortLabel: 'Log' },
 ];
 

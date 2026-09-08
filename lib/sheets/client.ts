@@ -200,7 +200,7 @@ export async function listShopifyTabs(): Promise<
  * hundred, which means the per-day table no longer starts in column A — this
  * shows what each column actually holds so the real range can be targeted.
  */
-export async function probeShopifyWide(tab?: string): Promise<unknown> {
+export async function probeShopifyWide(tab?: string, range?: string): Promise<unknown> {
   const id = process.env.GOOGLE_SHEET_ID_SHOPIFY?.trim();
   if (!id) return { error: 'GOOGLE_SHEET_ID_SHOPIFY chưa được set' };
   try {
@@ -219,9 +219,14 @@ export async function probeShopifyWide(tab?: string): Promise<unknown> {
       target = tabs[0]?.title ?? '';
     }
     if (!target) return { error: 'không tìm được tab nào' };
+    // A1:T25 is the default because the per-day tab's header is all that usually
+    // matters. The pivot tabs are much wider and taller ('By categories' is 64 ×
+    // 1017), so an explicit range can be passed to look at one of those instead
+    // of being told 20 columns is everything there is.
+    const a1 = (range ?? 'A1:T25').replace(/[^A-Za-z0-9:]/g, '');
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: id,
-      range: `'${target}'!A1:T25`,
+      range: `'${target}'!${a1 || 'A1:T25'}`,
       valueRenderOption: 'UNFORMATTED_VALUE',
     });
     const rows = (res.data.values ?? []) as unknown[][];
@@ -265,5 +270,44 @@ export async function fetchAllTabs(): Promise<Record<string, string[][]>> {
       }),
     );
     return result;
+  }
+}
+
+/**
+ * The 'By categories' pivot of the Shopify Ads spreadsheet — a dashboard Trang
+ * built there by hand (Apps Script), read so it can be shown alongside the rest.
+ *
+ * Deliberately read, never recomputed. The numbers are hers; this dashboard's job
+ * is to display them, the same rule the 'Max bid cap' screens follow. Recomputing
+ * would produce a second set of figures that disagrees with her sheet in small
+ * ways and leaves nobody sure which is right.
+ *
+ * Layout (verified live 2026-09-08): data occupies A1:T111 only, though the tab
+ * is 64 × 1017.
+ *   A1        'Date range' + two Excel serials — the window the left block covers
+ *   A7:J15    left block: one row per category, current-window snapshot
+ *   K/L..T    right block: nine metric tiers stacked down the sheet, each with a
+ *             't1…t8 | % growth' header and one row per category
+ * Row positions are NOT hardcoded — tiers are found by their label in column L,
+ * so inserting a row above them doesn't silently shift every reading by one.
+ */
+export async function fetchShopifyByCategoryRows(): Promise<unknown[][]> {
+  const id = process.env.GOOGLE_SHEET_ID_SHOPIFY?.trim();
+  if (!id) return [];
+  try {
+    const sheets = getSheetsClient();
+    // Located by NAME here, unlike the per-day reader which takes the first tab
+    // by position: this is a specific pivot, not "whatever the current year is".
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: id,
+      range: `'By categories'!A1:T120`,
+      valueRenderOption: 'UNFORMATTED_VALUE',
+    });
+    return (res.data.values ?? []) as unknown[][];
+  } catch (e) {
+    // A renamed or deleted tab must not take the whole payload down with it —
+    // every other screen still works without this one.
+    console.error('fetchShopifyByCategoryRows failed:', (e as Error).message);
+    return [];
   }
 }

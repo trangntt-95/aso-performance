@@ -47,7 +47,7 @@ export async function GET(req: Request) {
   const tab = url.searchParams.get('tab') || '';
   try {
     out.probedTab = tab;
-    out.wideProbe = await probeShopifyWide(tab || undefined);
+    out.wideProbe = await probeShopifyWide(tab || undefined, url.searchParams.get('range') || undefined);
   } catch (err) {
     out.wideProbe = { error: err instanceof Error ? err.message : 'Unknown error' };
   }

@@ -508,6 +508,10 @@ export interface SheetPayload {
   shopifyCamps: ShopifyCampRow[];
   /** Date range the Shopify_daily totals cover (from cell A2), e.g. "01/03/2026 → 14/06/2026". */
   shopifyDateRange: string;
+  /** The hand-built 'By categories' pivot from the Shopify Ads spreadsheet, read
+   *  as-is. Null when that tab is missing or unreadable — every other screen
+   *  works without it. */
+  paidCategoryBoard: PaidCategoryBoard | null;
   /** Per-DAY campaign spend from the separate Shopify Ads sheet, trimmed to a
    *  recent window. Empty when that sheet isn't configured or readable. */
   shopifyDaily: ShopifyDailyRow[];
@@ -532,4 +536,56 @@ export interface RowStatusRecord {
   status: RowStatus;
   updatedAt: string;
   note?: string;
+}
+
+/**
+ * One category's row in the 'By categories' pivot of the Shopify Ads sheet —
+ * a dashboard maintained by hand there, read rather than recomputed.
+ */
+export interface PaidCategorySnapshot {
+  category: string;
+  installs: number;
+  spend: number;
+  /** As the sheet computes it. Null where it left the cell blank — which it does
+   *  for a category with zero installs, rather than writing a division by zero. */
+  cpi: number | null;
+  clicks: number;
+  impressions: number;
+  /** Fractions, not percentages — the sheet stores 0.32, not 32. */
+  cr: number | null;
+  cpc: number | null;
+  ctr: number | null;
+  position: number | null;
+}
+
+/** One metric's eight-period series, per category, from the right-hand block. */
+export interface PaidCategorySeries {
+  /** The metric label as the sheet writes it: INSTALLS, Impressions, Click, CR,
+   *  CPI, CPC, Pos, CTR, Spend. */
+  metric: string;
+  rows: {
+    category: string;
+    /** t1 … t8, oldest first. Null where the sheet has no value for a period. */
+    values: (number | null)[];
+    /** The sheet's own '% growth' cell — carried rather than derived, so the
+     *  screen cannot disagree with the sheet about its own figure. */
+    growth: number | null;
+  }[];
+  /** Column totals under the per-category rows, when the sheet has them. */
+  totals: (number | null)[];
+  totalsGrowth: number | null;
+}
+
+export interface PaidCategoryBoard {
+  /** The window the snapshot block covers, ISO. Empty when A1 is unreadable. */
+  from: string;
+  to: string;
+  /** Period labels exactly as the sheet writes them (t1…t8). The sheet does not
+   *  date t1–t7, so nothing here invents dates for them; only the last period is
+   *  known, and it equals from→to (verified live 2026-09-08). */
+  periods: string[];
+  snapshot: PaidCategorySnapshot[];
+  /** Snapshot totals row ('TOTAL'), as the sheet computes it. */
+  snapshotTotal: PaidCategorySnapshot | null;
+  series: PaidCategorySeries[];
 }

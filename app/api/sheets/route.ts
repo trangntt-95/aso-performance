@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { fetchAllTabs, fetchShopifyDailyRows } from '@/lib/sheets/client';
+import { fetchAllTabs, fetchShopifyDailyRows, fetchShopifyByCategoryRows } from '@/lib/sheets/client';
+import { parsePaidCategoryBoard } from '@/lib/sheets/paidCategoryBoard';
 import { fetchGoogleAdsTabs, parseGoogleAds } from '@/lib/sheets/googleAds';
 import { normalizeCampName } from '@/lib/sheets/campName';
 import {
@@ -39,9 +40,12 @@ export async function GET() {
   try {
     // The per-day Shopify export lives in a second spreadsheet; fetch it
     // alongside the main tabs. It resolves to [] if unconfigured/unreadable.
-    const [raw, shopifyDailyRaw, gadsRaw] = await Promise.all([
+    const [raw, shopifyDailyRaw, byCategoryRaw, gadsRaw] = await Promise.all([
       fetchAllTabs(),
       fetchShopifyDailyRows(),
+      // The hand-built 'By categories' pivot in the same spreadsheet. Small
+      // (A1:T111), and read rather than recomputed — see paidCategoryBoard.ts.
+      fetchShopifyByCategoryRows(),
       fetchGoogleAdsTabs(),
     ]);
     // Only a recent window ships to the client: the tab goes back to 2025-01
@@ -124,6 +128,7 @@ export async function GET() {
       shopifyCamps: shopifyCampRows,
       shopifyDateRange: shopifyRange,
       shopifyDaily: parseShopifyDaily(shopifyDailyRaw, shopifySince, shopifyCampAllow),
+      paidCategoryBoard: parsePaidCategoryBoard(byCategoryRaw),
       googleAds: parseGoogleAds(gadsRaw),
       negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
       windowDates,
