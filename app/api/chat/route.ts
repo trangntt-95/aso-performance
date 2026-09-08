@@ -123,6 +123,8 @@ async function fetchPayload(): Promise<SheetPayload> {
     // The chat context doesn't render the hand-built pivot; it reasons over the
     // underlying tabs instead.
     paidCategoryBoard: null,
+    // The chat has no UI to link a source from.
+    sheetSources: [],
     shopifyDateRange: parseShopifyDateRange(raw['Shopify_daily'] ?? []),
     negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
     windowDates: (() => {

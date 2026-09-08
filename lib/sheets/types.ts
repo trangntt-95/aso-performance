@@ -523,6 +523,10 @@ export interface SheetPayload {
   negativeKw: string[];
   /** Actual date range each window (L3/L7/...) covers, parsed from tab titles. */
   windowDates: Record<string, { from: string; to: string }>;
+  /** The spreadsheets behind this payload, so a screen can link its own source
+   *  instead of describing it in prose. Only the configured ones appear. A
+   *  spreadsheet id is a document the owner already has open, not a credential. */
+  sheetSources: { label: string; url: string }[];
   fetchedAt: string;
 }
 

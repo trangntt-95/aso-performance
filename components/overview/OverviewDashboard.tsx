@@ -43,6 +43,7 @@ import { TopCountriesChart } from './TopCountriesChart';
 import { CategoryShareDonut } from './CategoryShareDonut';
 import { CategoryCpiStrip } from './CategoryCpiStrip';
 import { DataGapNote } from '@/components/shared/DataGapNote';
+import { SheetSources } from '@/components/shared/SheetSources';
 import type { DataSourceKey } from '@/lib/market/dataGaps';
 import { TopVolumeMovers } from './TopVolumeMovers';
 import { TopContributors } from './TopContributors';
@@ -1226,6 +1227,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       {/* Caveat about the data everything above was drawn from, so it sits last
           and renders nothing when every source is complete. */}
       <DataGapNote sources={OVERVIEW_SOURCES} />
+
+      {/* And, smaller still, where that data lives. */}
+      <SheetSources />
     </div>
   );
 }

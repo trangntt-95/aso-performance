@@ -36,6 +36,19 @@ import type { KeywordRow, SheetPayload, SnapshotRow } from '@/lib/sheets/types';
 export const revalidate = 600;
 export const dynamic = 'force-dynamic';
 
+/** Configured spreadsheet ids → links, skipping the ones that aren't set. */
+function sheetSources(): { label: string; url: string }[] {
+  const of = (label: string, id: string | undefined) => {
+    const t = id?.trim();
+    return t ? { label, url: `https://docs.google.com/spreadsheets/d/${t}/edit` } : null;
+  };
+  return [
+    of('ASO (sheet chính)', process.env.GOOGLE_SHEET_ID),
+    of('Shopify Ads', process.env.GOOGLE_SHEET_ID_SHOPIFY),
+    of('Google Ads', process.env.GOOGLE_SHEET_ID_GADS),
+  ].filter((x): x is { label: string; url: string } => x !== null);
+}
+
 export async function GET() {
   try {
     // The per-day Shopify export lives in a second spreadsheet; fetch it
@@ -139,6 +152,7 @@ export async function GET() {
       googleAds: parseGoogleAds(gadsRaw),
       negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
       windowDates,
+      sheetSources: sheetSources(),
       fetchedAt: new Date().toISOString(),
     };
     // Guard: a transient Google API failure makes fetchAllTabs swallow the
