@@ -17,7 +17,6 @@ import { useSheetData } from '@/lib/hooks/useSheetData';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
-  AXIS_NAME,
   DEFAULT_ON,
   LABEL_GAP,
   TOTAL_GROUP,
