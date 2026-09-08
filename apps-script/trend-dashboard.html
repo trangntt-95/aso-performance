@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --bg: #f8fafc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 12px 14px; background: #fff; color: var(--ink);
+    font: 13px/1.45 -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+  .fld { display: flex; flex-direction: column; gap: 2px; }
+  .fld > span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  select, button {
+    font: inherit; padding: 4px 7px; border: 1px solid var(--line);
+    border-radius: 5px; background: #fff; color: var(--ink);
+  }
+  select { min-width: 110px; }
+  button { cursor: pointer; }
+  button:hover { border-color: #94a3b8; }
+  #reload { font-weight: 600; }
+
+  #status { margin: 8px 0 6px; font-size: 11px; color: var(--muted); }
+  #warn { margin: 6px 0; font-size: 11px; color: #92400e; background: #fffbeb;
+          border: 1px solid #fde68a; border-radius: 6px; padding: 6px 8px; display: none; }
+
+  #chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+           margin: 8px 0; padding: 7px; background: var(--bg);
+           border: 1px solid var(--line); border-radius: 7px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 3px 9px; font-size: 11.5px; user-select: none;
+  }
+  .chip .sw { width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto; }
+  .chip .fx { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .chip .ax { font-size: 10px; color: var(--muted); }
+  .chip.off { opacity: .4; }
+  .sep { width: 1px; height: 18px; background: var(--line); margin: 0 3px; }
+  .mini { font-size: 11px; padding: 3px 8px; }
+  label.auto { display: inline-flex; align-items: center; gap: 4px; font-size: 11px;
+               color: var(--muted); cursor: pointer; }
+
+  #wrap { position: relative; height: 460px; }
+  #note { margin-top: 6px; font-size: 10.5px; color: var(--muted); line-height: 1.5; }
+  #err { display: none; margin: 20px 0; padding: 10px 12px; border-radius: 6px;
+         background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <label class="fld"><span>Category</span><select id="cat"></select></label>
+  <label class="fld"><span>Nhóm metric</span><select id="grp"></select></label>
+  <label class="fld"><span>Từ</span><select id="from"></select></label>
+  <label class="fld"><span>Đến</span><select id="to"></select></label>
+  <button id="reload">↻ Đọc lại số</button>
+</div>
+
+<div id="err"></div>
+<div id="status">Đang đọc sheet…</div>
+<div id="chips"></div>
+<div id="warn"></div>
+<div id="wrap"><canvas id="cv"></canvas></div>
+<div id="note"></div>
+
+<script>
+// ===========================================================================
+// CONFIG — one line per metric, plus the group defaults. Structural only: no
+// measured value appears anywhere in this file.
+// ===========================================================================
+
+var GROUPS = [
+  { id: 'vol',   label: 'Khối lượng' },
+  { id: 'eff',   label: 'Hiệu quả & chi phí' },
+  { id: 'total', label: 'TOTAL (cả 9, 2 trục)' }
+];
+
+/**
+ * group  — which group tab the metric belongs to
+ * axis   — 'L' or 'R', used only by the TOTAL group's dual axis
+ * pinned — factor used when "tự chỉnh hệ số" is unchecked
+ * fmt    — 'n' | 'money' | 'pct'
+ * color / dash — fixed per METRIC, never assigned by position in a group:
+ *          position-based colours make every remaining line change colour the
+ *          moment one is switched off.
+ */
+var METRICS = {
+  Installs:    { group: 'vol', axis: 'L', pinned: 1,     fmt: 'n',     color: '#0e7490', dash: [] },
+  Clicks:      { group: 'vol', axis: 'L', pinned: 0.1,   fmt: 'n',     color: '#2563eb', dash: [] },
+  Impressions: { group: 'vol', axis: 'L', pinned: 0.001, fmt: 'n',     color: '#7c3aed', dash: [] },
+  Spend:       { group: 'vol', axis: 'L', pinned: 0.1,   fmt: 'money', color: '#059669', dash: [] },
+  CPI:         { group: 'eff', axis: 'R', pinned: 1,     fmt: 'money', color: '#dc2626', dash: [5, 4] },
+  CPC:         { group: 'eff', axis: 'R', pinned: 10,    fmt: 'money', color: '#ea580c', dash: [5, 4] },
+  CR:          { group: 'eff', axis: 'R', pinned: 1000,  fmt: 'pct',   color: '#c026d3', dash: [5, 4] },
+  CTR:         { group: 'eff', axis: 'R', pinned: 10000, fmt: 'pct',   color: '#db2777', dash: [5, 4] },
+  Pos:         { group: 'eff', axis: 'R', pinned: 10,    fmt: 'n',     color: '#475569', dash: [5, 4] }
+};
+
+/** Shown on first open only. After that the user's own toggles win — including
+ *  across category changes, range changes and refreshes (R7). */
+var DEFAULT_ON = {
+  vol:   ['Installs', 'Clicks'],
+  eff:   ['CPI', 'CR', 'CPC'],
+  total: ['Installs', 'CPI']
+};
+
+/** Any metric the sheet has but CONFIG doesn't: it still charts, on its own
+ *  group, factor 1. A new block must never break the dialog. */
+var FALLBACK_GROUP = { id: 'other', label: 'Khác' };
+var FALLBACK = { group: 'other', axis: 'L', pinned: 1, fmt: 'n', color: '#0f172a', dash: [2, 2] };
+
+/** Tie-break band for factor selection (§6). Sets whose axis ratio is within
+ *  this of the best are treated as equally good, and the readable one wins. */
+var BAND = 0.02;
+var TARGET_GEO = 150;
+/** Minimum vertical gap between end-of-line labels, in px. */
+var LABEL_GAP = 15;
+
+// ===========================================================================
+// State
+// ===========================================================================
+
+var DATA = null;
+var chart = null;
+/** Visible metrics per group. Kept separate on purpose: switching Clicks on in
+ *  the volume group must not switch it on in the TOTAL group (R7). */
+var visible = {};
+var autoScale = {};
+var initialised = false;
+
+function cfgOf(m) { return METRICS[m] || FALLBACK; }
+function groupsPresent() {
+  var ids = {}, out = [];
+  (DATA.metrics || []).forEach(function (m) { ids[cfgOf(m).group] = true; });
+  GROUPS.concat([FALLBACK_GROUP]).forEach(function (g) {
+    if (g.id === 'total' ? (DATA.metrics || []).length > 0 : ids[g.id]) out.push(g);
+  });
+  return out;
+}
+function metricsOf(gid) {
+  return (DATA.metrics || []).filter(function (m) {
+    return gid === 'total' ? true : cfgOf(m).group === gid;
+  });
+}
+
+// ===========================================================================
+// Formatting
+// ===========================================================================
+
+function fmtVal(metric, v) {
+  if (v === null || v === undefined || !isFinite(v)) return '—';
+  var f = cfgOf(metric).fmt;
+  if (f === 'pct') return (v * 100).toFixed(1) + '%';
+  if (f === 'money') return '$' + (Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2));
+  if (metric === 'Pos') return v.toFixed(2);
+  return Math.round(v).toLocaleString('en-US');
+}
+
+/**
+ * Legend text for a metric at a given factor.
+ *
+ * Written in the reader's units, not the raw factor. A percent metric's factor
+ * already carries the ×100 that turns 0.43 into 43, so CR at a raw factor of
+ * 1000 is shown as "CR (%) ×10" — printing ×1000 would say the line is a
+ * thousand times its value, which it is not. At factor 1 nothing is appended and
+ * no "(%)" either, because the axis is then showing the untouched value.
+ */
+function legLabel(metric, factor) {
+  if (!factor || factor === 1) return metric;
+  var pct = cfgOf(metric).fmt === 'pct';
+  var shown = pct ? factor / 100 : factor;
+  var name = pct ? metric + ' (%)' : metric;
+  if (Math.abs(shown - 1) < 1e-9) return name;
+  return name + ' ×' + (shown >= 1 ? String(shown) : '1/' + String(Math.round(1 / shown)));
+}
+
+// ===========================================================================
+// Factor selection (§6)
+// ===========================================================================
+
+function median(a) {
+  var v = a.filter(function (x) { return x !== null && isFinite(x); }).sort(function (x, y) { return x - y; });
+  if (!v.length) return null;
+  return v[Math.floor(v.length / 2)];
+}
+
+/** Values of one metric for the current category, over the selected range. */
+function seriesOf(metric, cat, i0, i1) {
+  var row = ((DATA.data[metric] || {})[cat]) || [];
+  return row.slice(i0, i1 + 1);
+}
+
+/**
+ * Pick a factor per metric so several lines share one axis readably.
+ *
+ * Minimising the axis ratio alone is not enough, and this is the part that
+ * needed a second pass: the smallest ratio was reached by dividing Impressions
+ * by 100000 and Installs by 100, which plots beautifully and puts numbers on the
+ * axis that mean nothing to a reader. The geometric-mean tie-break is what keeps
+ * the axis legible, so it is not optional.
+ */
+function pickFactors(metrics, cat, i0, i1) {
+  var out = {};
+  if (!metrics.length) return out;
+
+  if (metrics.length === 1) {
+    // One line owns the axis: show it untouched, whatever its magnitude.
+    out[metrics[0]] = 1;
+    return out;
+  }
+
+  var meds = {};
+  metrics.forEach(function (m) {
+    var pp = cfgOf(m).fmt === 'pct' ? 100 : 1;
+    var md = median(seriesOf(m, cat, i0, i1).map(function (v) {
+      return v === null ? null : v * pp;
+    }));
+    meds[m] = md;
+  });
+
+  var best = null;
+  for (var e = 0; e <= 4.5 + 1e-9; e += 0.05) {
+    var target = Math.pow(10, e);
+    var set = {};
+    metrics.forEach(function (m) {
+      var pp = cfgOf(m).fmt === 'pct' ? 100 : 1;
+      var md = meds[m];
+      set[m] = (md === null || md === 0) ? pp
+        : pp * Math.pow(10, Math.round(Math.log10(target / Math.abs(md))));
+    });
+    var lo = Infinity, hi = -Infinity, geo = 0, n = 0;
+    metrics.forEach(function (m) {
+      seriesOf(m, cat, i0, i1).forEach(function (v) {
+        if (v === null || !isFinite(v)) return;
+        var s = Math.abs(v * set[m]);
+        if (s <= 0) return;
+        if (s < lo) lo = s;
+        if (s > hi) hi = s;
+        geo += Math.log(s); n++;
+      });
+    });
+    if (!n || !isFinite(lo) || lo <= 0) continue;
+    var ratio = hi / lo;
+    var gm = Math.exp(geo / n);
+    var cand = { ratio: ratio, gm: gm, set: set };
+    if (!best || ratio < best.ratio) best = cand;
+    if (!best.alts) best.alts = [];
+    best.alts.push(cand);
+  }
+  if (!best) { metrics.forEach(function (m) { out[m] = 1; }); return out; }
+
+  // Among the sets that are effectively as good, take the most readable.
+  var near = (best.alts || []).filter(function (c) { return c.ratio <= best.ratio * (1 + BAND); });
+  var pickBest = best;
+  near.forEach(function (c) {
+    if (Math.abs(Math.log(c.gm / TARGET_GEO)) < Math.abs(Math.log(pickBest.gm / TARGET_GEO))) pickBest = c;
+  });
+  return pickBest.set;
+}
+
+function factorsFor(gid, metrics, cat, i0, i1) {
+  if (!autoScale[gid]) {
+    var pinned = {};
+    metrics.forEach(function (m) { pinned[m] = cfgOf(m).pinned; });
+    return pinned;
+  }
+  if (gid !== 'total') return pickFactors(metrics, cat, i0, i1);
+  // Dual axis: each side is scaled among its own lines only.
+  var left = metrics.filter(function (m) { return cfgOf(m).axis !== 'R'; });
+  var right = metrics.filter(function (m) { return cfgOf(m).axis === 'R'; });
+  var f = pickFactors(left, cat, i0, i1);
+  var g = pickFactors(right, cat, i0, i1);
+  Object.keys(g).forEach(function (k) { f[k] = g[k]; });
+  return f;
+}
+
+// ===========================================================================
+// End-of-line labels (R8)
+// ===========================================================================
+
+/**
+ * Spread label positions so they never overlap, then keep the whole run inside
+ * the plot.
+ *
+ * Order is not interchangeable: sort, push down from the top, then shift the
+ * block up if it overflows the bottom, then down if it overflows the top. Doing
+ * the clamps before the spreading lets labels re-collide afterwards.
+ */
+function layoutLabels(ys, top, bottom, gap) {
+  var idx = ys.map(function (y, i) { return { y: y, i: i }; })
+              .sort(function (a, b) { return a.y - b.y; });
+  for (var k = 1; k < idx.length; k++) {
+    if (idx[k].y - idx[k - 1].y < gap) idx[k].y = idx[k - 1].y + gap;
+  }
+  if (idx.length) {
+    var over = idx[idx.length - 1].y - bottom;
+    if (over > 0) idx.forEach(function (o) { o.y -= over; });
+    var under = top - idx[0].y;
+    if (under > 0) idx.forEach(function (o) { o.y += under; });
+  }
+  var out = [];
+  idx.forEach(function (o) { out[o.i] = o.y; });
+  return out;
+}
+
+var endLabelPlugin = {
+  id: 'endLabels',
+  afterDatasetsDraw: function (c) {
+    var area = c.chartArea, ctx = c.ctx;
+    var items = [];
+    c.data.datasets.forEach(function (ds, di) {
+      if (!c.isDatasetVisible(di)) return;
+      var meta = c.getDatasetMeta(di);
+      for (var i = ds.data.length - 1; i >= 0; i--) {
+        var v = ds.data[i];
+        if (v === null || v === undefined) continue;
+        var pt = meta.data[i];
+        if (!pt) break;
+        items.push({ y: pt.y, text: ds.endLabel || ds.label, color: ds.borderColor });
+        break;
+      }
+    });
+    if (!items.length) return;
+    var ys = layoutLabels(items.map(function (o) { return o.y; }), area.top + 4, area.bottom - 4, LABEL_GAP);
+    ctx.save();
+    ctx.font = '600 10.5px -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    items.forEach(function (o, i) {
+      ctx.fillStyle = o.color;
+      ctx.fillText(o.text, area.right + 7, ys[i]);
+    });
+    ctx.restore();
+  }
+};
+Chart.register(endLabelPlugin);
+
+// ===========================================================================
+// Render
+// ===========================================================================
+
+function el(id) { return document.getElementById(id); }
+function opts(sel, list, keep) {
+  var prev = keep && list.indexOf(keep) >= 0 ? keep : (list.indexOf(sel.value) >= 0 ? sel.value : list[0]);
+  sel.innerHTML = '';
+  list.forEach(function (v) {
+    var o = document.createElement('option');
+    o.value = v; o.textContent = v;
+    sel.appendChild(o);
+  });
+  sel.value = prev;
+}
+
+function currentRange() {
+  var labels = DATA.labels || [];
+  var a = labels.indexOf(el('from').value);
+  var b = labels.indexOf(el('to').value);
+  if (a < 0) a = 0;
+  if (b < 0) b = labels.length - 1;
+  if (a > b) { var t = a; a = b; b = t; }
+  return [a, b];
+}
+
+function renderChips(gid, metrics, factors) {
+  var box = el('chips');
+  box.innerHTML = '';
+  metrics.forEach(function (m) {
+    var cf = cfgOf(m);
+    var on = visible[gid][m] !== false;
+    var chip = document.createElement('div');
+    chip.className = 'chip' + (on ? '' : ' off');
+    chip.title = 'Bấm để ẩn/hiện ' + m;
+    var sw = document.createElement('span');
+    sw.className = 'sw'; sw.style.background = cf.color;
+    chip.appendChild(sw);
+    var nm = document.createElement('span');
+    nm.textContent = m;
+    chip.appendChild(nm);
+    var f = factors[m];
+    if (f && f !== 1) {
+      var fx = document.createElement('span');
+      fx.className = 'fx';
+      fx.textContent = legLabel(m, f).replace(m, '').trim();
+      chip.appendChild(fx);
+    }
+    if (gid === 'total') {
+      var ax = document.createElement('span');
+      ax.className = 'ax';
+      ax.textContent = cf.axis === 'R' ? '▶' : '◀';
+      ax.title = cf.axis === 'R' ? 'Trục phải' : 'Trục trái';
+      chip.appendChild(ax);
+    }
+    chip.onclick = function () { visible[gid][m] = !on; draw(); };
+    box.appendChild(chip);
+  });
+
+  var sep = document.createElement('span'); sep.className = 'sep'; box.appendChild(sep);
+  [['Hiện tất cả', true], ['Ẩn hết', false]].forEach(function (pair) {
+    var b = document.createElement('button');
+    b.className = 'mini'; b.textContent = pair[0];
+    b.onclick = function () {
+      metrics.forEach(function (m) { visible[gid][m] = pair[1]; });
+      draw();
+    };
+    box.appendChild(b);
+  });
+  var lab = document.createElement('label');
+  lab.className = 'auto';
+  var cb = document.createElement('input');
+  cb.type = 'checkbox'; cb.checked = !!autoScale[gid];
+  cb.onchange = function () { autoScale[gid] = cb.checked; draw(); };
+  lab.appendChild(cb);
+  lab.appendChild(document.createTextNode('tự chỉnh hệ số'));
+  box.appendChild(lab);
+}
+
+function draw() {
+  if (!DATA || DATA.error) return;
+  var cat = el('cat').value;
+  var gid = el('grp').value;
+  var r = currentRange(), i0 = r[0], i1 = r[1];
+  var all = metricsOf(gid);
+  if (!visible[gid]) visible[gid] = {};
+
+  var factors = factorsFor(gid, all.filter(function (m) { return visible[gid][m] !== false; }), cat, i0, i1);
+  // Chips show every metric in the group, including the hidden ones, so a line
+  // can be brought back — hiding must never be a one-way door.
+  var chipFactors = factorsFor(gid, all, cat, i0, i1);
+  Object.keys(factors).forEach(function (k) { chipFactors[k] = factors[k]; });
+  renderChips(gid, all, chipFactors);
+
+  var shown = all.filter(function (m) { return visible[gid][m] !== false; });
+  var labels = (DATA.labels || []).slice(i0, i1 + 1);
+
+  var datasets = [];
+  shown.forEach(function (m) {
+    var vals = seriesOf(m, cat, i0, i1);
+    if (!vals.some(function (v) { return v !== null && isFinite(v); })) return; // nothing to plot
+    var cf = cfgOf(m);
+    var f = factors[m] || 1;
+    datasets.push({
+      label: legLabel(m, f),
+      endLabel: m,
+      metric: m,
+      factor: f,
+      data: vals.map(function (v) { return v === null ? null : v * f; }),
+      raw: vals,
+      borderColor: cf.color,
+      backgroundColor: cf.color,
+      borderDash: cf.dash,
+      borderWidth: 2,
+      pointRadius: 2.5,
+      pointHoverRadius: 4,
+      tension: 0.25,
+      spanGaps: true,
+      yAxisID: gid === 'total' ? (cf.axis === 'R' ? 'yR' : 'yL') : 'yL'
+    });
+  });
+
+  // Longest end label decides the right padding, or the labels get clipped.
+  var pad = 24;
+  datasets.forEach(function (d) { pad = Math.max(pad, d.endLabel.length * 7 + 14); });
+
+  var single = datasets.length === 1 ? datasets[0] : null;
+  function tickFmt(metric) {
+    return function (v) {
+      if (!metric) return v;
+      var cf = cfgOf(metric);
+      if (cf.fmt === 'pct') return (v * 100).toFixed(0) + '%';
+      if (cf.fmt === 'money') return '$' + v;
+      return Number(v).toLocaleString('en-US');
+    };
+  }
+
+  var scales = {
+    x: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } },
+    yL: {
+      position: 'left',
+      display: gid !== 'total' || datasets.some(function (d) { return d.yAxisID === 'yL'; }),
+      grid: { color: '#f1f5f9' },
+      ticks: { font: { size: 11 }, callback: single ? tickFmt(single.metric) : undefined },
+      title: single ? { display: true, text: single.metric, font: { size: 11 } } : { display: false }
+    }
+  };
+  if (gid === 'total') {
+    // Only draw an axis that actually has lines on it: a stranded empty axis
+    // reads as data that failed to load.
+    var hasR = datasets.some(function (d) { return d.yAxisID === 'yR'; });
+    scales.yR = {
+      position: 'right',
+      display: hasR,
+      // One grid only, from the left axis — two overlaid grids read as noise.
+      grid: { drawOnChartArea: false },
+      ticks: { font: { size: 11 } }
+    };
+  }
+
+  var cfg = {
+    type: 'line',
+    data: { labels: labels, datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { right: pad, top: 6 } },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            // Always the untouched value in its own unit. The factor exists to
+            // make lines shareable, not to change what a number means (R3).
+            label: function (ctx) {
+              var ds = ctx.dataset;
+              var v = ds.raw ? ds.raw[ctx.dataIndex] : null;
+              return ds.metric + ': ' + fmtVal(ds.metric, v);
+            }
+          }
+        }
+      },
+      scales: scales
+    }
+  };
+
+  if (chart) chart.destroy();
+  chart = new Chart(el('cv'), cfg);
+
+  var notes = [];
+  if (gid === 'total') {
+    notes.push('Hai trục độc lập: chỗ hai đường cắt nhau <b>không mang ý nghĩa</b> gì — đổi khoảng trục là điểm cắt dịch chỗ. Chỉ đọc hướng lên/xuống, đừng đọc khoảng cách giữa hai đường.');
+  }
+  if (datasets.length > 1) {
+    notes.push('Hệ số trên nhãn chỉ để các đường vẽ chung được một trục. Tooltip luôn hiện <b>giá trị gốc</b> đúng đơn vị.');
+  }
+  if (shown.length && !datasets.length) {
+    notes.push('Metric đang bật không có số nào trong khoảng này.');
+  }
+  el('warn').style.display = gid === 'total' ? 'block' : 'none';
+  el('warn').innerHTML = gid === 'total' ? notes[0] : '';
+  el('note').innerHTML = notes.slice(gid === 'total' ? 1 : 0).join('<br>');
+}
+
+// ===========================================================================
+// Load
+// ===========================================================================
+
+function apply(payload) {
+  if (!payload || payload.error) {
+    el('err').style.display = 'block';
+    el('err').textContent = 'Lỗi: ' + ((payload && payload.error) || 'không đọc được dữ liệu');
+    el('status').textContent = '';
+    return;
+  }
+  var prevLabels = DATA ? (DATA.labels || []) : [];
+  var prevTo = el('to').value;
+  var wasAtEnd = !prevLabels.length || prevTo === prevLabels[prevLabels.length - 1];
+  var prevFrom = el('from').value;
+  var prevCat = el('cat').value, prevGrp = el('grp').value;
+  DATA = payload;
+  el('err').style.display = 'none';
+
+  var gs = groupsPresent();
+  gs.forEach(function (g) {
+    if (!visible[g.id]) visible[g.id] = {};
+    if (autoScale[g.id] === undefined) autoScale[g.id] = true;
+  });
+
+  opts(el('cat'), DATA.categories || [], prevCat || DATA.totalLabel);
+  var grpSel = el('grp');
+  var prevG = prevGrp || grpSel.value;
+  grpSel.innerHTML = '';
+  gs.forEach(function (g) {
+    var o = document.createElement('option');
+    o.value = g.id; o.textContent = g.label;
+    grpSel.appendChild(o);
+  });
+  grpSel.value = gs.some(function (g) { return g.id === prevG; }) ? prevG : gs[0].id;
+
+  var labels = DATA.labels || [];
+  opts(el('from'), labels, prevFrom);
+  // Sitting on the newest point means "keep me on the newest point" — pinning
+  // the old label would quietly hide the period that just arrived (R10).
+  opts(el('to'), labels, wasAtEnd ? labels[labels.length - 1] : prevTo);
+
+  if (!initialised) {
+    initialised = true;
+    gs.forEach(function (g) {
+      var on = DEFAULT_ON[g.id] || metricsOf(g.id).slice(0, 2);
+      metricsOf(g.id).forEach(function (m) { visible[g.id][m] = on.indexOf(m) >= 0; });
+    });
+  } else {
+    // A metric that appeared in the sheet since the last read starts hidden, so
+    // a new block cannot rearrange a chart the user has already set up.
+    gs.forEach(function (g) {
+      metricsOf(g.id).forEach(function (m) {
+        if (visible[g.id][m] === undefined) visible[g.id][m] = false;
+      });
+    });
+  }
+
+  var t = new Date(DATA.readAt);
+  var hh = function (n) { return (n < 10 ? '0' : '') + n; };
+  el('status').innerHTML =
+    'Đọc từ tab <b>' + DATA.sheetName + '</b> lúc ' +
+    hh(t.getHours()) + ':' + hh(t.getMinutes()) + ':' + hh(t.getSeconds()) + ' ' +
+    hh(t.getDate()) + '/' + hh(t.getMonth() + 1) + '/' + t.getFullYear() +
+    ' · ' + (DATA.metrics || []).length + ' metric · ' + labels.length + ' mốc · ' +
+    (DATA.dataPoints || 0) + ' điểm dữ liệu' +
+    (DATA.dateRange && DATA.dateRange.from
+      ? ' · Date range ' + DATA.dateRange.from + ' → ' + DATA.dateRange.to : '') +
+    ' — <i>không tự cập nhật, bấm ↻ để đọc lại</i>';
+
+  draw();
+}
+
+function load() {
+  el('status').textContent = 'Đang đọc sheet…';
+  google.script.run.withSuccessHandler(apply).withFailureHandler(function (e) {
+    el('err').style.display = 'block';
+    el('err').textContent = 'Lỗi: ' + e.message;
+    el('status').textContent = '';
+  }).getTrendData();
+}
+
+['cat', 'grp', 'from', 'to'].forEach(function (id) {
+  el(id).addEventListener('change', draw);
+});
+el('reload').addEventListener('click', load);
+load();
+</script>
+</body>
+</html>
