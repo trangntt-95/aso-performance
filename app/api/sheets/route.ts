@@ -128,7 +128,14 @@ export async function GET() {
       shopifyCamps: shopifyCampRows,
       shopifyDateRange: shopifyRange,
       shopifyDaily: parseShopifyDaily(shopifyDailyRaw, shopifySince, shopifyCampAllow),
-      paidCategoryBoard: parsePaidCategoryBoard(byCategoryRaw),
+      paidCategoryBoard: parsePaidCategoryBoard(byCategoryRaw, {
+        tab: 'By categories',
+        // Built here rather than in the parser: the parser is pure and shouldn't
+        // read env. The id identifies a document the owner already has open.
+        url: process.env.GOOGLE_SHEET_ID_SHOPIFY?.trim()
+          ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEET_ID_SHOPIFY.trim()}/edit`
+          : '',
+      }),
       googleAds: parseGoogleAds(gadsRaw),
       negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
       windowDates,

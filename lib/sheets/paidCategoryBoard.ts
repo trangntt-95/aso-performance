@@ -181,7 +181,11 @@ function snapshotFrom(row: unknown[], category: string): PaidCategorySnapshot {
   };
 }
 
-export function parsePaidCategoryBoard(rows: unknown[][]): PaidCategoryBoard | null {
+export function parsePaidCategoryBoard(
+  rows: unknown[][],
+  /** Where these rows came from, for the screen to cite. Parsing never reads it. */
+  source: { tab?: string; url?: string } = {},
+): PaidCategoryBoard | null {
   if (!rows || rows.length === 0) return null;
 
   // ── A1: the window the snapshot covers ──
@@ -294,6 +298,8 @@ export function parsePaidCategoryBoard(rows: unknown[][]): PaidCategoryBoard | n
     ? periods
     : Array.from({ length: RIGHT.periodCount }, (_, k) => `t${k + 1}`);
   return {
+    sourceTab: source.tab ?? '',
+    sourceUrl: source.url ?? '',
     from,
     to,
     periods: periodNames,

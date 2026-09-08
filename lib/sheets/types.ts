@@ -577,6 +577,13 @@ export interface PaidCategorySeries {
 }
 
 export interface PaidCategoryBoard {
+  /** The tab this was read from, and a link to the spreadsheet holding it.
+   *  Carried so the screen can name its own source instead of describing it in
+   *  prose that drifts when the sheet is renamed. The URL is built from the
+   *  configured id — a document id the owner already has, not a credential.
+   *  Empty when the id isn't configured. */
+  sourceTab: string;
+  sourceUrl: string;
   /** The window the snapshot block covers, ISO. Empty when A1 is unreadable. */
   from: string;
   to: string;

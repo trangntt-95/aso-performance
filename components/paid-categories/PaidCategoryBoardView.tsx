@@ -191,7 +191,9 @@ export function PaidCategoryBoardView() {
       setCat(
         cube.categories.includes(cube.totalLabel) ? cube.totalLabel : cube.categories[0] ?? '',
       );
-      setGroup(groups[0].id);
+      // TOTAL opens by default: it answers "how is paid doing" without the
+      // reader first having to pick a lens.
+      setGroup(groups.some((g) => g.id === TOTAL_GROUP) ? TOTAL_GROUP : groups[0].id);
       setFrom(cube.periods[0] ?? '');
       setTo(last);
       const init: Record<string, Record<string, boolean>> = {};
@@ -310,7 +312,19 @@ export function PaidCategoryBoardView() {
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-wide text-slate-500">Category</span>
-          <select value={cat} onChange={(e) => setCat(e.target.value)} className={cn(sel, 'min-w-[150px]')}>
+          <select
+            value={cat}
+            onChange={(e) => setCat(e.target.value)}
+            className={cn(sel, 'min-w-[150px]')}
+            title={
+              'Số của từng category (kể cả Pos) đọc thẳng từ sheet.\n\n' +
+              'Riêng TOTAL thì sheet không có: chỉ Installs / Impressions / Clicks / Spend có dòng tổng, ' +
+              'còn CR / CPI / CPC / CTR / Pos thì không. TOTAL của chúng được tính — đại lượng đếm được thì cộng, ' +
+              'tỉ số tính lại từ tổng các thành phần (CPI = ΣSpend/ΣInstalls), Pos bình quân gia quyền theo Impressions. ' +
+              'Mốc nào các category có số chiếm dưới 80% trọng số thì để trống chứ không trả số lệch.\n\n' +
+              "Tab này gộp 'Test, others' làm một nhóm, còn các trang khác tách Test và Others riêng theo Max bid cap — đừng cộng số hai bên."
+            }
+          >
             {cube.categories.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
@@ -387,6 +401,12 @@ export function PaidCategoryBoardView() {
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-3" style={{ height: 430 }}>
+        {view?.isTotal && view.onL.length > 0 && view.onR.length > 0 && (
+          <div className="mb-1 text-[10px] text-amber-700">
+            Hai trục độc lập — chỗ hai đường cắt nhau không mang ý nghĩa gì, chỉ đọc hướng lên
+            xuống. Nét liền <b>◀</b> trục trái, nét gạch <b>▶</b> trục phải.
+          </div>
+        )}
         {!view?.shown.length ? (
           <div className="flex h-full items-center justify-center text-center text-[11px] text-slate-400">
             {view?.present.length
@@ -462,96 +482,43 @@ export function PaidCategoryBoardView() {
         )}
       </div>
 
-      {/* Axis labelling in words, since the axis itself carries scaled numbers. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-slate-500">
-        <span>
-          Trục trái:{' '}
-          <b>
-            {view?.singleL
-              ? view.onL[0]
-              : view?.isTotal
-                ? `${AXIS_NAME.L} (quy hệ số)`
-                : 'giá trị đã quy hệ số'}
-          </b>
-        </span>
-        {view?.isTotal && view.onR.length > 0 && (
-          <span>
-            Trục phải:{' '}
-            <b>{view.singleR ? view.onR[0] : `${AXIS_NAME.R} (quy hệ số)`}</b>
-          </span>
+      {/* One line: where the numbers came from.
+          The caveats that used to be spelled out here — how TOTAL is derived for
+          the ratio metrics, and that this tab merges 'Test, others' where the
+          rest of the dashboard splits them — moved into the tooltip of the
+          control they qualify. Still one hover away, no longer six lines of prose
+          under every chart. */}
+      <div className="text-[10.5px] leading-relaxed text-slate-500">
+        Nguồn:{' '}
+        {board?.sourceUrl ? (
+          <a
+            href={board.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-indigo-700 hover:underline"
+          >
+            Google Sheet · tab {board.sourceTab || 'By categories'}
+          </a>
+        ) : (
+          <b>tab {board?.sourceTab || 'By categories'}</b>
         )}
-      </div>
-
-      {/* What the reader needs in order to read the chart correctly. */}
-      <div className="space-y-1 text-[10.5px] leading-relaxed text-slate-500">
-        <div>
-          Tên metric in ở cuối mỗi đường. Bấm nhãn phía trên để ẩn / hiện.{' '}
-          {view?.isTotal ? (
-            <>
-              Nét liền <b>◀</b> đọc theo trục trái, nét gạch <b>▶</b> đọc theo trục phải.{' '}
-              {(view.singleL || view.singleR) && (
-                <>
-                  Trục{' '}
-                  {view.singleL && view.singleR ? 'trái và phải' : view.singleL ? 'trái' : 'phải'}{' '}
-                  đang chỉ có 1 đường nên hiện giá trị gốc, không quy hệ số.{' '}
-                </>
-              )}
-              <b className="text-amber-700">
-                Hai trục độc lập — chỗ hai đường cắt nhau không mang ý nghĩa gì, chỉ đọc hướng lên
-                xuống.
-              </b>
-            </>
-          ) : view?.shown.length === 1 ? (
-            'Chỉ có 1 đường nên trục hiện giá trị gốc, không quy hệ số.'
-          ) : (
-            'Hệ số chọn theo category để các đường trải đều trên trục.'
-          )}{' '}
-          Tooltip luôn hiện giá trị thật.
-        </div>
-        <div>
-          Đọc từ tab <b>By categories</b> của sheet Shopify Ads
-          {data?.fetchedAt && (
-            <>
-              {' '}
-              lúc{' '}
-              {new Date(data.fetchedAt).toLocaleString('vi-VN', {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-              })}
-            </>
-          )}{' '}
-          · {cube.metrics.length} metric · {cube.periods.length} mốc · {cube.dataPoints} điểm dữ liệu
-          {board?.from && board?.to && (
-            <>
-              {' '}
-              · Date range{' '}
-              <span className="font-mono">
-                {board.from} → {board.to}
-              </span>
-            </>
-          )}{' '}
-          · <i>cache 10 phút, không tự cập nhật theo thời gian thực</i>
-        </div>
-        <div>
-          Số của <b>từng category</b> — kể cả <b>Pos</b> — đọc thẳng từ sheet, không tính lại gì.
-        </div>
-        <div>
-          Riêng dòng <b>TOTAL</b> thì sheet <b>không có</b>: chỉ 4 block Installs / Impressions /
-          Clicks / Spend là có dòng tổng, còn CR / CPI / CPC / CTR / <b>Pos</b> thì không, nên TOTAL
-          của chúng phải tính. Cách tính: đại lượng đếm được thì cộng; tỉ số{' '}
-          <b>tính lại từ tổng các thành phần</b> (CPI = ΣSpend/ΣInstalls); <b>Pos</b> không có thành
-          phần nào cộng được nên bình quân gia quyền theo Impressions. Mốc nào các category có số
-          chiếm dưới 80% trọng số thì để <b>trống</b> chứ không trả một con số lệch.
-        </div>
-        <div>
-          Tab này gộp <code className="text-[9px]">Test, others</code> làm một nhóm, còn các trang
-          khác tách <b>Test</b> và <b>Others</b> riêng theo{' '}
-          <code className="text-[9px]">Max bid cap</code> — đừng cộng số hai bên với nhau.
-        </div>
+        {data?.fetchedAt && (
+          <>
+            {' '}· đọc lúc{' '}
+            {new Date(data.fetchedAt).toLocaleString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              day: '2-digit',
+              month: '2-digit',
+            })}
+          </>
+        )}
+        {board?.from && board?.to && (
+          <>
+            {' '}· <span className="font-mono">{board.from} → {board.to}</span>
+          </>
+        )}{' '}
+        · {cube.periods.length} mốc · {cube.dataPoints} điểm
       </div>
     </div>
   );
