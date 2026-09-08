@@ -11,21 +11,72 @@ import { campCategories } from './campLink';
 // camps with an explicit country list (Camp_Links Geo "include" mode); "all" /
 // "exclude" / blank-geo camps target broadly on purpose and aren't actionable
 // the same way.
+//
+// ── What the reported spread measures ──────────────────────────────────────
+// The widest distance, for ONE keyword cluster, between the bids it is
+// recommended in different countries this camp targets. The maximum of that over
+// the camp's clusters is what gets reported.
+//
+// That phrasing is deliberate, because two different spreads live in this data
+// and only one of them is fixed by the action this panel recommends:
+//
+//   SAME cluster, DIFFERENT countries → splitting the camp by country fixes it.
+//     "B2. Brand gõ dở" wants $32.95 in Australia and $14.66 in the Netherlands;
+//     one campaign cannot hold both.
+//   DIFFERENT clusters, SAME country → splitting by country changes nothing.
+//     Inside one market the Profit clusters span $0.21 to $20.00 by design — a
+//     brand-exact term is worth more than a generic one, and Apple Search Ads
+//     lets you bid per keyword, so that is a per-keyword decision, not a
+//     campaign-structure one.
+//
+// A plain max−min over every cluster × country point mixes the two, and the
+// within-country spread is by far the larger, so it dominates: measured live, it
+// put both extremes of "TP - Brandname - Exact - NL, AU" inside Australia and
+// reported +125% for a camp whose actual cross-country conflict is smaller.
+//
+// Per-country averages (the earlier version) isolate the right axis but shrink
+// it: averaging a country's clusters pulls both ends toward the middle, so all 10
+// flagged camps read low — "NL, AU" showed $5.85 where one cluster really differs
+// by $12.95, and "Profit - Exact 01 - Tier 1,5" showed $1.08, which reads as a
+// rounding difference.
+//
+// Holding the cluster fixed and varying only the country measures the compromise
+// that survives the recommended fix, at the grain the sheet actually sets bids.
+//
+// perCountry is still carried at country grain — it is the list the UI shows, and
+// "which markets pull which way" is a useful separate question.
 // ---------------------------------------------------------------------------
 
 export interface CampBidConflict {
   camp: string;
   url?: string;
   category: string;
-  /** Target countries with a known rec bid, highest bid first. */
+  /** Target countries with a known rec bid (mean of that country's clusters),
+   *  highest first. What the UI lists, so the user can see which way each market
+   *  pulls. */
   perCountry: { country: string; bid: number }[];
   /** How many countries the camp targets in total (Geo include list) — may be
    *  more than perCountry.length when some have no rec bid in the app. */
   targetCount: number;
+  /** The keyword cluster whose bid disagrees most across the camp's countries. */
+  cluster: string;
+  /** That cluster's lowest recommended bid among the targeted countries. */
   min: number;
+  /** That cluster's highest recommended bid among the targeted countries. */
   max: number;
   /** (max − min) / min. */
   spreadPct: number;
+  /** The countries holding the two ends — the pair a single bid must reconcile. */
+  minCountry: string;
+  maxCountry: string;
+  /** Countries this cluster is priced in, i.e. how much the spread rests on. */
+  clusterCountries: number;
+  /** How many of the camp's clusters are priced in ≥2 of its countries and so
+   *  could be compared at all. */
+  comparableClusters: number;
+  /** The same spread between per-country AVERAGES — what the earlier version
+   *  reported. Carried so the UI can show how much that view understated it. */
+  countrySpread: number;
 }
 
 // Only alert when the bid gap is material. Per Trang: a spread of $0.60 or less
@@ -37,12 +88,25 @@ export function findCampBidConflicts(
   campLinks: CampLinkRow[],
   bidCap: BidCapRow[],
 ): CampBidConflict[] {
-  // category → (country → recommended bid). The tab holds several keyword-cluster
-  // rows per Country × Category as of Aug 2026, so the rows are collapsed per
-  // country first — assigning straight from raw rows meant whichever cluster
-  // happened to be last in the sheet decided the country's bid, and the spread
-  // this function reports is a difference BETWEEN countries, so a per-country
-  // number is the only input that makes it mean anything.
+  // Two indexes at two grains, because the function needs both.
+  //
+  // CLUSTER — every individual recommendation, which is what the spread is taken
+  // over. Read straight off the raw rows: collapsing them is exactly what used to
+  // hide the size of the compromise.
+  const clustersByCatCountry = new Map<string, { cluster: string; bid: number }[]>();
+  for (const r of bidCap) {
+    if (!r.category || !r.country) continue;
+    if (!Number.isFinite(r.bidRecommended) || r.bidRecommended <= 0) continue;
+    const k = `${r.category}||${r.country}`;
+    const list = clustersByCatCountry.get(k) ?? [];
+    list.push({ cluster: r.keywordCluster || '(không tên)', bid: r.bidRecommended });
+    clustersByCatCountry.set(k, list);
+  }
+
+  // COUNTRY — the per-country mean, for the list the UI shows and for the
+  // comparison figure that says how much that view understates things. Clusters
+  // are collapsed per country first (aggregateBidCapCells), never taken from
+  // whichever raw row happens to come last.
   const bidByCatCountry = new Map<string, Map<string, number>>();
   bidCapCellsByCategory(aggregateBidCapCells(bidCap)).forEach((cells, cat) => {
     const m = new Map<string, number>();
@@ -71,12 +135,54 @@ export function findCampBidConflicts(
       .filter((x): x is { country: string; bid: number } => typeof x.bid === 'number');
     if (perCountry.length < 2) continue;
 
-    const bids = perCountry.map((x) => x.bid);
-    const min = Math.min(...bids);
-    const max = Math.max(...bids);
-    if (min <= 0) continue;
-    const spreadPct = (max - min) / min;
-    if (max - min <= MAX_ACCEPTABLE_GAP) continue;
+    // cluster → its bid in each of this camp's countries. Holding the cluster
+    // fixed is what isolates the cross-country disagreement from the (much
+    // larger, and intentional) spread between clusters inside one market.
+    const byCluster = new Map<string, { country: string; bid: number }[]>();
+    for (const { country } of perCountry) {
+      for (const cl of clustersByCatCountry.get(`${category}||${country}`) ?? []) {
+        const list = byCluster.get(cl.cluster) ?? [];
+        list.push({ country, bid: cl.bid });
+        byCluster.set(cl.cluster, list);
+      }
+    }
+
+    // The cluster that disagrees most. A cluster priced in only one of the camp's
+    // countries says nothing about a cross-country conflict and is skipped.
+    interface ClusterSpread {
+      cluster: string;
+      min: number;
+      max: number;
+      minCountry: string;
+      maxCountry: string;
+      countries: number;
+    }
+    const spreads: ClusterSpread[] = [];
+    for (const [cluster, points] of Array.from(byCluster.entries())) {
+      if (points.length < 2) continue;
+      const sorted = [...points].sort((a, b) => a.bid - b.bid);
+      const lo = sorted[0];
+      const hi = sorted[sorted.length - 1];
+      if (lo.bid <= 0) continue;
+      spreads.push({
+        cluster,
+        min: lo.bid,
+        max: hi.bid,
+        minCountry: lo.country,
+        maxCountry: hi.country,
+        countries: points.length,
+      });
+    }
+    // No cluster is priced in two of this camp's countries, so nothing can be
+    // compared. Falling back to the country averages here would report a figure
+    // the rest of the row cannot explain.
+    if (spreads.length === 0) continue;
+    const comparableClusters = spreads.length;
+    const w = spreads.reduce((a, b) => (b.max - b.min > a.max - a.min ? b : a));
+    if (w.max - w.min <= MAX_ACCEPTABLE_GAP) continue;
+
+    const countryBids = perCountry.map((x) => x.bid);
+    const countrySpread = Math.max(...countryBids) - Math.min(...countryBids);
 
     perCountry.sort((a, b) => b.bid - a.bid);
     out.push({
@@ -85,9 +191,15 @@ export function findCampBidConflicts(
       category,
       perCountry,
       targetCount: geo.countries.length,
-      min,
-      max,
-      spreadPct,
+      cluster: w.cluster,
+      min: w.min,
+      max: w.max,
+      spreadPct: (w.max - w.min) / w.min,
+      minCountry: w.minCountry,
+      maxCountry: w.maxCountry,
+      clusterCountries: w.countries,
+      comparableClusters,
+      countrySpread,
     });
   }
 

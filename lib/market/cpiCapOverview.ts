@@ -1,55 +1,68 @@
 import type { BidCapRow, MarketTierRow, PerGeoCpiCapRow, SheetPayload } from '@/lib/sheets/types';
 import { aggregateBidCapCells } from '@/lib/market/bidCapAgg';
 
-// PerGeo_CPI_Cap holds *intent*: what we decided we're willing to pay per
-// install in each country, and how much revenue that country is worth to us.
-// 'Max bid cap' holds the *bid model*: the CPI ceiling and the bid it derives
-// for every Country × Category × keyword cluster.
+// Is the CPI ceiling we are bidding to worth paying at all?
 //
-// Neither sheet is useful alone, and this module is the join. What the join can
-// say changed in Aug 2026, when 'Max bid cap' dropped its Spend column:
+// 'Max bid cap' supplies the ceiling the bid model works to, per Country ×
+// Category. The revenue block of PerGeo_CPI_Cap supplies what one install is
+// actually worth in that country. Both are per-install amounts, so subtracting
+// one from the other is meaningful and answers the question that decides whether
+// a market should be bought: a ceiling above the value of an install loses money
+// on every install bought at it, no matter how well the campaign runs.
 //
-//   BEFORE — intent vs OUTCOME. Measured CPI (spend/installs) against the
-//            ceiling: "we said $30 and paid $46".
-//   NOW    — intent vs ALLOWANCE. The bid sheet's own CPI cap against the
-//            ceiling in the config sheet: "we said $30 and the bid model is
-//            working to $46".
+// ── Why it is no longer compared against the config ceiling ────────────────
+// The 'CPI Cap ($)' column of PerGeo_CPI_Cap (columns A–E) has been cleared:
+// verified live 2026-09-08, the header row is intact and 0 of 124 rows carry
+// data. The tab's live content sits in two other blocks — RAW DATA (revenue, cols
+// I–P) and the tier block (cols S–Z).
 //
-// That is a weaker claim, and the wording throughout says so. It is also the only
-// claim the data still supports: no tab in this workbook breaks spend down by
-// country (Shopify_daily is per campaign, and a campaign spans countries), so a
-// measured per-country CPI cannot be reconstructed. The alternative — keeping the
-// old fields and letting the missing column arrive as spend = 0 — would have
-// reported every market as costing nothing and comfortably inside budget, which
-// is the most dangerous thing this screen could say.
+// With the original column gone, this screen fell back to the tier block and used
+// its 'Max bid' row as the ceiling. That silently compared two DIFFERENT UNITS:
+// Max bid is money per CLICK, a CPI ceiling is money per INSTALL, and with CR
+// around 20–40% a CPI ceiling should sit several times above a bid ceiling. The
+// result was 37 of 40 countries reported as "over cap", with gaps up to +293%
+// (Cyprus: CPI cap $58.91 against a $15 'ceiling') — a red alert that measured
+// nothing except which tier had the smallest bid ceiling.
 //
-// Installs and clicks per month survive the schema change and are still reported
-// raw: most countries produce 1–2 installs a month, and a number that small is
-// stated, never smoothed into a rate that looks more solid than it is.
+// Comparing the ceiling against install VALUE keeps both sides per-install and
+// produces a real finding on the same data: 31 of 47 countries are bidding to a
+// ceiling above what an install earns there (India $58.91 vs $0.86, Brazil $44.76
+// vs $3.82).
+//
+// If the config column is ever refilled, its ceiling belongs back on this screen
+// as a third number — but as its own column, never substituted for a bid cap.
+//
+// Installs and clicks per month survive the Aug 2026 schema change and are still
+// reported raw: most countries produce 1–2 installs a month, and a number that
+// small is stated, never smoothed into a rate that looks more solid than it is.
 
 /** Below this many installs, activity is one dice roll, not a trend. */
 const CONFIDENT_INSTALLS = 3;
 
-/** How far the sheet's ceiling may sit above the config's before it's a breach. */
-const OVER_CAP_TOLERANCE = 0.05;
+/** How far the ceiling may sit above install value before it counts as a breach
+ *  rather than a rounding difference. */
+const OVER_VALUE_TOLERANCE = 0.05;
 
 export type CapVerdict =
-  /** The bid sheet's CPI ceiling for this country sits above the one the config
-   *  sheet set. The model is authorised to pay more than we agreed to. */
+  /** The ceiling we bid to is ABOVE what an install earns here. Every install
+   *  bought at that ceiling loses money — a config fault, not an execution one. */
   | 'over'
-  /** The bid sheet is working inside the configured ceiling. */
+  /** The ceiling sits below install value: buying at it can pay for itself. */
   | 'under'
   /** In the bid sheet, but every keyword cluster is marked cut / pause — there is
-   *  no live recommendation, so there is nothing to compare. */
+   *  no live ceiling, so there is nothing to judge. */
   | 'no-bid'
-  /** Configured, but absent from the bid sheet entirely. */
-  | 'idle';
+  /** No revenue figure for this country, so its ceiling cannot be judged at all.
+   *  Reported as such rather than assumed fine. */
+  | 'no-value';
 
 export interface CountryCapRow {
   country: string;
   /** Revenue rank from the config sheet; null when blank. */
   rank: number | null;
-  /** CPI ceiling in USD from the config sheet — what we said we'd pay. */
+  /** CPI ceiling in USD from the config sheet ('CPI Cap ($)'), or 0 when that
+   *  column is empty — which it currently is for every row. Carried so the screen
+   *  can show it again the moment it is refilled, never used as a fallback. */
   cap: number;
   tier1: boolean;
   note: string;
@@ -75,8 +88,8 @@ export interface CountryCapRow {
   /** Installs over 90 days ('Inst L90'), summed across cells. */
   instL90: number;
 
-  /** sheetCpiCap / cap − 1. Positive = the bid sheet allows more than the config
-   *  ceiling. null without both numbers. */
+  /** sheetCpiCap / valuePerInstall − 1. Positive = the ceiling is above what an
+   *  install earns. null without both numbers. */
   vsCapPct: number | null;
   /** True only when installs clear CONFIDENT_INSTALLS — qualifies the activity
    *  columns, not the ceiling comparison (which needs no traffic to be true). */
@@ -86,9 +99,9 @@ export interface CountryCapRow {
 
   /** Revenue ÷ installs in this country, from the quarterly revenue block. */
   valuePerInstall: number | null;
-  /** valuePerInstall − cap. Negative means the ceiling itself is set above what
-   *  an install is worth there: every install bought at the cap loses money,
-   *  no matter how well the campaign performs. */
+  /** valuePerInstall − sheetCpiCap, in dollars per install. Negative means the
+   *  ceiling is above what an install is worth there, so buying at it loses that
+   *  much on every install however well the campaign performs. */
   capHeadroom: number | null;
 }
 
@@ -112,28 +125,31 @@ export interface CpiCapOverview {
     /** Configured countries that produced at least one install. */
     withInstalls: number;
     installs: number;
-    /** Countries whose sheet ceiling runs above the configured one. */
+    /** Countries bidding to a ceiling above what an install earns there. */
     overCount: number;
-    /** Largest gap between a sheet ceiling and its configured one, as a
-     *  fraction. null when nothing is comparable. */
-    worstGapPct: number | null;
+    /** Total dollars lost per install, summed over the countries above — the size
+     *  of the misconfiguration, not a spend figure. */
+    lossPerInstall: number;
+    /** Countries with no revenue figure, so their ceiling cannot be judged. */
+    unjudgeable: number;
     /** Tier 1 countries that produced zero installs. */
     tier1Silent: number;
-    /** Countries whose CPI cap exceeds what an install is worth there. */
-    capAboveValue: number;
   };
 }
 
 function verdictOf(r: {
   sheetCpiCap: number | null;
-  cap: number;
+  valuePerInstall: number | null;
   clusters: number;
   bidRec: number | null;
 }): CapVerdict {
-  if (r.clusters === 0) return 'idle';
-  if (r.bidRec === null && r.sheetCpiCap === null) return 'no-bid';
-  if (r.cap > 0 && r.sheetCpiCap !== null && r.sheetCpiCap > r.cap * (1 + OVER_CAP_TOLERANCE))
-    return 'over';
+  // No live ceiling to judge — every cluster here is marked cut, or the country
+  // isn't in the bid sheet at all.
+  if (r.sheetCpiCap === null && r.bidRec === null) return 'no-bid';
+  if (r.sheetCpiCap === null) return 'no-bid';
+  // A ceiling with nothing to weigh it against. Saying so beats calling it fine.
+  if (r.valuePerInstall === null || r.valuePerInstall <= 0) return 'no-value';
+  if (r.sheetCpiCap > r.valuePerInstall * (1 + OVER_VALUE_TOLERANCE)) return 'over';
   return 'under';
 }
 
@@ -144,22 +160,26 @@ function verdictOf(r: {
  * render the section rather than show an empty frame.
  */
 /**
- * The per-country ceiling, from whichever block of PerGeo_CPI_Cap holds it.
+ * The roster of countries we have decided to buy, from the tier block.
  *
- * The original Country | Rank | CPI Cap columns were cleared in favour of a tier
- * block: one column per tier with a bid range, and per-country overrides in
- * parentheses. A tier's ceiling is the UPPER end of its range, since that is what
- * "cap" means; a country's own figure beats it.
+ * The original Country | Rank | CPI Cap columns of PerGeo_CPI_Cap were cleared in
+ * favour of this block: one column per tier holding a bid range, with per-country
+ * overrides in parentheses. The tier block is therefore the only remaining record
+ * of WHICH countries are in play and which tier each sits in — worth reading, and
+ * that is all this function is for.
  *
- * Reading the tier block rather than requiring the old columns keeps this screen
- * alive across that restructure instead of silently disappearing.
+ * `cap` is deliberately left at 0. An earlier version filled it from the tier's
+ * 'Max bid' row, which reads naturally ("a tier's ceiling is the top of its
+ * range") and is wrong: Max bid is money per CLICK and this field is a ceiling per
+ * INSTALL. Substituting one for the other reported 37 of 40 countries as over
+ * their cap, purely because lower tiers bid less per click. A missing ceiling is
+ * now carried as missing, and the screen judges the ceiling it does have against
+ * install value instead.
  */
-function configFromTiers(tiers: MarketTierRow[]): PerGeoCpiCapRow[] {
+function rosterFromTiers(tiers: MarketTierRow[]): PerGeoCpiCapRow[] {
   const out: PerGeoCpiCapRow[] = [];
   const seen = new Set<string>();
-  // Tier order in the sheet runs strongest first, so it doubles as a rank when
-  // no explicit revenue rank is present.
-  tiers.forEach((t, tierIdx) => {
+  for (const t of tiers) {
     const isTier1 = /tier\s*1(?![,.]5)/i.test(t.tier);
     for (const c of t.countries) {
       const key = c.country.trim().toLowerCase();
@@ -168,20 +188,19 @@ function configFromTiers(tiers: MarketTierRow[]): PerGeoCpiCapRow[] {
       out.push({
         country: c.country,
         rank: null,
-        cap: c.bidOverride ?? t.maxBid ?? 0,
+        cap: 0,
         tier1: isTier1,
-        note: c.note || `${t.tier}${t.bidText ? ` · ${t.bidText}` : ''}`,
+        note: c.note || `${t.tier}${t.bidText ? ` · ${t.bidText} (bid/click)` : ''}`,
       });
     }
-    void tierIdx;
-  });
+  }
   return out;
 }
 
 export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview | null {
   const explicit: PerGeoCpiCapRow[] = data?.perGeoCpiCap ?? [];
   const config: PerGeoCpiCapRow[] =
-    explicit.length > 0 ? explicit : configFromTiers(data?.marketTiers ?? []);
+    explicit.length > 0 ? explicit : rosterFromTiers(data?.marketTiers ?? []);
   const bidCap: BidCapRow[] = data?.bidCap ?? [];
   if (config.length === 0) return null;
 
@@ -261,16 +280,22 @@ export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview |
     const clicks = a?.clicks ?? 0;
     const sheetCpiCap = a ? mean(a.caps) : null;
     const bidRec = a ? mean(a.bids) : null;
-    // The gap is between two CEILINGS — what the bid sheet is working to versus
-    // what the config sheet authorised. It is not a spend overrun, and nothing
-    // here converts it into dollars wasted: with no spend column there is no
-    // "what this should have cost", and inventing one from installs × cap would
-    // dress an allowance up as an outcome.
-    const vsCapPct = sheetCpiCap !== null && c.cap > 0 ? sheetCpiCap / c.cap - 1 : null;
-
     const valuePerInstall = valueByCountry.get(key) ?? null;
+
+    // Ceiling against install value, both per install. Positive means we are
+    // authorised to pay more for an install than an install brings in.
+    //
+    // Not a spend overrun, and nothing here turns it into dollars wasted: with no
+    // spend column there is no "what this should have cost", and multiplying by
+    // installs would dress an allowance up as an outcome.
+    const vsCapPct =
+      sheetCpiCap !== null && valuePerInstall !== null && valuePerInstall > 0
+        ? sheetCpiCap / valuePerInstall - 1
+        : null;
+    // Dollars per install left over at the ceiling. Negative = bought at the
+    // ceiling, each install loses this much.
     const capHeadroom =
-      valuePerInstall !== null && c.cap > 0 ? valuePerInstall - c.cap : null;
+      valuePerInstall !== null && sheetCpiCap !== null ? valuePerInstall - sheetCpiCap : null;
 
     rows.push({
       country: c.country,
@@ -291,7 +316,7 @@ export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview |
       instL90: a?.instL90 ?? 0,
       vsCapPct,
       activityReliable: installs >= CONFIDENT_INSTALLS,
-      verdict: verdictOf({ sheetCpiCap, cap: c.cap, clusters: a?.clusters ?? 0, bidRec }),
+      verdict: verdictOf({ sheetCpiCap, valuePerInstall, clusters: a?.clusters ?? 0, bidRec }),
       valuePerInstall,
       capHeadroom,
     });
@@ -304,9 +329,10 @@ export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview |
     const k = r.country.trim().toLowerCase();
     if (k && !displayName.has(k)) displayName.set(k, r.country.trim());
   }
-  // "Buying without a cap" is now read off the recommendation rather than off
-  // spend: a country the bid sheet still hands a live bid to, or that produced
-  // installs, while the config sheet never gave it a ceiling.
+  // Countries the bid sheet is buying that the tier block never listed — a bid or
+  // installs exist, but nobody put the market in a tier. Read off the
+  // recommendation rather than off spend, which this workbook no longer has per
+  // country.
   const uncapped = Array.from(perf.entries())
     .filter(([k, a]) => !configured.has(k) && (a.bids.length > 0 || a.installs > 0))
     .map(([k, a]) => ({
@@ -318,7 +344,6 @@ export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview |
     .sort((x, y) => (y.bidRec ?? 0) - (x.bidRec ?? 0));
 
   const installs = rows.reduce((t, r) => t + r.installs, 0);
-  const gaps = rows.map((r) => r.vsCapPct).filter((v): v is number => v !== null);
 
   return {
     rows: rows.sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999)),
@@ -330,10 +355,15 @@ export function buildCpiCapOverview(data: SheetPayload | null): CpiCapOverview |
       withBid: rows.filter((r) => r.bidRec !== null).length,
       withInstalls: rows.filter((r) => r.installs > 0).length,
       installs,
+      // 'over' IS "ceiling above install value" now, so the two counts that used
+      // to sit side by side have collapsed into one. Keeping both would print the
+      // same number twice under different names.
       overCount: rows.filter((r) => r.verdict === 'over').length,
-      worstGapPct: gaps.length ? Math.max(...gaps) : null,
+      lossPerInstall: rows
+        .filter((r) => r.capHeadroom !== null && r.capHeadroom < 0)
+        .reduce((t, r) => t + Math.abs(r.capHeadroom as number), 0),
+      unjudgeable: rows.filter((r) => r.verdict === 'no-value').length,
       tier1Silent: rows.filter((r) => r.tier1 && r.installs === 0).length,
-      capAboveValue: rows.filter((r) => r.capHeadroom !== null && r.capHeadroom < 0).length,
     },
   };
 }

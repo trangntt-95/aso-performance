@@ -452,13 +452,13 @@ export function makeDashboardTools(data: SheetPayload) {
       // the 'Max bid cap' tab has no Spend column and no other tab splits spend by
       // country, so per-country measured CPI does not exist in this dataset.
       description:
-        'Per-country CPI ceilings: the ceiling the bid model works to (from Max bid cap) vs the ceiling configured in PerGeo_CPI_Cap, plus what one install is WORTH there (revenue per install). Use for questions about bid caps and whether a ceiling is set correctly. IMPORTANT: this returns ALLOWANCES, not outcomes — there is no measured CPI or spend per country anywhere in this data (the sheet dropped its Spend column), so never report cpi_cap_sheet as money actually paid, and say so if asked for actual CPI by country. For real spend, use the per-campaign or per-category tools instead.',
+        "Per-country CPI ceilings: the ceiling the bid model works to (from Max bid cap) against what one install is actually WORTH there (revenue per install). Answers whether a ceiling can pay for itself — a ceiling above install value loses money on every install bought at it. IMPORTANT: this returns ALLOWANCES, not outcomes. There is no measured CPI or spend per country anywhere in this data (the sheet dropped its Spend column), so never report cpi_cap_sheet as money actually paid, and say so if asked for actual CPI by country. The 'CPI Cap ($)' column of PerGeo_CPI_Cap is currently empty, so cpi_cap_config is 0 everywhere and must not be quoted as a configured ceiling. For real spend, use the per-campaign or per-category tools instead.",
       inputSchema: z.object({
         only: z
-          .enum(['all', 'over-cap', 'cap-above-value', 'bidding'])
-          .default('over-cap')
+          .enum(['all', 'cap-above-value', 'bidding', 'no-value'])
+          .default('cap-above-value')
           .describe(
-            "over-cap = the bid sheet's CPI ceiling sits above the configured one; cap-above-value = the ceiling itself exceeds what an install earns; bidding = countries that still carry a live Bid Rec.",
+            'cap-above-value = the ceiling exceeds what an install earns there (the actionable list); bidding = countries with a live Bid Rec; no-value = ceiling cannot be judged because the country has no revenue figure.',
           ),
         limit: z.number().min(1).max(60).default(20),
       }),
@@ -467,24 +467,26 @@ export function makeDashboardTools(data: SheetPayload) {
         if (!ov) return { error: 'Chưa đọc được PerGeo_CPI_Cap.' };
         const pick = (() => {
           switch (only) {
-            case 'over-cap': return ov.rows.filter((r) => r.verdict === 'over');
-            case 'cap-above-value': return ov.rows.filter((r) => r.capHeadroom !== null && r.capHeadroom < 0);
+            case 'cap-above-value': return ov.rows.filter((r) => r.verdict === 'over');
             case 'bidding': return ov.rows.filter((r) => r.bidRec !== null);
+            case 'no-value': return ov.rows.filter((r) => r.verdict === 'no-value');
             default: return ov.rows;
           }
         })();
         return {
           note:
             'cpi_cap_sheet là mức CPI model bid được phép chạy tới, KHÔNG phải CPI đã tiêu. ' +
-            "Sheet 'Max bid cap' bỏ cột Spend từ 8/2026 nên không có spend/CPI thực theo nước.",
+            "Sheet 'Max bid cap' bỏ cột Spend từ 8/2026 nên không có spend/CPI thực theo nước. " +
+            "Cột 'CPI Cap ($)' của PerGeo_CPI_Cap đang trống nên cpi_cap_config = 0 ở mọi nước; " +
+            'so sánh ở đây là trần CPI vs giá trị 1 install, cùng đơn vị per-install.',
           totals: {
             countries_configured: ov.totals.configured,
             countries_with_live_bid: ov.totals.withBid,
             countries_with_installs: ov.totals.withInstalls,
             installs: ov.totals.installs,
-            countries_sheet_cap_over_config: ov.totals.overCount,
-            worst_gap_pct: round(ov.totals.worstGapPct, 3),
-            countries_cap_above_value: ov.totals.capAboveValue,
+            countries_cap_above_install_value: ov.totals.overCount,
+            loss_per_install_total: round(ov.totals.lossPerInstall, 2),
+            countries_without_revenue_figure: ov.totals.unjudgeable,
           },
           countries: pick.slice(0, limit).map((r) => ({
             country: r.country,
@@ -494,7 +496,7 @@ export function makeDashboardTools(data: SheetPayload) {
             cpi_cap_sheet: round(r.sheetCpiCap, 2),
             bid_rec: round(r.bidRec, 2),
             tier_ceiling: round(r.tierCeiling, 2),
-            gap_vs_config_pct: round(r.vsCapPct, 3),
+            gap_vs_install_value_pct: round(r.vsCapPct, 3),
             installs_per_month: r.installs,
             installs_l90: r.instL90,
             keyword_clusters: r.clusters,

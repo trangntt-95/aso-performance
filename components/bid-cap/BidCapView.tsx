@@ -328,7 +328,7 @@ export function BidCapView() {
               {conflicts.length} campaign target nhiều nước nhưng bid rec lệch nhau
             </span>
             <span className="hidden text-[10px] text-amber-700 sm:inline">
-              — 1 camp chỉ set được 1 bid cho cả nước → cân nhắc tách camp theo nước
+              — 1 camp chỉ set được 1 bid cho mọi cluster × mọi nước → cân nhắc tách camp
             </span>
             <ChevronDown
               className={cn('h-4 w-4 text-amber-600 ml-auto transition-transform', conflictsOpen && 'rotate-180')}
@@ -354,7 +354,25 @@ export function BidCapView() {
                       <span className="font-medium text-slate-800">{c.camp}</span>
                     )}
                     <span className="text-[10px] text-slate-500">· {c.category}</span>
-                    <span className="rounded bg-amber-200/70 px-1.5 py-0.5 font-mono text-[10px] text-amber-900">
+                    <span
+                      className="cursor-help rounded bg-amber-200/70 px-1.5 py-0.5 font-mono text-[10px] text-amber-900"
+                      title={
+                        `Cluster "${c.cluster}" được đề xuất $${c.min.toFixed(2)} ở ${c.minCountry} ` +
+                        `nhưng $${c.max.toFixed(2)} ở ${c.maxCountry} — 1 camp chỉ đặt được 1 bid nên phải chọn một trong hai.
+
+` +
+                        `Đo trên ${c.clusterCountries} nước có giá cho cluster này, và là cluster lệch nhất trong ` +
+                        `${c.comparableClusters} cluster so được của camp.
+
+` +
+                        `Cùng cluster, khác nước — nên tách camp theo nước sẽ giải quyết được. ` +
+                        `Lệch giữa các cluster TRONG một nước thì lớn hơn nhiều nhưng là chủ ý (bid được theo từng keyword), ` +
+                        `nên không tính vào đây.
+
+` +
+                        `Nếu so trung bình theo nước như bản cũ thì con số này chỉ còn $${c.countrySpread.toFixed(2)}.`
+                      }
+                    >
                       lệch {Math.round(c.spreadPct * 100)}% (${c.min.toFixed(2)}–${c.max.toFixed(2)})
                     </span>
                     {c.perCountry.length < c.targetCount && (
@@ -362,10 +380,16 @@ export function BidCapView() {
                         {c.perCountry.length}/{c.targetCount} nước có bid rec
                       </span>
                     )}
+                    {/* Name the pair. "lệch 125%" says how bad; this says between
+                        what, which is what you act on. */}
+                    <span className="font-mono text-[9px] text-slate-500">
+                      {c.cluster}: {c.minCountry} ${c.min.toFixed(2)} → {c.maxCountry} $
+                      {c.max.toFixed(2)}
+                    </span>
                   </div>
                   <div
                     className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-slate-600"
-                    title="Bid mỗi nước là trung bình các cluster keyword của nước đó (sheet đổi grain 8/2026). Trong cùng 1 nước, bid giữa các cluster lệch nhau còn nhiều hơn giữa các nước — nhưng bid theo cluster đặt riêng được cho từng keyword nên đó là chủ ý, không phải xung đột; xung đột thật là giữa các nước, vì 1 camp chỉ set 1 bid cho cả nước."
+                    title="Bid mỗi nước = trung bình các cluster keyword của nước đó, để thấy mỗi thị trường kéo về hướng nào. Con số 'lệch' phía trên KHÔNG lấy từ các số này mà lấy trên toàn bộ cluster × nước — đó mới là khoảng mà một bid duy nhất phải gánh."
                   >
                     {c.perCountry.map((p) => (
                       <span key={p.country}>
