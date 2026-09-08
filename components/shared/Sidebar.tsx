@@ -45,7 +45,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/install-origin', label: 'Nguồn Install', Icon: Route, shortLabel: 'Nguồn' },
   { href: '/google-ads', label: 'Google Ads', Icon: Megaphone, shortLabel: 'GAds' },
   { href: '/bid-cap', label: 'Bid Recommendations', Icon: DollarSign, shortLabel: 'Bids' },
-  { href: '/paid-categories', label: 'Paid theo Category', Icon: LayoutGrid, shortLabel: 'Cats' },
+  { href: '/paid-categories', label: 'Shopify ads By Categories', Icon: LayoutGrid, shortLabel: 'ShopCat' },
   { href: '/changelog', label: 'Change log', Icon: History, shortLabel: 'Log' },
 ];
 

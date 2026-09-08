@@ -20,6 +20,15 @@ import type { SheetPayload } from '@/lib/sheets/types';
 //           source is absent, so whatever it feeds is running on a fallback or
 //           not running at all.
 //
+// A tab FAMILY (All_L*, Country_L*) is only reported when every member is gone.
+// One missing member is not a fault: Country_L365 was deleted on purpose to stay
+// under the sheet's 10M-cell limit, and the readers fall back to the nearest
+// populated window, so a standing warning about it would sit on five screens
+// permanently and teach the eye to skip the notice. Where the fallback actually
+// changes what you are looking at — a country filter on a window whose tab is
+// missing — the warning belongs at that spot, next to the filter, and Overview
+// puts it there.
+//
 // Lag is measured against the newest day present ACROSS the feeds, not against
 // today. Every export trails real time by a day or two, so comparing to today
 // would fire permanently and teach the reader to ignore the warning. Comparing
@@ -296,9 +305,10 @@ export function buildDataGapReport(
 
     if (def.kind === 'tabset' && def.members) {
       const members = def.members(data);
+      // Kept on the record either way, so a reader who opens the detail can see
+      // which windows are unavailable — it just doesn't raise a warning on its
+      // own (see the note at the top of this file).
       h.emptyMembers = members.filter((m) => m.rows === 0).map((m) => m.name);
-      // Every member empty is a different statement from one member empty: the
-      // whole family is gone rather than a single window being unavailable.
       h.empty = members.length > 0 && h.emptyMembers.length === members.length;
       return h;
     }
@@ -323,13 +333,10 @@ export function buildDataGapReport(
     s.lagWorthNoting = s.lagDays >= LAG_FLOOR_DAYS;
   }
 
+  // emptyMembers deliberately absent from this test: a family missing one window
+  // still answers every question, via the fallback.
   const problems = sources.filter(
-    (s) =>
-      s.empty ||
-      s.missing.length > 0 ||
-      s.lagWorthNoting ||
-      s.unreadableRows > 0 ||
-      s.emptyMembers.length > 0,
+    (s) => s.empty || s.missing.length > 0 || s.lagWorthNoting || s.unreadableRows > 0,
   );
 
   return { newestDay, sources, problems };

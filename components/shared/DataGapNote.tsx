@@ -27,7 +27,9 @@ function line(s: SourceHealth): string {
       : `${s.label}: không có dòng nào đọc được`;
   }
   const bits: string[] = [];
-  if (s.emptyMembers.length > 0) bits.push(`${s.emptyMembers.join(', ')} rỗng`);
+  // Listed only alongside a real fault, never as one on its own: a family short
+  // one window still answers every question through the fallback.
+  if (s.emptyMembers.length > 0) bits.push(`(${s.emptyMembers.join(', ')} không có)`);
   if (s.missing.length > 0) bits.push(`thiếu ${s.missing.length} ngày`);
   if (s.lagWorthNoting) bits.push(`chậm ${s.lagDays} ngày (mới nhất ${s.to})`);
   if (s.unreadableRows > 0) bits.push(`${s.unreadableRows} dòng không đọc được ngày`);
@@ -69,7 +71,7 @@ export function DataGapNote({ sources }: { sources: readonly DataSourceKey[] }) 
   if (isLoading || !report || report.problems.length === 0) return null;
 
   // Split by what the reader would have to DO about it, not by source.
-  const gone = report.problems.filter((s) => s.empty || s.emptyMembers.length > 0);
+  const gone = report.problems.filter((s) => s.empty);
   const gaps = report.problems.filter((s) => s.missing.length > 0 && !s.empty);
   const lags = report.problems.filter(
     (s) => s.lagWorthNoting && s.missing.length === 0 && !s.empty,

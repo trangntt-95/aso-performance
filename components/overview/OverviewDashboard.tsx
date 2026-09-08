@@ -617,6 +617,23 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                 {countryFocus} <span className={inDateMode && !countryDateOk ? 'text-amber-600' : 'text-slate-500'}>✕</span>
               </button>
             )}
+            {/* The country tabs don't all exist — Country_L365 was deleted to stay
+                under the sheet's cell limit — so a country filter silently reads
+                the nearest window that does. Said here rather than as a standing
+                warning, because this is the only moment it changes a number: the
+                fallback fires only when a country filter is active. */}
+            {countryFocus && !inDateMode && countryWin !== window && (
+              <span
+                className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900"
+                title={
+                  `Tab Country_${window} không có trong sheet (đã xoá để không vượt giới hạn 10M cell), ` +
+                  `nên khi lọc theo nước thì mọi khối bên dưới đọc Country_${countryWin} thay thế. ` +
+                  `Số đang xem là ${countryWin}, không phải ${window}. Bỏ filter nước thì các khối quay về đúng ${window}.`
+                }
+              >
+                ⚠ nước: đang đọc {countryWin}, không phải {window}
+              </span>
+            )}
             {keywordFocus && (
               <button
                 type="button"

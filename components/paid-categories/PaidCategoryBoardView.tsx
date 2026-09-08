@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CartesianGrid,
-  Customized,
   Line,
   LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
+  usePlotArea,
+  useYAxisScale,
 } from 'recharts';
 import { AlertCircle, LayoutGrid } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
@@ -86,42 +87,73 @@ function ChartTooltip({
   );
 }
 
-/** Metric names drawn at the end of each line, de-collided. */
-function EndLabels(props: Record<string, unknown>) {
-  const items = props.formattedGraphicalItems as
-    | { props: { points?: { x: number; y: number | null }[]; dataKey?: string; stroke?: string } }[]
-    | undefined;
-  const offset = props.offset as { top: number; height: number } | undefined;
-  if (!items?.length || !offset) return null;
+/**
+ * Metric names printed at the end of each line, so the eye never has to travel
+ * back up to the legend to know which line is which.
+ *
+ * Positions come from recharts' public hooks — usePlotArea for the drawing box
+ * and useYAxisScale for value → pixel. The first version of this read
+ * `formattedGraphicalItems` off a `<Customized>` element, which is how it worked
+ * in recharts 2; recharts 3 does not pass that prop at all, so the component
+ * rendered nothing and the labels simply never appeared. Computing from the
+ * scales is both public API and less fragile: it needs the value, not recharts'
+ * internal render state.
+ *
+ * Rendered as a normal child of the chart. `Customized` is deprecated in
+ * recharts 3 — arbitrary elements can be children directly.
+ */
+function EndLabels({
+  rows,
+  metrics,
+  axisOf,
+}: {
+  rows: Record<string, string | number | null>[];
+  metrics: string[];
+  axisOf: (metric: string) => 'L' | 'R';
+}) {
+  const area = usePlotArea();
+  const scaleL = useYAxisScale('L');
+  const scaleR = useYAxisScale('R');
+  if (!area || !metrics.length) return null;
 
-  const found: { x: number; y: number; text: string; color: string }[] = [];
-  for (const it of items) {
-    const pts = it.props.points ?? [];
-    for (let i = pts.length - 1; i >= 0; i--) {
-      const p = pts[i];
-      if (p?.y === null || p?.y === undefined || !Number.isFinite(p.y)) continue;
-      const metric = String(it.props.dataKey ?? '').replace(/^scaled_/, '');
-      found.push({ x: p.x, y: p.y as number, text: metric, color: it.props.stroke ?? AXIS_COLOR });
-      break;
+  const found: { y: number; text: string; color: string }[] = [];
+  for (const m of metrics) {
+    // The last period this metric actually has a number for — a line that stops
+    // early should be labelled where it stops, not off the end of the chart.
+    let v: number | null = null;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const raw = rows[i][`scaled_${m}`];
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        v = raw;
+        break;
+      }
     }
+    if (v === null) continue;
+    const scale = axisOf(m) === 'R' ? scaleR : scaleL;
+    if (!scale) continue;
+    const y = scale(v);
+    if (typeof y !== 'number' || !Number.isFinite(y)) continue;
+    found.push({ y, text: m, color: cfgOf(m).color });
   }
   if (!found.length) return null;
 
-  const top = offset.top + 4;
-  const bottom = offset.top + offset.height - 4;
-  const ys = layoutEndLabels(found.map((f) => f.y), top, bottom, LABEL_GAP);
-  const right = Math.max(...found.map((f) => f.x));
+  const ys = layoutEndLabels(
+    found.map((f) => f.y),
+    area.y + 4,
+    area.y + area.height - 4,
+    LABEL_GAP,
+  );
 
   return (
-    <g>
+    <g className="pct-end-labels" pointerEvents="none">
       {found.map((f, i) => (
         <text
           key={f.text}
-          x={right + 7}
+          x={area.x + area.width + 6}
           y={ys[i]}
           fill={f.color}
           fontSize={11}
-          fontWeight={500}
+          fontWeight={600}
           dominantBaseline="middle"
         >
           {f.text}
@@ -420,7 +452,11 @@ export function PaidCategoryBoardView() {
                   />
                 );
               })}
-              <Customized component={EndLabels} />
+              <EndLabels
+                rows={view.rows}
+                metrics={view.shown}
+                axisOf={(m) => (view.isTotal && cfgOf(m).axis === 'R' ? 'R' : 'L')}
+              />
             </LineChart>
           </ResponsiveContainer>
         )}
@@ -501,10 +537,15 @@ export function PaidCategoryBoardView() {
           · <i>cache 10 phút, không tự cập nhật theo thời gian thực</i>
         </div>
         <div>
-          <b>TOTAL</b> không cộng thẳng mọi thứ: đại lượng đếm được thì cộng, tỉ số thì{' '}
-          <b>tính lại từ tổng các thành phần</b> (CPI = ΣSpend/ΣInstalls), còn <b>Pos</b> bình quân
-          gia quyền theo Impressions. Mốc nào các category có số chiếm dưới 80% trọng số thì để{' '}
-          <b>trống</b> chứ không trả một con số lệch.
+          Số của <b>từng category</b> — kể cả <b>Pos</b> — đọc thẳng từ sheet, không tính lại gì.
+        </div>
+        <div>
+          Riêng dòng <b>TOTAL</b> thì sheet <b>không có</b>: chỉ 4 block Installs / Impressions /
+          Clicks / Spend là có dòng tổng, còn CR / CPI / CPC / CTR / <b>Pos</b> thì không, nên TOTAL
+          của chúng phải tính. Cách tính: đại lượng đếm được thì cộng; tỉ số{' '}
+          <b>tính lại từ tổng các thành phần</b> (CPI = ΣSpend/ΣInstalls); <b>Pos</b> không có thành
+          phần nào cộng được nên bình quân gia quyền theo Impressions. Mốc nào các category có số
+          chiếm dưới 80% trọng số thì để <b>trống</b> chứ không trả một con số lệch.
         </div>
         <div>
           Tab này gộp <code className="text-[9px]">Test, others</code> làm một nhóm, còn các trang

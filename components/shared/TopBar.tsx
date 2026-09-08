@@ -13,7 +13,7 @@ const TITLES: Record<string, string> = {
   '/camp-health': 'Camp Health',
   '/google-ads': 'Google Ads',
   '/bid-cap': 'Bid Recommendations',
-  '/paid-categories': 'Paid theo Category',
+  '/paid-categories': 'Shopify ads By Categories',
   '/trends': 'Trends',
 };
 
