@@ -62,6 +62,37 @@ function toIso(v: unknown): string {
 const text = (v: unknown): string => String(v ?? '').trim();
 
 /**
+ * Block label → the metric name everything downstream keys on.
+ *
+ * Ported from Code.gs v4's normalizeMetric so the Next.js screen and the Apps
+ * Script dialog agree on the name. Without it the sheet's own spellings survive
+ * — 'INSTALLS' and 'Click' — and neither matches the metric config, so the two
+ * biggest volume metrics silently fell through to the unconfigured fallback and
+ * were charted in a group of their own.
+ *
+ * An all-caps label of four characters or fewer is an acronym and stays as-is
+ * (CPI, CPC, CTR, CR); anything else is title-cased, which is what leaves 'Pos'
+ * as 'Pos' and 'Spend' as 'Spend'.
+ */
+const METRIC_RENAME: Record<string, string> = {
+  installs: 'Installs',
+  install: 'Installs',
+  click: 'Clicks',
+  clicks: 'Clicks',
+  impressions: 'Impressions',
+  impression: 'Impressions',
+};
+
+function normaliseMetric(raw: string): string {
+  const t = raw.trim();
+  if (!t) return '';
+  const fixed = METRIC_RENAME[t.toLowerCase()];
+  if (fixed) return fixed;
+  if (t === t.toUpperCase() && t.length <= 4) return t;
+  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+}
+
+/**
  * `count` consecutive month labels ending at the month of `to`, oldest first —
  * 'T8/26' for August 2026.
  *
@@ -207,7 +238,7 @@ export function parsePaidCategoryBoard(rows: unknown[][]): PaidCategoryBoard | n
     }
 
     const tier: PaidCategorySeries = {
-      metric: label,
+      metric: normaliseMetric(label),
       rows: [],
       totals: [],
       totalsGrowth: null,

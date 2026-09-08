@@ -1,0 +1,17 @@
+{
+  "//": "Chỉ dùng để build 2 module thuần logic cho test parity. Cần file riêng vì gọi `tsc` lẻ không đọc được path alias `@/` của project.",
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "paths": { "@/*": ["./*"] },
+    "target": "es2020",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "noEmit": false,
+    "skipLibCheck": true,
+    "jsx": "preserve",
+    "outDir": "./.build"
+  },
+  "include": ["../../lib/market/paidCategoryTrend.ts", "../../lib/sheets/paidCategoryBoard.ts"]
+}

@@ -1,328 +1,231 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { AlertCircle, ChevronDown, LayoutGrid } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CartesianGrid,
+  Customized,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { AlertCircle, LayoutGrid } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Sparkline } from '@/components/shared/Sparkline';
-import { categoryStyle } from '@/lib/utils/colors';
-import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
-import type { PaidCategorySeries, PaidCategorySnapshot } from '@/lib/sheets/types';
+import {
+  AXIS_NAME,
+  DEFAULT_ON,
+  LABEL_GAP,
+  TOTAL_GROUP,
+  buildTrendCube,
+  cfgOf,
+  endLabelPadding,
+  fmtValue,
+  groupsPresent,
+  layoutEndLabels,
+  legendLabel,
+  metricsOfGroup,
+  pickFactors,
+} from '@/lib/market/paidCategoryTrend';
 
-// The 'By categories' pivot from the Shopify Ads spreadsheet, shown here.
+// Trend view of the 'By categories' pivot, laid out to match Trang's own Apps
+// Script dashboard (Code.gs v4 + Dashboard.html) so the two screens agree on
+// every number and every label.
 //
-// Trang built that tab herself; this screen READS it and lays it out. No number
-// on this page is computed here — not even a total or a growth percentage, both
-// of which the sheet already carries. That is the same rule the Bid
-// Recommendations screens follow, and it exists so there is never a second set of
-// figures disagreeing with the sheet. (There would be: the app's per-day feed is
+// Read-only, and nothing is recomputed from the per-day feed: that feed is
 // filtered to campaigns still live in the main sheet, so recomputing August from
-// it gives $3,088 where the pivot says $3,154.)
+// it gives $3,088 where the pivot says $3,154. Reading the pivot keeps one
+// answer. The aggregate TOTAL row is the one thing computed here, by the same
+// rules the script uses — see paidCategoryTrend.ts.
 //
-// The columns are consecutive calendar months (confirmed by Trang 2026-09-08).
-// The sheet dates only its last one, in A1, so the labels shown here are counted
-// back from that month rather than read — see monthLabelsEndingAt. When A1 is not
-// a whole month the back-count has no basis, and the sheet's own t1…t8 are shown
-// instead; the note at the bottom says which of the two is on screen.
+// Charting is recharts, already a dependency, rather than the script's Chart.js:
+// no reason to add a second charting library. The parts that matter (factor
+// choice, legend wording, end-of-line label placement, dual axis) are ported
+// exactly and unit-tested; only the drawing layer differs.
 
-const money = (n: number | null): string =>
-  n === null || !Number.isFinite(n) ? '—' : `$${n >= 100 ? Math.round(n) : n.toFixed(2)}`;
-const pct = (n: number | null): string =>
-  n === null || !Number.isFinite(n) ? '—' : `${(n * 100).toFixed(1)}%`;
-const pos = (n: number | null): string =>
-  n === null || !Number.isFinite(n) ? '—' : n.toFixed(2);
+const AXIS_COLOR = '#57606a';
 
-/** The sheet's own '% growth' cell. Direction of "good" depends on the metric:
- *  for cost and position, lower is better. */
-function Growth({ v, lowerIsBetter }: { v: number | null; lowerIsBetter?: boolean }) {
-  if (v === null || !Number.isFinite(v)) return <span className="text-slate-300">—</span>;
-  const flat = Math.abs(v) < 0.02;
-  const good = lowerIsBetter ? v < 0 : v > 0;
-  return (
-    <span
-      className={cn(
-        'font-mono text-[11px] font-medium',
-        flat ? 'text-slate-400' : good ? 'text-emerald-600' : 'text-rose-600',
-      )}
-    >
-      {v >= 0 ? '+' : ''}
-      {Math.round(v * 100)}%
-    </span>
-  );
+interface TipPayload {
+  dataKey?: string | number;
+  color?: string;
+  payload?: Record<string, unknown>;
 }
 
-// Which way each tier reads. Spend is deliberately absent: more spend is neither
-// good nor bad on its own, so colouring it would assert something the number
-// doesn't say.
-const LOWER_IS_BETTER: Record<string, boolean> = {
-  CPI: true,
-  CPC: true,
-  Pos: true,
-};
-const NEUTRAL = new Set(['Spend', 'Impressions']);
-
-/** How a tier's values should be written. Keyed on the sheet's own labels. */
-function formatFor(metric: string): (n: number | null) => string {
-  const m = metric.trim().toLowerCase();
-  if (m === 'cpi' || m === 'cpc' || m === 'spend') return money;
-  if (m === 'cr' || m === 'ctr') return pct;
-  if (m === 'pos') return pos;
-  return (n) => (n === null ? '—' : formatNumber(Math.round(n), { compact: true }));
-}
-
-function SnapshotTable({
-  rows,
-  total,
+function ChartTooltip({
+  active,
+  payload,
+  label,
 }: {
-  rows: PaidCategorySnapshot[];
-  total: PaidCategorySnapshot | null;
+  active?: boolean;
+  payload?: TipPayload[];
+  label?: string | number;
 }) {
+  if (!active || !payload?.length) return null;
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table className="w-full text-xs">
-        <thead className="bg-slate-50 text-slate-600">
-          <tr>
-            <th className="px-3 py-2 text-left font-medium">Category</th>
-            <th className="px-2 py-2 text-right font-medium">Install</th>
-            <th className="px-2 py-2 text-right font-medium">Chi</th>
-            <th className="px-2 py-2 text-right font-medium">CPI</th>
-            <th className="px-2 py-2 text-right font-medium">Clicks</th>
-            <th className="px-2 py-2 text-right font-medium">Impressions</th>
-            <th className="px-2 py-2 text-right font-medium">CR</th>
-            <th className="px-2 py-2 text-right font-medium">CPC</th>
-            <th className="px-2 py-2 text-right font-medium">CTR</th>
-            <th className="px-2 py-2 text-right font-medium">Pos</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const cs = categoryStyle(r.category);
-            // Spend with nothing to show for it is the one state on this table
-            // worth marking: the sheet reports it as a blank CPI, which reads as
-            // "no data" rather than "no installs".
-            const dry = r.installs === 0 && r.spend > 0;
-            return (
-              <tr key={r.category} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-3 py-1.5">
-                  <span
-                    className={cn(
-                      'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium',
-                      cs.bg,
-                      cs.text,
-                    )}
-                  >
-                    {cs.emoji} {r.category}
-                  </span>
-                </td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px]">
-                  <span className={r.installs > 0 ? 'font-medium text-emerald-700' : 'text-rose-600'}>
-                    {r.installs}
-                  </span>
-                </td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] font-semibold text-slate-800">
-                  {money(r.spend)}
-                </td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[12px] font-semibold">
-                  {dry ? (
-                    <span
-                      className="cursor-help text-rose-600"
-                      title={`Sheet để trống CPI vì ${r.category} không có install nào trong kỳ này, dù đã tiêu ${money(r.spend)}.`}
-                    >
-                      0 install
-                    </span>
-                  ) : (
-                    <span className="text-slate-900">{money(r.cpi)}</span>
-                  )}
-                </td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-600">
-                  {formatNumber(r.clicks)}
-                </td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-600">
-                  {formatNumber(r.impressions, { compact: true })}
-                </td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-600">
-                  {pct(r.cr)}
-                </td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-600">
-                  {money(r.cpc)}
-                </td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-600">
-                  {pct(r.ctr)}
-                </td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-600">
-                  {pos(r.position)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-        {total && (
-          <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
-            <tr>
-              <td className="px-3 py-2 text-left text-[11px] text-slate-700">TOTAL</td>
-              <td className="px-2 py-2 text-right font-mono text-[11px]">{total.installs}</td>
-              <td className="px-2 py-2 text-right font-mono text-[11px]">{money(total.spend)}</td>
-              <td className="px-2 py-2 text-right font-mono text-[12px]">{money(total.cpi)}</td>
-              <td className="px-2 py-2 text-right font-mono text-[11px]">
-                {formatNumber(total.clicks)}
-              </td>
-              <td className="px-2 py-2 text-right font-mono text-[11px]">
-                {formatNumber(total.impressions, { compact: true })}
-              </td>
-              <td colSpan={4} />
-            </tr>
-          </tfoot>
-        )}
-      </table>
+    <div className="rounded-md border border-slate-200 bg-white/95 px-2.5 py-1.5 shadow-sm">
+      <div className="mb-1 text-[11px] font-semibold text-slate-700">{String(label ?? '')}</div>
+      {payload.map((p) => {
+        const metric = String(p.dataKey ?? '').replace(/^scaled_/, '');
+        // Always the untouched value in its own unit. The factor exists to make
+        // lines shareable, not to change what a number means.
+        const raw = p.payload?.[`raw_${metric}`];
+        return (
+          <div key={metric} className="flex items-center gap-1.5 text-[11px]">
+            <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: p.color }} />
+            <span className="text-slate-600">{metric}</span>
+            <span className="ml-auto font-mono font-medium text-slate-900">
+              {fmtValue(typeof raw === 'number' ? raw : null, cfgOf(metric).fmt)}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function TierTable({
-  tier,
-  periods,
-  open,
-  onToggle,
-}: {
-  tier: PaidCategorySeries;
-  periods: string[];
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const fmt = formatFor(tier.metric);
-  const lower = LOWER_IS_BETTER[tier.metric.trim()] ?? false;
-  const neutral = NEUTRAL.has(tier.metric.trim());
+/** Metric names drawn at the end of each line, de-collided. */
+function EndLabels(props: Record<string, unknown>) {
+  const items = props.formattedGraphicalItems as
+    | { props: { points?: { x: number; y: number | null }[]; dataKey?: string; stroke?: string } }[]
+    | undefined;
+  const offset = props.offset as { top: number; height: number } | undefined;
+  if (!items?.length || !offset) return null;
+
+  const found: { x: number; y: number; text: string; color: string }[] = [];
+  for (const it of items) {
+    const pts = it.props.points ?? [];
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const p = pts[i];
+      if (p?.y === null || p?.y === undefined || !Number.isFinite(p.y)) continue;
+      const metric = String(it.props.dataKey ?? '').replace(/^scaled_/, '');
+      found.push({ x: p.x, y: p.y as number, text: metric, color: it.props.stroke ?? AXIS_COLOR });
+      break;
+    }
+  }
+  if (!found.length) return null;
+
+  const top = offset.top + 4;
+  const bottom = offset.top + offset.height - 4;
+  const ys = layoutEndLabels(found.map((f) => f.y), top, bottom, LABEL_GAP);
+  const right = Math.max(...found.map((f) => f.x));
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left"
-      >
-        <span className="text-xs font-semibold text-slate-800">{tier.metric}</span>
-        <span className="hidden text-[10px] text-slate-400 sm:inline">
-          {tier.rows.length} category · {periods.length} kỳ
-        </span>
-        <ChevronDown
-          className={cn(
-            'ml-auto h-4 w-4 shrink-0 text-slate-400 transition-transform',
-            open && 'rotate-180',
-          )}
-        />
-      </button>
-      {open && (
-        <div className="overflow-x-auto border-t border-slate-100">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="px-3 py-1.5 text-left font-medium">Category</th>
-                {periods.map((p) => (
-                  <th key={p} className="px-2 py-1.5 text-right font-medium">
-                    {p}
-                  </th>
-                ))}
-                <th className="px-2 py-1.5 text-right font-medium">xu hướng</th>
-                <th
-                  className="px-2 py-1.5 text-right font-medium"
-                  title="Cột '% growth' của chính sheet, không tính lại ở đây"
-                >
-                  % growth
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {tier.rows.map((r) => {
-                const cs = categoryStyle(r.category);
-                const pts = r.values.map((v, i) => ({ t: i, v }));
-                return (
-                  <tr key={r.category} className="border-t border-slate-100 hover:bg-slate-50">
-                    <td className="whitespace-nowrap px-3 py-1.5">
-                      <span
-                        className={cn(
-                          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium',
-                          cs.bg,
-                          cs.text,
-                        )}
-                      >
-                        {cs.emoji} {r.category}
-                      </span>
-                    </td>
-                    {r.values.map((v, i) => (
-                      <td
-                        key={i}
-                        className={cn(
-                          'whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px]',
-                          i === r.values.length - 1
-                            ? 'font-semibold text-slate-900'
-                            : 'text-slate-500',
-                        )}
-                      >
-                        {fmt(v)}
-                      </td>
-                    ))}
-                    <td className="px-2 py-1.5 text-right">
-                      <Sparkline points={pts} width={88} height={22} className="inline-block" />
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-1.5 text-right">
-                      <Growth v={r.growth} lowerIsBetter={neutral ? undefined : lower} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            {tier.totals.length > 0 && (
-              <tfoot className="border-t-2 border-slate-200 bg-slate-50">
-                <tr>
-                  <td className="px-3 py-1.5 text-left text-[11px] font-semibold text-slate-700">
-                    Tổng
-                  </td>
-                  {tier.totals.map((v, i) => (
-                    <td
-                      key={i}
-                      className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] font-semibold text-slate-700"
-                    >
-                      {fmt(v)}
-                    </td>
-                  ))}
-                  <td />
-                  <td className="whitespace-nowrap px-2 py-1.5 text-right">
-                    <Growth v={tier.totalsGrowth} lowerIsBetter={neutral ? undefined : lower} />
-                  </td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-      )}
-    </div>
+    <g>
+      {found.map((f, i) => (
+        <text
+          key={f.text}
+          x={right + 7}
+          y={ys[i]}
+          fill={f.color}
+          fontSize={11}
+          fontWeight={500}
+          dominantBaseline="middle"
+        >
+          {f.text}
+        </text>
+      ))}
+    </g>
   );
 }
 
 export function PaidCategoryBoardView() {
   const { data, isLoading, error } = useSheetData();
   const board = data?.paidCategoryBoard ?? null;
-  // The two tiers a bid decision starts from open by default; the rest are there
-  // when asked for, so the page isn't nine tables deep on arrival.
-  const [openTiers, setOpenTiers] = useState<Record<string, boolean>>({
-    INSTALLS: true,
-    CPI: true,
-  });
-  const toggle = (m: string) => setOpenTiers((o) => ({ ...o, [m]: !o[m] }));
+  const cube = useMemo(() => (board ? buildTrendCube(board) : null), [board]);
 
-  // Month labels when they could be derived, the sheet's own otherwise.
-  const labels = useMemo(
-    () =>
-      board
-        ? board.periodMonths.length === board.periods.length
-          ? board.periodMonths
-          : board.periods
-        : [],
-    [board],
-  );
-  const usingMonths = !!board && board.periodMonths.length === board.periods.length;
-  const lastPeriod = labels.length ? labels[labels.length - 1] : 't8';
+  const [cat, setCat] = useState('');
+  const [group, setGroup] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [autoScale, setAutoScale] = useState(true);
+  /** Hidden metrics per group. Kept separate on purpose: switching Clicks off in
+   *  the volume group must not switch it off in TOTAL. */
+  const [off, setOff] = useState<Record<string, Record<string, boolean>>>({});
+  const seeded = useRef(false);
+
+  const groups = useMemo(() => (cube ? groupsPresent(cube.metrics) : []), [cube]);
+
+  // Seed selections once. On a later read the user's choices are kept — except
+  // that sitting on the newest period means "keep me on the newest": pinning the
+  // old label would quietly hide a period that just arrived.
+  useEffect(() => {
+    if (!cube || !groups.length) return;
+    const last = cube.periods[cube.periods.length - 1] ?? '';
+    if (!seeded.current) {
+      seeded.current = true;
+      setCat(
+        cube.categories.includes(cube.totalLabel) ? cube.totalLabel : cube.categories[0] ?? '',
+      );
+      setGroup(groups[0].id);
+      setFrom(cube.periods[0] ?? '');
+      setTo(last);
+      const init: Record<string, Record<string, boolean>> = {};
+      for (const g of groups) {
+        const on = DEFAULT_ON[g.id] ?? [];
+        init[g.id] = {};
+        for (const m of metricsOfGroup(cube.metrics, g.id)) init[g.id][m] = !on.includes(m);
+      }
+      setOff(init);
+      return;
+    }
+    setTo((prev) => (prev && cube.periods.includes(prev) ? prev : last));
+    setFrom((prev) => (prev && cube.periods.includes(prev) ? prev : cube.periods[0] ?? ''));
+  }, [cube, groups]);
+
+  const span = useMemo(() => {
+    if (!cube) return { list: [] as string[], i0: 0 };
+    let a = cube.periods.indexOf(from);
+    let b = cube.periods.indexOf(to);
+    if (a < 0) a = 0;
+    if (b < 0) b = cube.periods.length - 1;
+    if (a > b) {
+      const t = a;
+      a = b;
+      b = t;
+    }
+    return { list: cube.periods.slice(a, b + 1), i0: a };
+  }, [cube, from, to]);
+
+  const view = useMemo(() => {
+    if (!cube || !group) return null;
+    const all = metricsOfGroup(cube.metrics, group);
+    const hidden = off[group] ?? {};
+    const series = (m: string) => span.list.map((_, k) => cube.at(m, cat, span.i0 + k));
+
+    // A metric with nothing in this window is dropped rather than drawn as an
+    // empty line.
+    const present = all.filter((m) => series(m).some((v) => v !== null));
+    const shown = present.filter((m) => !hidden[m]);
+
+    const isTotal = group === TOTAL_GROUP;
+    const onL = shown.filter((m) => (isTotal ? cfgOf(m).axis !== 'R' : true));
+    const onR = isTotal ? shown.filter((m) => cfgOf(m).axis === 'R') : [];
+
+    // Each axis is scaled among its own lines only.
+    const factors: Record<string, number> = {
+      ...pickFactors(onL, series, autoScale),
+      ...pickFactors(onR, series, autoScale),
+    };
+
+    const rows = span.list.map((label, k) => {
+      const row: Record<string, string | number | null> = { period: label };
+      for (const m of shown) {
+        const v = cube.at(m, cat, span.i0 + k);
+        row[`raw_${m}`] = v;
+        row[`scaled_${m}`] = v === null ? null : v * (factors[m] ?? 1);
+      }
+      return row;
+    });
+
+    const singleL = onL.length === 1;
+    const singleR = onR.length === 1;
+    const pad = endLabelPadding(shown) + (isTotal && onL.length && onR.length ? 44 : 0);
+
+    return { all, present, shown, hidden, factors, rows, onL, onR, isTotal, singleL, singleR, pad };
+  }, [cube, group, off, cat, span, autoScale]);
 
   if (error) {
     return (
@@ -333,17 +236,15 @@ export function PaidCategoryBoardView() {
       </div>
     );
   }
-
   if (isLoading) {
     return (
       <div className="space-y-3">
-        <Skeleton className="h-24" />
-        <Skeleton className="h-64" />
+        <Skeleton className="h-12" />
+        <Skeleton className="h-[430px]" />
       </div>
     );
   }
-
-  if (!board) {
+  if (!cube || !cube.metrics.length) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-12 text-center">
         <LayoutGrid className="mx-auto mb-3 h-8 w-8 text-slate-300" />
@@ -351,93 +252,264 @@ export function PaidCategoryBoardView() {
           Chưa đọc được tab &ldquo;By categories&rdquo;
         </div>
         <div className="mx-auto mt-1 max-w-md text-[11px] leading-snug text-slate-500">
-          Tab này nằm trong sheet Shopify Ads (<code className="text-[10px]">GOOGLE_SHEET_ID_SHOPIFY</code>).
-          Trang trống khi tab bị đổi tên, bị xoá, hoặc sheet chưa share cho service account — xem{' '}
+          Tab này nằm trong sheet Shopify Ads (
+          <code className="text-[10px]">GOOGLE_SHEET_ID_SHOPIFY</code>). Trang trống khi tab bị đổi
+          tên, bị xoá, hoặc sheet chưa share cho service account — xem{' '}
           <code className="text-[10px]">/api/shopify-schema</code> để biết là trường hợp nào.
         </div>
       </div>
     );
   }
 
+  const sel =
+    'h-8 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-800 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500';
+  const toggleMetric = (m: string) =>
+    setOff((o) => ({ ...o, [group]: { ...(o[group] ?? {}), [m]: !o[group]?.[m] } }));
+  const setAll = (hide: boolean) =>
+    setOff((o) => {
+      const next = { ...(o[group] ?? {}) };
+      for (const m of view?.all ?? []) next[m] = hide;
+      return { ...o, [group]: next };
+    });
+
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2">
-        <div className="text-[11px] leading-snug text-indigo-900">
-          Đây là tab <b>By categories</b> bạn tự dựng trong sheet Shopify Ads, đọc nguyên và trình
-          bày lại — <b>không tính lại số nào</b>, kể cả tổng và % growth. Sửa ở sheet thì trang này
-          đổi theo (cache 10 phút).
-        </div>
+    <div className="space-y-3">
+      {/* Controls — same row, same order as the Apps Script dialog. */}
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wide text-slate-500">Category</span>
+          <select value={cat} onChange={(e) => setCat(e.target.value)} className={cn(sel, 'min-w-[150px]')}>
+            {cube.categories.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wide text-slate-500">Nhóm metric</span>
+          <select value={group} onChange={(e) => setGroup(e.target.value)} className={cn(sel, 'min-w-[215px]')}>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>{g.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wide text-slate-500">Từ</span>
+          <select value={from} onChange={(e) => setFrom(e.target.value)} className={cn(sel, 'min-w-[92px]')}>
+            {cube.periods.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wide text-slate-500">Đến</span>
+          <select value={to} onChange={(e) => setTo(e.target.value)} className={cn(sel, 'min-w-[92px]')}>
+            {cube.periods.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
-      <section className="space-y-2">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <h2 className="text-sm font-semibold text-slate-900">Snapshot theo category</h2>
-          {board.from && board.to ? (
-            <span className="font-mono text-[11px] text-slate-500">
-              {board.from} → {board.to}
-            </span>
-          ) : (
-            <span className="text-[11px] text-amber-700">A1 không đọc được khoảng ngày</span>
-          )}
-          <span className="text-[10px] text-slate-400">
-            — khối bên trái của tab, cũng chính là kỳ <b>{lastPeriod}</b> ở các bảng dưới
-          </span>
-        </div>
-        <SnapshotTable rows={board.snapshot} total={board.snapshotTotal} />
-      </section>
+      {/* Legend: one button per metric — swatch, name, current factor. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {(view?.present ?? []).map((m) => {
+          const c = cfgOf(m);
+          const hidden = !!view?.hidden[m];
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => toggleMetric(m)}
+              title={`Bấm để ẩn / hiện ${m}`}
+              className={cn(
+                'flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[12px] text-slate-800 hover:bg-slate-100',
+                hidden && 'opacity-40',
+              )}
+            >
+              <span className="h-[3px] w-[18px] shrink-0 rounded-sm" style={{ background: c.color }} />
+              {legendLabel(m, hidden ? undefined : view?.factors[m])}
+              {view?.isTotal && (
+                <span className="text-[10px] text-slate-400">{c.axis === 'L' ? '◀' : '▶'}</span>
+              )}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setAll(false)}
+          className="ml-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[12px] hover:bg-slate-100"
+        >
+          Hiện tất cả
+        </button>
+        <button
+          type="button"
+          onClick={() => setAll(true)}
+          className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[12px] hover:bg-slate-100"
+        >
+          Ẩn hết
+        </button>
+        <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-[12px] text-slate-500">
+          <input type="checkbox" checked={autoScale} onChange={(e) => setAutoScale(e.target.checked)} />
+          tự chỉnh hệ số
+        </label>
+      </div>
 
-      <section className="space-y-2">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <h2 className="text-sm font-semibold text-slate-900">
-            {board.periods.length} kỳ theo từng chỉ số
-          </h2>
-          <span className="text-[10px] text-slate-400">
-            — khối bên phải, {board.series.length} chỉ số · click để mở
-          </span>
-        </div>
-        <div className="space-y-2">
-          {board.series.map((t) => (
-            <TierTable
-              key={t.metric}
-              tier={t}
-              periods={labels}
-              open={!!openTiers[t.metric]}
-              onToggle={() => toggle(t.metric)}
-            />
-          ))}
-        </div>
-      </section>
+      <div className="rounded-lg border border-slate-200 bg-white p-3" style={{ height: 430 }}>
+        {!view?.shown.length ? (
+          <div className="flex h-full items-center justify-center text-center text-[11px] text-slate-400">
+            {view?.present.length
+              ? 'Mọi metric đang bị ẩn — bấm “Hiện tất cả”.'
+              : 'Metric của nhóm này không có số nào trong khoảng đang chọn.'}
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={view.rows} margin={{ top: 8, right: view.pad, bottom: 4, left: 4 }}>
+              <CartesianGrid stroke="#eef1f4" vertical={false} />
+              <XAxis
+                dataKey="period"
+                tick={{ fontSize: 11, fill: AXIS_COLOR }}
+                axisLine={{ stroke: '#d8dee4' }}
+                tickLine={false}
+              />
+              <YAxis
+                yAxisId="L"
+                orientation="left"
+                tick={{ fontSize: 11, fill: AXIS_COLOR }}
+                axisLine={false}
+                tickLine={false}
+                domain={[0, 'auto']}
+                tickFormatter={(v: number) =>
+                  view.singleL
+                    ? fmtValue(v, cfgOf(view.onL[0]).fmt)
+                    : v >= 1000
+                      ? v.toLocaleString('en-US')
+                      : String(v)
+                }
+              />
+              {/* The right axis is rendered only when lines actually read against
+                  it — a stranded empty axis looks like data that failed to load. */}
+              {view.isTotal && view.onR.length > 0 && (
+                <YAxis
+                  yAxisId="R"
+                  orientation="right"
+                  tick={{ fontSize: 11, fill: AXIS_COLOR }}
+                  axisLine={false}
+                  tickLine={false}
+                  domain={[0, 'auto']}
+                  tickFormatter={(v: number) =>
+                    view.singleR ? fmtValue(v, cfgOf(view.onR[0]).fmt) : String(v)
+                  }
+                />
+              )}
+              <Tooltip content={<ChartTooltip />} />
+              {view.shown.map((m) => {
+                const c = cfgOf(m);
+                return (
+                  <Line
+                    key={m}
+                    yAxisId={view.isTotal && c.axis === 'R' ? 'R' : 'L'}
+                    type="monotone"
+                    dataKey={`scaled_${m}`}
+                    stroke={c.color}
+                    strokeWidth={2}
+                    strokeDasharray={c.dash}
+                    dot={{ r: 3 }}
+                    activeDot={{ r: 5 }}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                );
+              })}
+              <Customized component={EndLabels} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
 
-      <div className="space-y-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] leading-snug text-slate-500">
-        <div>
-          <b>Về nhãn kỳ:</b> sheet chỉ ghi ngày cho kỳ cuối — ô A1 cho{' '}
-          <span className="font-mono">
-            {board.from || '?'} → {board.to || '?'}
+      {/* Axis labelling in words, since the axis itself carries scaled numbers. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-slate-500">
+        <span>
+          Trục trái:{' '}
+          <b>
+            {view?.singleL
+              ? view.onL[0]
+              : view?.isTotal
+                ? `${AXIS_NAME.L} (quy hệ số)`
+                : 'giá trị đã quy hệ số'}
+          </b>
+        </span>
+        {view?.isTotal && view.onR.length > 0 && (
+          <span>
+            Trục phải:{' '}
+            <b>{view.singleR ? view.onR[0] : `${AXIS_NAME.R} (quy hệ số)`}</b>
           </span>
-          , và cột cuối của bảng INSTALLS khớp đúng khối snapshot ở cả {board.snapshot.length}{' '}
-          category, nên kỳ cuối chính là khoảng đó.{' '}
-          {usingMonths ? (
+        )}
+      </div>
+
+      {/* What the reader needs in order to read the chart correctly. */}
+      <div className="space-y-1 text-[10.5px] leading-relaxed text-slate-500">
+        <div>
+          Tên metric in ở cuối mỗi đường. Bấm nhãn phía trên để ẩn / hiện.{' '}
+          {view?.isTotal ? (
             <>
-              Các kỳ là <b>tháng liên tiếp</b>, nên nhãn <b>{labels.join(' · ')}</b> được{' '}
-              <b>đếm lùi</b> từ tháng đó — không phải đọc từ sheet, và tự đúng khi sheet trượt sang
-              tháng sau.
+              Nét liền <b>◀</b> đọc theo trục trái, nét gạch <b>▶</b> đọc theo trục phải.{' '}
+              {(view.singleL || view.singleR) && (
+                <>
+                  Trục{' '}
+                  {view.singleL && view.singleR ? 'trái và phải' : view.singleL ? 'trái' : 'phải'}{' '}
+                  đang chỉ có 1 đường nên hiện giá trị gốc, không quy hệ số.{' '}
+                </>
+              )}
+              <b className="text-amber-700">
+                Hai trục độc lập — chỗ hai đường cắt nhau không mang ý nghĩa gì, chỉ đọc hướng lên
+                xuống.
+              </b>
             </>
+          ) : view?.shown.length === 1 ? (
+            'Chỉ có 1 đường nên trục hiện giá trị gốc, không quy hệ số.'
           ) : (
+            'Hệ số chọn theo category để các đường trải đều trên trục.'
+          )}{' '}
+          Tooltip luôn hiện giá trị thật.
+        </div>
+        <div>
+          Đọc từ tab <b>By categories</b> của sheet Shopify Ads
+          {data?.fetchedAt && (
             <>
-              A1 không phải một tháng trọn nên không đếm lùi được; trang đang hiện đúng tên sheet đặt
-              (<b>{board.periods.join(', ')}</b>).
+              {' '}
+              lúc{' '}
+              {new Date(data.fetchedAt).toLocaleString('vi-VN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+              })}
             </>
-          )}
+          )}{' '}
+          · {cube.metrics.length} metric · {cube.periods.length} mốc · {cube.dataPoints} điểm dữ liệu
+          {board?.from && board?.to && (
+            <>
+              {' '}
+              · Date range{' '}
+              <span className="font-mono">
+                {board.from} → {board.to}
+              </span>
+            </>
+          )}{' '}
+          · <i>cache 10 phút, không tự cập nhật theo thời gian thực</i>
         </div>
         <div>
-          <b>Không đối chiếu được với các trang khác:</b> feed per-day của dashboard bị lọc theo danh
-          sách camp còn sống trong sheet chính, nên tính lại tháng 8 từ nó ra $3.088 trong khi tab
-          này ghi $3.154. Số của tab là số của bạn — đó là lý do trang này đọc chứ không tính.
+          <b>TOTAL</b> không cộng thẳng mọi thứ: đại lượng đếm được thì cộng, tỉ số thì{' '}
+          <b>tính lại từ tổng các thành phần</b> (CPI = ΣSpend/ΣInstalls), còn <b>Pos</b> bình quân
+          gia quyền theo Impressions. Mốc nào các category có số chiếm dưới 80% trọng số thì để{' '}
+          <b>trống</b> chứ không trả một con số lệch.
         </div>
         <div>
-          <b>Taxonomy khác:</b> tab này gộp <code className="text-[9px]">Test, other</code> làm một
-          nhóm, còn các trang khác tách <b>Test</b> và <b>Others</b> riêng theo{' '}
-          <code className="text-[9px]">Max bid cap</code>. Đừng cộng số hai bên với nhau.
+          Tab này gộp <code className="text-[9px]">Test, others</code> làm một nhóm, còn các trang
+          khác tách <b>Test</b> và <b>Others</b> riêng theo{' '}
+          <code className="text-[9px]">Max bid cap</code> — đừng cộng số hai bên với nhau.
         </div>
       </div>
     </div>
