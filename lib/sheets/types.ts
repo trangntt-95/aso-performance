@@ -580,10 +580,14 @@ export interface PaidCategoryBoard {
   /** The window the snapshot block covers, ISO. Empty when A1 is unreadable. */
   from: string;
   to: string;
-  /** Period labels exactly as the sheet writes them (t1…t8). The sheet does not
-   *  date t1–t7, so nothing here invents dates for them; only the last period is
-   *  known, and it equals from→to (verified live 2026-09-08). */
+  /** Period labels exactly as the sheet writes them (t1…t8). */
   periods: string[];
+  /** The same periods as calendar months ('T8/26'), derived — not read. The sheet
+   *  dates only its last period, in A1; Trang confirmed (2026-09-08) the columns
+   *  are consecutive months, so the rest are counted back from that one. Empty
+   *  when A1 is unreadable or is not a whole calendar month, in which case the
+   *  premise doesn't hold and `periods` is all there is to show. */
+  periodMonths: string[];
   snapshot: PaidCategorySnapshot[];
   /** Snapshot totals row ('TOTAL'), as the sheet computes it. */
   snapshotTotal: PaidCategorySnapshot | null;

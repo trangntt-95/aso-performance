@@ -25,12 +25,22 @@ import type {
 // inserted above the block shifts nothing. The earlier version of this file did
 // hardcode rows 8–15 and 102–109; that survives exactly one edit to the sheet.
 //
+// ── Dating the periods ─────────────────────────────────────────────────────
 // The two blocks agree where they overlap: the LEFT block's installs equal the
-// INSTALLS tier's t8 for all eight categories (checked live), which is what
-// establishes that t8 is the A1 window. t1–t7 carry no dates anywhere in the tab,
-// and the app's per-day feed cannot recover them (it is filtered to live camps,
-// so it undercounts older months), so they are carried as t1…t7 and nothing here
-// pretends to know which months they are.
+// INSTALLS tier's t8 for all eight categories (checked live). That is what pins
+// the last period to the A1 window, and it is the only period the tab dates.
+//
+// Trang confirmed (2026-09-08) that the columns are consecutive calendar months,
+// so the earlier ones are counted BACK from that month rather than guessed. The
+// derivation is deliberately not a hardcoded 'Jan…Aug': the sheet rolls forward,
+// and next month t8 becomes September with t1 becoming February.
+//
+// It is also guarded. Months are only derived when A1 really is one whole
+// calendar month — first day to last day of the same month. If A1 is unreadable,
+// or the window is a 30-day rolling range that happens not to align, the premise
+// behind "consecutive months" doesn't hold, so no month labels are produced and
+// the UI falls back to the sheet's own t1…t8. Better to show the sheet's labels
+// than confident month names built on an assumption that just stopped being true.
 
 /**
  * Excel serial or ISO string → 'YYYY-MM-DD', or '' when unreadable.
@@ -50,6 +60,35 @@ function toIso(v: unknown): string {
 }
 
 const text = (v: unknown): string => String(v ?? '').trim();
+
+/**
+ * `count` consecutive month labels ending at the month of `to`, oldest first —
+ * 'T8/26' for August 2026.
+ *
+ * Returns [] unless from→to is exactly one calendar month, which is the condition
+ * the whole back-count rests on.
+ */
+function monthLabelsEndingAt(from: string, to: string, count: number): string[] {
+  if (!from || !to) return [];
+  const a = new Date(`${from}T00:00:00Z`);
+  const b = new Date(`${to}T00:00:00Z`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return [];
+  // Same month, starting on the 1st and ending on its last day.
+  const lastDay = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() + 1, 0)).getUTCDate();
+  const wholeMonth =
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === 1 &&
+    b.getUTCDate() === lastDay;
+  if (!wholeMonth) return [];
+
+  const out: string[] = [];
+  for (let k = count - 1; k >= 0; k--) {
+    const d = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() - k, 1));
+    out.push(`T${d.getUTCMonth() + 1}/${String(d.getUTCFullYear()).slice(-2)}`);
+  }
+  return out;
+}
 
 /** A number, or null for a blank cell — blank is the sheet declining to divide,
  *  which is different from a real zero and must not be flattened into one. */
@@ -220,10 +259,14 @@ export function parsePaidCategoryBoard(rows: unknown[][]): PaidCategoryBoard | n
   }
 
   if (snapshot.length === 0 && series.length === 0) return null;
+  const periodNames = periods.length
+    ? periods
+    : Array.from({ length: RIGHT.periodCount }, (_, k) => `t${k + 1}`);
   return {
     from,
     to,
-    periods: periods.length ? periods : Array.from({ length: 8 }, (_, k) => `t${k + 1}`),
+    periods: periodNames,
+    periodMonths: monthLabelsEndingAt(from, to, periodNames.length),
     snapshot,
     snapshotTotal,
     series,

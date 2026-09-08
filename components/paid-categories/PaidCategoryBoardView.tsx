@@ -20,12 +20,11 @@ import type { PaidCategorySeries, PaidCategorySnapshot } from '@/lib/sheets/type
 // filtered to campaigns still live in the main sheet, so recomputing August from
 // it gives $3,088 where the pivot says $3,154.)
 //
-// What the sheet does NOT say is what t1…t7 are. Only the last period is dated —
-// cell A1 gives the snapshot window, and the INSTALLS tier's t8 equals the
-// snapshot for all eight categories, which is what pins t8 to it. The earlier
-// periods carry no dates anywhere in the tab, and the per-day feed can't recover
-// them (filtered to live camps, so it undercounts older months). So they are
-// labelled as the sheet labels them, and the note at the bottom says why.
+// The columns are consecutive calendar months (confirmed by Trang 2026-09-08).
+// The sheet dates only its last one, in A1, so the labels shown here are counted
+// back from that month rather than read — see monthLabelsEndingAt. When A1 is not
+// a whole month the back-count has no basis, and the sheet's own t1…t8 are shown
+// instead; the note at the bottom says which of the two is on screen.
 
 const money = (n: number | null): string =>
   n === null || !Number.isFinite(n) ? '—' : `$${n >= 100 ? Math.round(n) : n.toFixed(2)}`;
@@ -312,10 +311,18 @@ export function PaidCategoryBoardView() {
   });
   const toggle = (m: string) => setOpenTiers((o) => ({ ...o, [m]: !o[m] }));
 
-  const lastPeriod = useMemo(
-    () => (board?.periods.length ? board.periods[board.periods.length - 1] : 't8'),
+  // Month labels when they could be derived, the sheet's own otherwise.
+  const labels = useMemo(
+    () =>
+      board
+        ? board.periodMonths.length === board.periods.length
+          ? board.periodMonths
+          : board.periods
+        : [],
     [board],
   );
+  const usingMonths = !!board && board.periodMonths.length === board.periods.length;
+  const lastPeriod = labels.length ? labels[labels.length - 1] : 't8';
 
   if (error) {
     return (
@@ -393,7 +400,7 @@ export function PaidCategoryBoardView() {
             <TierTable
               key={t.metric}
               tier={t}
-              periods={board.periods}
+              periods={labels}
               open={!!openTiers[t.metric]}
               onToggle={() => toggle(t.metric)}
             />
@@ -407,10 +414,20 @@ export function PaidCategoryBoardView() {
           <span className="font-mono">
             {board.from || '?'} → {board.to || '?'}
           </span>
-          , và cột <b>{lastPeriod}</b> của bảng INSTALLS khớp đúng khối snapshot ở cả{' '}
-          {board.snapshot.length} category, nên {lastPeriod} chính là khoảng đó.{' '}
-          {board.periods.slice(0, -1).join(', ')} thì <b>không có ngày ở đâu trong tab</b>, nên trang
-          này giữ đúng tên sheet đặt thay vì tự suy ra tháng.
+          , và cột cuối của bảng INSTALLS khớp đúng khối snapshot ở cả {board.snapshot.length}{' '}
+          category, nên kỳ cuối chính là khoảng đó.{' '}
+          {usingMonths ? (
+            <>
+              Các kỳ là <b>tháng liên tiếp</b>, nên nhãn <b>{labels.join(' · ')}</b> được{' '}
+              <b>đếm lùi</b> từ tháng đó — không phải đọc từ sheet, và tự đúng khi sheet trượt sang
+              tháng sau.
+            </>
+          ) : (
+            <>
+              A1 không phải một tháng trọn nên không đếm lùi được; trang đang hiện đúng tên sheet đặt
+              (<b>{board.periods.join(', ')}</b>).
+            </>
+          )}
         </div>
         <div>
           <b>Không đối chiếu được với các trang khác:</b> feed per-day của dashboard bị lọc theo danh
