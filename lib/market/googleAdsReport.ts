@@ -18,6 +18,32 @@ export function isInstallAction(actionName: string): boolean {
   return INSTALL_ACTION_PATTERNS.some((re) => re.test(actionName));
 }
 
+/**
+ * Google Ads installs between two ISO dates, inclusive.
+ *
+ * Exists so the run-rate can compare against a target that covers BOTH paid
+ * channels. The date filter is the point: the run-rate is quoted per window, and
+ * a Google figure taken over some other span would silently pace one channel's
+ * 30 days against the other's 24.
+ *
+ * Counts only the install conversion actions, never Google's blended
+ * `conversions` — that number includes page views and would inflate installs.
+ */
+export function googleAdsInstallsInRange(
+  convActions: { date: string; actionName: string; conversions: number }[] | undefined,
+  from: string,
+  to: string,
+): number {
+  if (!convActions?.length || !from || !to) return 0;
+  let total = 0;
+  for (const a of convActions) {
+    if (!a.date || a.date < from || a.date > to) continue;
+    if (!isInstallAction(a.actionName)) continue;
+    total += a.conversions;
+  }
+  return total;
+}
+
 export interface Totals {
   impressions: number;
   clicks: number;

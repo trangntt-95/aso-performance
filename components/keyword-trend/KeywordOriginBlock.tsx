@@ -30,7 +30,6 @@ export function KeywordOriginBlock({ keyword }: { keyword: string }) {
   const countries = useMemo(() => keywordCountryOrigin(data, keyword), [data, keyword]);
 
   const withInstalls = countries.filter((c) => c.installs > 0);
-  const totalInstalls = withInstalls.reduce((s, c) => s + c.installs, 0);
   const nothing = camps.unknown && camps.paused.length === 0 && countries.length === 0;
   if (nothing) return null;
 
@@ -49,9 +48,15 @@ export function KeywordOriginBlock({ keyword }: { keyword: string }) {
       <div className="rounded border border-slate-200 bg-white p-2">
         <div className="text-[10px] uppercase tracking-wide text-slate-500">Camp đang bid keyword này</div>
         {camps.unknown ? (
-          <div className="mt-1 text-[11px] text-slate-400">
-            Không có dòng nào trong <code className="text-[9px]">Master KW Lookup</code> — keyword này chưa được bid ở
-            camp nào (hoặc chưa được thêm vào sheet).
+          <div
+            className="mt-1 cursor-help text-[11px] text-slate-400"
+            // The reason moves to a tooltip. The block's own heading already says
+            // this is about camps bidding the keyword, so a sentence restating
+            // that on every keyword with no camp was three lines of the same
+            // thing.
+            title="Không có dòng nào trong Master KW Lookup — keyword chưa được bid ở camp nào, hoặc chưa được thêm vào sheet."
+          >
+            chưa có
           </div>
         ) : camps.live.length === 0 ? (
           <div className="mt-1 text-[11px] text-amber-700">
@@ -155,20 +160,17 @@ export function KeywordOriginBlock({ keyword }: { keyword: string }) {
         </div>
       )}
 
-      <div className="text-[10px] leading-snug text-slate-400">
-        {withInstalls.length > 0 ? (
-          <>
-            <b>{totalInstalls} install</b> truy được về {withInstalls.length} nước (dòng tô xanh). Cửa sổ L30, nguồn{' '}
-            <code className="text-[9px]">Country_L30</code>.
-          </>
-        ) : (
-          <>
-            Chưa nước nào được GA4 gán install cho keyword này ở mức chi tiết — không có nghĩa là chưa có install, GA4
-            giấu bớt hàng lượng thấp khi tách theo nước.
-          </>
-        )}{' '}
-        <b>Bid</b> là max bid đang set trong Master KW Lookup, không phải giá thực trả cho một lượt click.
-      </div>
+      {/* The "N install traced to N countries · window L30 · Bid is a max bid"
+          footnote is gone: the highlighted rows and the column headers already
+          carry it. Only the case that CHANGES a reading is kept — GA4 hiding
+          low-volume rows means "no country" is not the same as "no install", and
+          nothing else on screen says so. */}
+      {withInstalls.length === 0 && (
+        <div className="text-[10px] leading-snug text-slate-400">
+          Chưa nước nào được GA4 gán install cho keyword này ở mức chi tiết — không có nghĩa là chưa
+          có install, GA4 giấu bớt hàng lượng thấp khi tách theo nước.
+        </div>
+      )}
     </section>
   );
 }

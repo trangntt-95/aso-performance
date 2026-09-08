@@ -1,7 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Users, Target, Search, Download } from 'lucide-react';
+import {
+  describeKeywordQuery,
+  matchKeywordQuery,
+  parseKeywordQuery,
+} from '@/lib/utils/keywordQuery';
 import type { ContributorRow } from './aggregate';
 import { KeywordLink } from '@/components/shared/KeywordLink';
 import { formatDeltaPct, formatNumber, deltaTone } from '@/lib/utils/format';
@@ -233,9 +238,14 @@ export function TopContributors({
   exportName = 'top-contribution',
 }: Props) {
   const [q, setQ] = useState('');
-  const query = q.trim().toLowerCase();
+  // Several conditions at once, typed into the one box: space-separated terms are
+  // ANDed, a leading '-' or '!' excludes, quotes keep a phrase together.
+  // See lib/utils/keywordQuery.ts for why it is a syntax rather than a row of
+  // condition builders.
+  const query = useMemo(() => parseKeywordQuery(q), [q]);
+  const conditions = useMemo(() => describeKeywordQuery(query), [query]);
   const matchRows = (rows: ContributorRow[]) =>
-    query ? rows.filter((r) => r.keyword.toLowerCase().includes(query)) : rows;
+    query.empty ? rows : rows.filter((r) => matchKeywordQuery(r.keyword, query));
   const fUsers = matchRows(users);
   const fGetApp = matchRows(getApp);
   // Hide a keyword only when it's truly empty — 0 now AND 0 before. A row that
@@ -261,7 +271,15 @@ export function TopContributors({
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Tìm keyword trong bảng…"
+            placeholder="Tìm: profit -test  ·  cách = VÀ, dấu − = loại"
+            title={
+              'Nhiều điều kiện cùng lúc:\n' +
+              '  profit calculator   → chứa CẢ HAI từ\n' +
+              '  profit -test        → chứa "profit", KHÔNG chứa "test"\n' +
+              '  "true profit"       → đúng cụm, có dấu cách\n' +
+              '  -"low bid"          → loại cả cụm\n' +
+              'Dấu ! dùng thay được cho −.'
+            }
             className="w-full rounded-md border border-slate-200 pl-7 pr-7 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-400"
           />
           {q && (
@@ -275,6 +293,24 @@ export function TopContributors({
             </button>
           )}
         </div>
+        {conditions.length > 1 && (
+          <div className="flex flex-wrap items-center gap-1">
+            {conditions.map((c) => (
+              <span
+                key={(c.negated ? '-' : '+') + c.label}
+                className={
+                  c.negated
+                    ? 'rounded bg-rose-50 px-1.5 py-0.5 text-[10px] text-rose-700 ring-1 ring-rose-200'
+                    : 'rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-700'
+                }
+                title={c.negated ? 'không chứa' : 'có chứa'}
+              >
+                {c.negated ? '−' : ''}
+                {c.label}
+              </span>
+            ))}
+          </div>
+        )}
         <button
           type="button"
           onClick={exportCsv}

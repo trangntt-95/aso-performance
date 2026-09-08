@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { ArrowRight, AlertCircle, AlertTriangle, Check, Link2, Megaphone, Target, Users } from 'lucide-react';
 import { expectedAdsInstalls, runrateAdsToMonthEnd } from '@/lib/config/ads-targets';
+import { googleAdsInstallsInRange } from '@/lib/market/googleAdsReport';
 import { AdsTargetTile } from './AdsTargetTile';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import {
@@ -512,10 +513,29 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     if (!channelSnapshot || !adsTargetExpected || adsTargetExpected <= 0) return null;
     return channelSnapshot.paidGetApp / adsTargetExpected;
   }, [channelSnapshot, adsTargetExpected]);
+  // Paid installs across BOTH channels, over the selected window.
+  //
+  // The monthly target (163) is set for paid advertising as a whole, so pacing
+  // only App Store Ads against it reports the account as behind by however much
+  // Google Ads contributed. Google's installs are counted over the same window
+  // dates, not over its own export span — pacing one channel's 30 days against
+  // the other's 24 is the mistake this avoids.
+  //
+  // The two counts come from different attribution systems (the App Store side
+  // only sees visits carrying `surface_type=`, which Google-driven traffic never
+  // has), so the sum is not a deduplicated figure. It is the right thing to
+  // compare against a target that was set on the same blended basis, and the
+  // tooltip says both parts so the split stays visible.
+  const gadsWindowInstalls = useMemo(() => {
+    const r = dateRange ?? data?.windowDates?.[window];
+    if (!r?.from || !r?.to) return 0;
+    return googleAdsInstallsInRange(data?.googleAds?.convActions, r.from, r.to);
+  }, [data?.googleAds?.convActions, data?.windowDates, window, dateRange]);
+
   const adsRunrate = useMemo(() => {
     if (!channelSnapshot) return null;
-    return runrateAdsToMonthEnd(days, channelSnapshot.paidGetApp);
-  }, [channelSnapshot, days]);
+    return runrateAdsToMonthEnd(days, channelSnapshot.paidGetApp + gadsWindowInstalls);
+  }, [channelSnapshot, days, gadsWindowInstalls]);
   const totalCr = useMemo(() => {
     if (!kpis.usersL) return null;
     return kpis.getAppL / kpis.usersL;
@@ -898,7 +918,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                 adsRunrate
                   ? adsRunrate.mode === 'direct'
                     ? `Actual ${Math.round(adsRunrate.projectedInstalls)} / target L90 ${Math.round(adsRunrate.targetInstalls)} (tổng 3 tháng)`
-                    : `Pace = ${channelSnapshot?.paidGetApp ?? 0} / ${adsRunrate.effectiveDays}d → project ${Math.round(adsRunrate.projectedInstalls)} / ${Math.round(adsRunrate.targetInstalls)} EOM`
+                    : `Paid install trong window: App Store ${channelSnapshot?.paidGetApp ?? 0} + Google Ads ${Math.round(gadsWindowInstalls)} = ${Math.round((channelSnapshot?.paidGetApp ?? 0) + gadsWindowInstalls)}\n` +
+                      `Pace = ${Math.round((channelSnapshot?.paidGetApp ?? 0) + gadsWindowInstalls)} / ${adsRunrate.effectiveDays} ngày → dự phóng ${Math.round(adsRunrate.projectedInstalls)} / target ${Math.round(adsRunrate.targetInstalls)} cuối tháng\n\n` +
+                      'Hai kênh do hai hệ attribution khác nhau đếm nên tổng này không phải số đã loại trùng — nhưng target tháng cũng đặt trên cùng cơ sở gộp đó.'
                   : undefined
               }
             />

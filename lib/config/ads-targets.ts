@@ -59,17 +59,27 @@ export function expectedAdsInstalls(windowDays: number, asOf: Date = new Date())
 }
 
 /**
- * Runrate cuối kỳ theo window.
- *   - L3/L7/L14/L30 (windowDays ≤ days_in_month):
- *     pace = actual / effectiveDays, projection = pace × days_in_month, pct = projection / monthly_target
- *     effectiveDays:
- *       - MTD-style (= min(windowDays, daysElapsedInMonth)) khi đã qua ≥ ½ window trong tháng
- *         → mid/late-month L30 phản ánh đúng pace tháng hiện tại, không bị tháng trước dilute.
- *       - Pure rolling (= windowDays) khi đầu tháng (daysElapsed < ½ window)
- *         → tránh divide-by-tiny gây projection bùng nổ (vd ngày 1: L30/1×30 = ×30).
- *   - L90 (windowDays > days_in_month):
- *     pct = actual / L90 target (= tổng target 3 tháng gần nhất, lấy từ expectedAdsInstalls)
- *     projection = actual (không extrapolate vì window đã ≥ 1 tháng)
+ * Runrate tới cuối tháng, suy từ pace của window đang chọn.
+ *
+ *   - windowDays ≤ số ngày trong tháng (L3/L7/L14/L30):
+ *       pace       = actual / windowDays
+ *       projection = pace × days_in_month
+ *       pct        = projection / monthly_target
+ *   - windowDays > số ngày trong tháng (L90):
+ *       so trực tiếp actual với target của window, không extrapolate.
+ *
+ * ── Vì sao chia cho windowDays chứ không phải số ngày đã qua trong tháng ──
+ * Bản trước chia cho `min(windowDays, completedDaysThisMonth)` với ý "pace
+ * month-to-date". Sai, và sai lớn: `actual` là tổng của CẢ window, còn
+ * completedDays chỉ đếm phần window nằm trong tháng này. Ngày 08/09 với L30,
+ * window phủ ~10/08→08/09 nên 75 install rải trên 30 ngày; chia cho 7 là gán
+ * toàn bộ 75 vào 7 ngày của tháng 9 → pace 10.71/ngày thay vì 2.50, projection
+ * 321 thay vì 75, phóng đại 4.3 lần. Càng đầu tháng càng sai to.
+ *
+ * Muốn pace month-to-date thật thì phải truyền vào actual của 01/tháng→hôm nay,
+ * không phải actual của L30. Hàm này nhận actual theo window, nên đơn vị duy
+ * nhất đúng để chia là chính độ dài window đó.
+ *
  * Trả null nếu thiếu target hoặc input invalid.
  */
 export function runrateAdsToMonthEnd(
@@ -100,18 +110,12 @@ export function runrateAdsToMonthEnd(
     };
   }
 
-  // L3/L7/L14/L30 → month-to-date pace (per Trang's formula):
-  //   projection = actual / days_covered × days_in_month
-  //   pct        = projection / monthly_target
-  // days_covered = how many days the window's actual falls inside the current
-  // month = min(windowDays, completed_days_this_month). completed days excludes
-  // today's partial day (on the 13th → 12), floored at 1 for day-1 safety.
-  //   - L30 on the 13th → min(30, 12) = 12  → 60/12×31 (Trang's formula)
-  //   - L7  on the 13th → min(7, 12)  = 7   → true 7-day rate
+  // The window's own length is the period `actualInstalls` was measured over, so
+  // it is the only correct divisor. See the note above for what dividing by
+  // completed-days-this-month did instead.
   const monthlyTarget = ADS_MONTHLY_TARGETS[ymKey(asOf)];
   if (monthlyTarget === undefined || monthlyTarget <= 0) return null;
-  const completedDays = Math.max(asOf.getDate() - 1, 1);
-  const effectiveDays = Math.min(windowDays, completedDays);
+  const effectiveDays = windowDays;
   const projectedInstalls = (actualInstalls / effectiveDays) * days;
   return {
     pct: projectedInstalls / monthlyTarget,
