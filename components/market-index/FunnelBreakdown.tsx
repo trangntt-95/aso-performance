@@ -2,7 +2,9 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { FunnelBreakdown as FunnelData } from '@/lib/sheets/types';
+import type { WeightedStats } from '@/lib/market/revenueWeighting';
 import { formatNumber, formatPercent, formatPos } from '@/lib/utils/format';
+import { cn } from '@/lib/utils';
 
 function cellDelta(latest: number, prior: number, threshold = 0.1): 'sig-up' | 'sig-down' | null {
   if (!Number.isFinite(latest) || !Number.isFinite(prior)) return null;
@@ -50,9 +52,13 @@ function TimeCell({
 
 interface Props {
   funnel: FunnelData | undefined;
+  /** Trang đang cân theo doanh thu → ô Users/Install là chỉ số, không phải count. */
+  weighted?: boolean;
+  /** Coverage + số thô của window, để nói rõ chỉ số dựa trên bao nhiêu traffic. */
+  stats?: WeightedStats;
 }
 
-export function FunnelBreakdownCard({ funnel }: Props) {
+export function FunnelBreakdownCard({ funnel, weighted, stats }: Props) {
   if (!funnel) {
     return (
       <Card>
@@ -64,6 +70,18 @@ export function FunnelBreakdownCard({ funnel }: Props) {
   }
 
   const { organic, paid, total, window: w } = funnel;
+  // Funnel đã cân mang thêm coverage; funnel thô thì không.
+  const weightedFunnel =
+    'coverage' in funnel
+      ? (funnel as FunnelData & {
+          coverage: { organic: number; paid: number };
+          tabCoverage: { organic: number | null; paid: number | null };
+        })
+      : null;
+  const coverage = weightedFunnel?.coverage ?? null;
+  const tabCoverage = weightedFunnel?.tabCoverage ?? null;
+  const pctOf = (v: number | null | undefined) =>
+    v === null || v === undefined ? null : Math.round(v * 100);
 
   const usersTone = {
     org: cellDelta(organic.L.users, organic.P.users),
@@ -80,12 +98,22 @@ export function FunnelBreakdownCard({ funnel }: Props) {
     paid: cellDelta(paid.L.cr, paid.P.cr, 0.03),
   };
 
-  const numFmt = (n: number | null) => formatNumber(n ?? 0, { compact: true });
+  // Chỉ số cân ra số thập phân nhỏ (399 users × 0.48); compact biến nó thành
+  // "0.2K" và mất luôn chênh lệch giữa hai kỳ.
+  const numFmt = (n: number | null) =>
+    weighted ? (n ?? 0).toFixed(1) : formatNumber(n ?? 0, { compact: true });
 
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm">Funnel Breakdown · {w}</CardTitle>
+        <CardTitle className="text-sm">
+          Funnel Breakdown · {w}
+          {weighted && (
+            <span className="ml-2 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-normal text-indigo-700">
+              cân theo doanh thu
+            </span>
+          )}
+        </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
@@ -106,13 +134,13 @@ export function FunnelBreakdownCard({ funnel }: Props) {
             </thead>
             <tbody>
               <tr className="border-t">
-                <td className="px-3 py-2 font-medium">Users</td>
+                <td className="px-3 py-2 font-medium">{weighted ? 'Chỉ số Users' : 'Users'}</td>
                 <TimeCell prior={organic.P.users} latest={organic.L.users} tone={usersTone.org} fmt={numFmt} />
                 <TimeCell prior={paid.P.users} latest={paid.L.users} tone={usersTone.paid} fmt={numFmt} />
                 <TimeCell prior={total.P.users} latest={total.L.users} tone={usersTone.total} fmt={numFmt} />
               </tr>
               <tr className="border-t">
-                <td className="px-3 py-2 font-medium">Install</td>
+                <td className="px-3 py-2 font-medium">{weighted ? 'Chỉ số Install' : 'Install'}</td>
                 <TimeCell prior={organic.P.getapp} latest={organic.L.getapp} tone={getAppTone.org} fmt={numFmt} />
                 <TimeCell prior={paid.P.getapp} latest={paid.L.getapp} tone={getAppTone.paid} fmt={numFmt} />
                 <TimeCell prior={total.P.getapp} latest={total.L.getapp} tone={getAppTone.total} fmt={numFmt} />
@@ -135,6 +163,53 @@ export function FunnelBreakdownCard({ funnel }: Props) {
         <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
           Mỗi ô: <span className="text-slate-500">kỳ trước</span> → <span className="text-slate-700 font-medium">kỳ này</span> ·
           số kỳ này tô màu khi đổi ≥10% (CR 3pp) · xanh = tốt lên, đỏ = xấu đi (Avg Pos: nhỏ hơn = tốt hơn)
+          {weighted && (
+            <>
+              {' · '}
+              <b>Users/Install là chỉ số</b> (Σ users × share doanh thu của nước), còn <b>CR và Pos</b>{' '}
+              vẫn là tỷ số đọc được như thường.
+              {coverage && (
+                <>
+                  {' '}
+                  Nguồn <code className="text-[9px]">Country_{w}</code> — organic phủ{' '}
+                  <span className={cn(coverage.organic < 0.5 && 'font-medium text-amber-600')}>
+                    {Math.round(coverage.organic * 100)}%
+                  </span>
+                  , paid phủ{' '}
+                  <span className={cn(coverage.paid < 0.5 && 'font-medium text-amber-600')}>
+                    {Math.round(coverage.paid * 100)}%
+                  </span>{' '}
+                  users ở nước có doanh thu.
+                  {tabCoverage && pctOf(tabCoverage.organic) !== null && (
+                    <>
+                      {' '}
+                      Bản thân tab cũng không phủ hết: nó có{' '}
+                      <span
+                        className={cn(
+                          (tabCoverage.organic ?? 1) < 0.7 && 'font-medium text-amber-600',
+                        )}
+                      >
+                        {pctOf(tabCoverage.organic)}%
+                      </span>{' '}
+                      users organic của <code className="text-[9px]">All_{w}</code> — GA4 chỉ quy
+                      được một phần organic về nước, phần lớn dòng Country_Lx là paid.
+                    </>
+                  )}
+                </>
+              )}
+              {stats && stats.excluded.length > 0 && (
+                <>
+                  {' '}
+                  Loại {stats.excluded.length} nước chưa có doanh thu — nhiều users nhất:{' '}
+                  {stats.excluded
+                    .slice(0, 3)
+                    .map((e) => `${e.country} (${e.usersL}u)`)
+                    .join(', ')}
+                  .
+                </>
+              )}
+            </>
+          )}
         </div>
       </CardContent>
     </Card>

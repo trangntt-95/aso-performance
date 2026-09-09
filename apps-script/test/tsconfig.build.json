@@ -19,7 +19,7 @@
     "../../lib/market/categoryTaxonomy.ts",
     "../../lib/sheets/campName.ts",
     "../../lib/utils/keywordQuery.ts",
-    "../../lib/market/revenueWeighted.ts",
+    "../../lib/market/revenueWeighting.ts",
     "../../lib/sheets/campGeo.ts"
   ]
 }

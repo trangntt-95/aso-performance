@@ -19,11 +19,12 @@ export default function MarketIndexPage() {
   return (
     <div className="space-y-4">
       <PageIntro>
-        <b>Sức khoẻ thị trường</b> — verdict theo từng window do Apps Script tính sẵn trong tab{' '}
-        <code>Market_Index</code>, cộng <b>Dynamic basket</b> (top keyword theo Users L90, chính là
-        rổ dùng để tính weighted verdict) và các nước lõi theo doanh thu. → dùng để trả lời “thị
-        trường đang lên hay xuống” trước khi đi vào từng keyword. Toàn bộ số tính trong sheet,
-        trang này chỉ đọc.
+        <b>Sức khoẻ thị trường</b> — thị trường đang lên hay xuống, trước khi đi vào từng keyword.
+        Mặc định mọi bảng ở đây <b>cân theo doanh thu của nước</b>: nước sinh nhiều tiền thì nặng,
+        nước chưa có doanh thu không kéo verdict. Công tắc <b>Thô</b> ở đầu trang trả về cách đếm
+        cũ (mỗi user tính như nhau) để đối chiếu. Verdict/prose theo window vẫn do Apps Script viết
+        trong tab <code>Market_Index</code>; phần cân theo doanh thu tính tại trang này từ{' '}
+        <code>Country_Lx</code> và block doanh thu trong <code>PerGeo_CPI_Cap</code>.
       </PageIntro>
       <MarketIndexCards />
       <DataGapNote sources={SOURCES} />

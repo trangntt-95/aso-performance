@@ -6,7 +6,7 @@ Chạy từ **thư mục gốc repo** (đường dẫn `apps-script/...` là tư
 node apps-script/test/trend-dashboard.parse.test.mjs apps-script/test/fixture-by-categories-2026-08.json
 node apps-script/test/trend-dashboard.ui.test.mjs    apps-script/test/fixture-by-categories-2026-08.json
 node apps-script/test/paid-category-trend.test.mjs
-node apps-script/test/revenue-weighted.test.mjs
+node apps-script/test/revenue-weighting.test.mjs
 ```
 
 ## Vì sao có `build.mjs`

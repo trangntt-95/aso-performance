@@ -29,6 +29,14 @@ type Metric = 'users' | 'install';
 interface Props {
   data: SheetPayload | undefined;
   limit?: number;
+  /**
+   * Cách cân, do công tắc của cả trang Market Health quyết định.
+   *
+   * Trước đây card này có công tắc riêng. Bỏ đi vì hai công tắc cho cùng một
+   * lựa chọn thì sẽ có lúc chúng lệch nhau, và khi đó card cạnh nó đang cân
+   * theo doanh thu còn card này theo lưu lượng mà không có gì báo.
+   */
+  basis?: Basis;
 }
 
 const WINDOWS: OverviewWindow[] = ['L7', 'L30', 'L90'];
@@ -53,8 +61,8 @@ interface Row extends CountryWeight {
   valuePerInstall: number | null;
 }
 
-export function CoreMarketCountries({ data, limit = 15 }: Props) {
-  const [basis, setBasis] = useState<Basis>('revenue');
+export function CoreMarketCountries({ data, limit = 15, basis: basisProp }: Props) {
+  const basis: Basis = basisProp ?? 'revenue';
   const [metric, setMetric] = useState<Metric>('users');
   const [window, setWindow] = useState<OverviewWindow>('L30');
 
@@ -202,32 +210,6 @@ export function CoreMarketCountries({ data, limit = 15 }: Props) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            {hasRevenueRank && (
-              <div className="inline-flex overflow-hidden rounded-md border border-slate-200 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setBasis('revenue')}
-                  title="Xếp theo cột Country Rank trong PerGeo_CPI_Cap — thứ hạng doanh thu"
-                  className={cn(
-                    'px-2 py-0.5 font-medium transition',
-                    basis === 'revenue' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
-                  )}
-                >
-                  Doanh thu
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBasis('users')}
-                  title="Xếp theo lưu lượng GA4 — gồm cả nước không tạo doanh thu"
-                  className={cn(
-                    'border-l border-slate-200 px-2 py-0.5 font-medium transition',
-                    basis === 'users' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
-                  )}
-                >
-                  Lưu lượng
-                </button>
-              </div>
-            )}
             <div className="inline-flex overflow-hidden rounded-md border border-slate-200 text-[11px]">
               {WINDOWS.map((w) => (
                 <button
@@ -339,7 +321,7 @@ export function CoreMarketCountries({ data, limit = 15 }: Props) {
           ) : (
             <>
               Đang xếp theo <b>lưu lượng</b>, nên danh sách này gồm cả nước không tạo doanh thu (India, Vietnam,
-              Pakistan…). Đổi sang <b>Doanh thu</b> để lấy core market thật.
+              Pakistan…). Bấm <b>Cân doanh thu</b> ở đầu trang để lấy core market thật.
             </>
           )}
           {fellBack && ` Country_${window} chưa có data → dùng ${effWindow}.`} <b>Verdict</b> Market Health tính trên rổ{' '}
