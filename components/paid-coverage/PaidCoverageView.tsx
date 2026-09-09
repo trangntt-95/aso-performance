@@ -10,6 +10,7 @@ import { categoryStyle } from '@/lib/utils/colors';
 import { shouldShowTranslation } from '@/lib/utils/translation';
 import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
 import { KeywordLink } from '@/components/shared/KeywordLink';
+import { buildOrganicDiscovery, type DiscoveredTerm } from '@/lib/market/organicDiscovery';
 import { PaidStatusBadge } from '@/components/shared/PaidStatusBadge';
 import { SurfaceIcon } from '@/components/shared/SurfaceIcon';
 import { formatNumber } from '@/lib/utils/format';
@@ -65,6 +66,13 @@ interface CoverageRow extends PaidStatus {
   coverage: CountryCoverage | null;
   /** Per-country bid pressure: where the category pays above its Bid Rec. */
   bidPressure: BidPressureSummary | null;
+  /**
+   * Có giá trị khi term này KHÔNG có trong All_L*, chỉ tìm thấy ở snapshot ngày.
+   *
+   * Phải phân biệt được, vì số của nó không cùng nguồn với các dòng khác:
+   * cộng từ cột per-day của History_Daily, và không có dữ liệu theo nước.
+   */
+  discovered: DiscoveredTerm | null;
 }
 
 // Statuses this tab can filter by. 'manual' and 'negative' are deliberately
@@ -137,6 +145,27 @@ function buildRows(data: SheetPayload): CoverageRow[] {
   for (const r of (data.allL365 ?? []) as SnapshotRow[]) {
     const surface: SurfaceLabel = r.surface === 'search_ad' ? 'paid' : 'organic';
     addWin(ensure(r.searchTerm, r.english, r.category), 'l365', r.users, r.getApp, surface);
+  }
+
+  // Đuôi organic mà All_L* không có.
+  //
+  // Tab All_L30/All_L90 dừng đúng ở 500 dòng vì export cắt top 500, và dòng
+  // paid chiếm gần hết chỗ (458/500 ở L30) — nên phần bị cắt đầu tiên chính là
+  // đuôi organic, tức đúng phần "có người tìm mà mình chưa mua". Không bù vào
+  // thì danh sách chưa-bid của trang này chỉ còn 4 term, cả 4 đều là lỗi chính
+  // tả, và một danh sách rỗng như vậy đọc thành "hết cơ hội".
+  const discovery = buildOrganicDiscovery(data);
+  const discoveredBy = new Map<string, DiscoveredTerm>();
+  for (const t of discovery?.terms ?? []) {
+    const k = normKw(t.keyword);
+    if (accMap.has(k)) continue; // All_L* đã có thì để nguyên, đừng ghi đè
+    discoveredBy.set(k, t);
+    const a = ensure(t.keyword, '', 'Unknown');
+    a.surfaces.add('organic');
+    for (const win of ['l7', 'l30', 'l90', 'l365'] as Win[]) {
+      const w = t.wins[win];
+      if (w) addWin(a, win, w.users, w.installs, 'organic');
+    }
   }
 
   // Traffic countries per kw PER WINDOW: max users/country within each window's
@@ -213,6 +242,7 @@ function buildRows(data: SheetPayload): CoverageRow[] {
       countries,
       coverage,
       bidPressure,
+      discovered: discoveredBy.get(k) ?? null,
       ...status,
     });
   });
@@ -329,6 +359,9 @@ export function PaidCoverageView() {
     [rows, win],
   );
 
+  // Bao nhiêu dòng của trang này đến từ snapshot ngày thay vì All_L*.
+  const discoveredCount = useMemo(() => rows.filter((r) => r.discovered).length, [rows]);
+
   const { categories, countries } = useMemo(() => {
     const c = new Set<string>();
     const k = new Set<string>();
@@ -412,6 +445,20 @@ export function PaidCoverageView() {
       <div className="text-xs text-slate-500">
         Toàn bộ keyword từng có traffic (L7 ∪ L30 ∪ L90 ∪ L365, mọi category) × trạng thái bidding.
         Mặc định lọc <strong>❌ Not in Paid</strong> (gồm cả ⏸ paused camp) — đây là danh sách keyword chưa được bid.
+        {discoveredCount > 0 && (
+          <>
+            {' '}
+            Trong đó{' '}
+            <span className="rounded bg-sky-50 px-1 text-[10px] font-medium text-sky-700">snapshot</span>{' '}
+            là <b>{discoveredCount}</b> search term organic chỉ có trong{' '}
+            <code className="text-[10px]">History_Daily</code>, không có trong All_L* — vì tab{' '}
+            <code className="text-[10px]">All_L30</code>/<code className="text-[10px]">All_L90</code> dừng
+            đúng ở 500 dòng (export cắt top 500) và dòng paid chiếm gần hết chỗ, nên phần bị cắt đầu tiên
+            là đuôi organic. Volume của chúng nhỏ (1–6 users) — đó là bản chất của đuôi, không phải lỗi
+            đo — nhưng là truy vấn thật, và là chỗ duy nhất cho biết người ta tìm gì mà mình chưa có mặt.
+            Users cộng từ cột per-day, và chúng <b>không có dữ liệu theo nước</b>.
+          </>
+        )}
       </div>
 
       {/* Filters */}
@@ -581,6 +628,20 @@ export function PaidCoverageView() {
                           <SurfaceIcon key={sf} surface={sf} />
                         ))}
                         <KeywordLink keyword={row.keyword} className="font-medium text-sm truncate block" />
+                        {row.discovered && (
+                          <span
+                            className="shrink-0 rounded bg-sky-50 px-1 text-[9px] font-medium text-sky-700"
+                            title={
+                              `Chỉ thấy trong snapshot ngày (${row.discovered.from}), không có trong All_L* — ` +
+                              `tab All_L30/All_L90 bị cắt ở 500 dòng nên đuôi organic không tới đây. ` +
+                              `Users cộng từ cột per-day${row.discovered.rollingUsersMax !== null ? '; term này chỉ có rolling L7D, đỉnh ' + row.discovered.rollingUsersMax + ' users' : ''}. ` +
+                              `Thấy từ ${row.discovered.firstSeen ?? '—'} tới ${row.discovered.lastSeen ?? '—'}` +
+                              (row.discovered.bestPos !== null ? ` · vị trí tốt nhất ${row.discovered.bestPos.toFixed(1)}` : '')
+                            }
+                          >
+                            snapshot
+                          </span>
+                        )}
                       </div>
                       {showTranslation && (
                         <div className="text-[10px] text-slate-500 italic mt-0.5 truncate" title={row.english}>
