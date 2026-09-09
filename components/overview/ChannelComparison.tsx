@@ -1,6 +1,6 @@
 'use client';
 
-import { formatNumber, formatPercent } from '@/lib/utils/format';
+import { formatDMYRange, formatNumber, formatPercent } from '@/lib/utils/format';
 import { FX_NOTE } from '@/lib/config/fx';
 import type { ChannelComparison as Comparison } from '@/lib/market/crossChannel';
 import { cn } from '@/lib/utils';
@@ -95,7 +95,7 @@ function RangeLine({ data }: { data: Comparison }) {
 
   const title = mismatch
     ? `Filter đang chọn ${data.requestedFrom} → ${data.requestedTo}, nhưng bảng này chỉ so được ` +
-      `${data.from} → ${data.to}.\n\n` +
+      `${formatDMYRange(data.from, data.to)}.\n\n` +
       `Lý do: chỉ những ngày mà CẢ HAI kênh đều có dữ liệu mới được tính, để không kênh nào bị ` +
       `tính những ngày kênh kia chưa thấy. Kỳ so sánh cũng khớp ${data.days} ngày thật chứ không ` +
       `phải ${data.requestedDays} — so ${data.days} ngày với baseline ${data.requestedDays} ngày sẽ ` +
@@ -113,12 +113,12 @@ function RangeLine({ data }: { data: Comparison }) {
         )}
         title={title}
       >
-        {data.from} → {data.to}
+        {formatDMYRange(data.from, data.to)}
       </span>
       {mismatch && (
         <>
           <span className="cursor-help font-medium text-rose-600" title={title}>
-            ≠ filter {data.requestedFrom} → {data.requestedTo}
+            ≠ filter {formatDMYRange(data.requestedFrom, data.requestedTo)}
           </span>
           {reason && <span className="text-slate-500">· {reason}</span>}
         </>

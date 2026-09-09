@@ -2,7 +2,7 @@
 
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react';
 import { Sparkline } from '@/components/shared/Sparkline';
-import { formatNumber } from '@/lib/utils/format';
+import { formatDMYRange, formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 import type { CampBidImpact } from '@/lib/market/campBidImpact';
 
@@ -147,7 +147,7 @@ export function bidImpactTitle(
   const it = impTone(impact.impDelta, direction);
   return [
     header,
-    `${b.days} ngày trước note (${b.from} → ${b.to}) vs ${a.days} ngày sau (${a.from} → ${a.to})`,
+    `${b.days} ngày trước note (${formatDMYRange(b.from, b.to)}) vs ${a.days} ngày sau (${formatDMYRange(a.from, a.to)})`,
     '',
     `Imp/ngày ${Math.round(b.impPerDay)} → ${Math.round(a.impPerDay)}  (${pct(impact.impDelta)})`,
     `CPC      ${money(b.cpc)} → ${money(a.cpc)}  (${pct(impact.cpcDelta)})`,

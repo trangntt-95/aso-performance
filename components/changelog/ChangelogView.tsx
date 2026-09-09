@@ -14,6 +14,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { DateFieldDMY } from '@/components/shared/DateFieldDMY';
+import { formatDMY, formatDMYTime } from '@/lib/utils/format';
 
 // What was changed, and what happened after.
 //
@@ -110,13 +112,7 @@ export function ChangelogView() {
         <div className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1">
             <span className="text-[10px] uppercase tracking-wide text-slate-500">Ngày thay đổi</span>
-            <input
-              type="date"
-              value={date}
-              max={todayIso()}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-7 rounded border border-slate-200 px-2 text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
+            <DateFieldDMY value={date} max={todayIso()} onChange={setDate} className="h-7" />
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-[10px] uppercase tracking-wide text-slate-500">Phạm vi</span>
@@ -205,7 +201,7 @@ export function ChangelogView() {
               key={e.id}
               className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
             >
-              <span className="w-20 shrink-0 font-mono text-[11px] text-slate-500">{e.date}</span>
+              <span className="w-20 shrink-0 font-mono text-[11px] text-slate-500">{formatDMY(e.date)}</span>
               <span
                 className={cn(
                   'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
@@ -219,7 +215,7 @@ export function ChangelogView() {
               {e.writtenAt && (
                 <span
                   className="shrink-0 cursor-help text-[9px] text-slate-300"
-                  title={`Ghi lúc ${new Date(e.writtenAt).toLocaleString('vi-VN')}`}
+                  title={`Ghi lúc ${formatDMYTime(e.writtenAt)}`}
                 >
                   ✎
                 </span>

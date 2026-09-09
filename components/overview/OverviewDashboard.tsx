@@ -44,13 +44,14 @@ import { TopCountriesChart } from './TopCountriesChart';
 import { CategoryShareDonut } from './CategoryShareDonut';
 import { CategoryCpiStrip } from './CategoryCpiStrip';
 import { DataGapNote } from '@/components/shared/DataGapNote';
+import { DateFieldDMY } from '@/components/shared/DateFieldDMY';
 import { SheetSources } from '@/components/shared/SheetSources';
 import type { DataSourceKey } from '@/lib/market/dataGaps';
 import { TopVolumeMovers } from './TopVolumeMovers';
 import { TopContributors } from './TopContributors';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { formatNumber, formatPercent, composeVerdict, verdictBadgeStyle } from '@/lib/utils/format';
+import { composeVerdict, formatDMY, formatDMYRange, formatNumber, formatPercent, verdictBadgeStyle } from '@/lib/utils/format';
 import { useCategoryDetailStore } from '@/lib/store/categoryDetailStore';
 import { useDashboardContext } from '@/lib/store/dashboardContextStore';
 import { useNotesStore } from '@/lib/store/notesStore';
@@ -374,7 +375,11 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
   // Note appended to window-based sections that can't be date-scoped.
   const winNote = inDateMode ? ` · ⚠️ theo window ${window}, chưa lọc ngày` : '';
-  const dateLabel = dateRange ? (isSingleDay ? dateRange.from : `${dateRange.from} → ${dateRange.to}`) : '';
+  const dateLabel = dateRange
+    ? isSingleDay
+      ? formatDMY(dateRange.from)
+      : formatDMYRange(dateRange.from, dateRange.to)
+    : '';
 
   // Paid channels side by side. Returns null until both sources have data, so
   // the section simply doesn't render on a dashboard without Google Ads wired up.
@@ -737,7 +742,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                 <button
                   type="button"
                   onClick={applyThisMonth}
-                  title={`Từ ngày 1 của tháng tới ngày mới nhất có data (${thisMonthRange.from} → ${thisMonthRange.to})`}
+                  title={`Từ ngày 1 của tháng tới ngày mới nhất có data (${formatDMYRange(thisMonthRange.from, thisMonthRange.to)})`}
                   className={cn(
                     'rounded border px-1.5 py-0.5 font-medium transition',
                     isThisMonth
@@ -748,31 +753,29 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                   Tháng này
                 </button>
               )}
-              <input
-                type="date"
+              <DateFieldDMY
                 value={rangeFrom}
                 min={minDate}
                 max={maxDate}
-                onChange={(e) => {
-                  const v = e.target.value;
+                onChange={(v) => {
                   setRangeFrom(v);
                   applyRange(v, rangeTo);
                 }}
-                className="rounded border border-slate-200 px-1 py-0.5 text-[11px] text-slate-700"
-                title={minDate ? `Có data từ ${minDate} đến ${maxDate}` : 'Chưa có data per-ngày'}
+                title={
+                  minDate
+                    ? `Có data từ ${formatDMY(minDate)} đến ${formatDMY(maxDate)}`
+                    : 'Chưa có data per-ngày'
+                }
               />
               <span className="text-slate-400">→</span>
-              <input
-                type="date"
+              <DateFieldDMY
                 value={rangeTo}
                 min={rangeFrom || minDate}
                 max={maxDate}
-                onChange={(e) => {
-                  const v = e.target.value;
+                onChange={(v) => {
                   setRangeTo(v);
                   applyRange(rangeFrom, v);
                 }}
-                className="rounded border border-slate-200 px-1 py-0.5 text-[11px] text-slate-700"
               />
               {dateRange && (
                 <button

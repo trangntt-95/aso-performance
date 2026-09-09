@@ -16,6 +16,7 @@ import { AlertCircle, LayoutGrid } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { formatDMYRange } from '@/lib/utils/format';
 import {
   DEFAULT_ON,
   LABEL_GAP,
@@ -514,7 +515,7 @@ export function PaidCategoryBoardView() {
         )}
         {board?.from && board?.to && (
           <>
-            {' '}· <span className="font-mono">{board.from} → {board.to}</span>
+            {' '}· <span className="font-mono">{formatDMYRange(board.from, board.to)}</span>
           </>
         )}{' '}
         · {cube.periods.length} mốc · {cube.dataPoints} điểm

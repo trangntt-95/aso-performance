@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sparkline } from '@/components/shared/Sparkline';
-import { formatNumber, formatPercent } from '@/lib/utils/format';
+import { formatDMYRange, formatNumber, formatPercent } from '@/lib/utils/format';
 import {
   buildGoogleAdsReport,
   VERDICT_META,
@@ -182,7 +182,7 @@ export function GoogleAdsView() {
         <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
         <div className="space-y-0.5">
           <div>
-            <b>Google Ads</b> — {report.from} → {report.to} ({report.days} ngày) · tài khoản{' '}
+            <b>Google Ads</b> — {formatDMYRange(report.from, report.to)} ({report.days} ngày) · tài khoản{' '}
             <b>{report.account || '—'}</b> · tiền tệ <b>{report.currency || '—'}</b>
           </div>
           <div className="text-[11px] text-indigo-800">

@@ -5,6 +5,7 @@ import { AlertTriangle, ChevronDown } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { buildDataGapReport, type DataSourceKey, type SourceHealth } from '@/lib/market/dataGaps';
 import { cn } from '@/lib/utils';
+import { formatDMY, formatDMYRange } from '@/lib/utils/format';
 
 // A footnote at the very bottom of a screen: what is missing from the data that
 // screen was drawn from.
@@ -16,8 +17,11 @@ import { cn } from '@/lib/utils';
 
 /** Up to `max` dates, then "+N nữa". A feed can be short by dozens of days. */
 function brief(items: string[], max = 6): string {
-  if (items.length <= max) return items.join(', ');
-  return `${items.slice(0, max).join(', ')} +${items.length - max} nữa`;
+  // Dates are shown dd/mm/yyyy like everywhere else; anything that isn't a date
+  // (a tab name, for instance) passes through untouched.
+  const shown = items.map((x) => (/^\d{4}-\d{2}-\d{2}$/.test(x) ? formatDMY(x) : x));
+  if (shown.length <= max) return shown.join(', ');
+  return `${shown.slice(0, max).join(', ')} +${shown.length - max} nữa`;
 }
 
 function line(s: SourceHealth): string {
@@ -31,7 +35,7 @@ function line(s: SourceHealth): string {
   // one window still answers every question through the fallback.
   if (s.emptyMembers.length > 0) bits.push(`(${s.emptyMembers.join(', ')} không có)`);
   if (s.missing.length > 0) bits.push(`thiếu ${s.missing.length} ngày`);
-  if (s.lagWorthNoting) bits.push(`chậm ${s.lagDays} ngày (mới nhất ${s.to})`);
+  if (s.lagWorthNoting) bits.push(`chậm ${s.lagDays} ngày (mới nhất ${formatDMY(s.to)})`);
   if (s.unreadableRows > 0) bits.push(`${s.unreadableRows} dòng không đọc được ngày`);
   return `${s.label}: ${bits.join(' · ')}`;
 }
@@ -49,7 +53,7 @@ function Group({ title, note, items }: { title: string; note: string; items: Sou
             <>
               <span className="text-slate-500">
                 {' '}
-                · phủ {s.from} → {s.to} ({s.days} ngày)
+                · phủ {formatDMYRange(s.from, s.to)} ({s.days} ngày)
               </span>
               {s.missing.length > 0 && (
                 <div className="font-mono text-[9px] text-slate-500">{brief(s.missing)}</div>
