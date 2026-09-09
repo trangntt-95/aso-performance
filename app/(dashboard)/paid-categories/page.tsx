@@ -19,6 +19,10 @@ export default function PaidCategoriesPage() {
         chỗ tra số của một ngày cụ thể — cái đó ở <b>Camp Health</b>.
       </PageIntro>
       <PaidCategoryBoardView />
+      {/* Không dùng SheetSources ở đây: PaidCategoryBoardView đã in dòng nguồn
+          riêng, và nó chính xác hơn — nêu đúng tên tab 'By categories' cùng
+          link, trong khi SOURCES của trang khai 'shopifyDaily' (export theo
+          ngày), tức là một tab khác trong cùng spreadsheet. */}
       <DataGapNote sources={SOURCES} />
     </div>
   );

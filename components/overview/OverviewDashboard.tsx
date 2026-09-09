@@ -1254,7 +1254,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       <DataGapNote sources={OVERVIEW_SOURCES} />
 
       {/* And, smaller still, where that data lives. */}
-      <SheetSources />
+      <SheetSources sources={OVERVIEW_SOURCES} />
     </div>
   );
 }

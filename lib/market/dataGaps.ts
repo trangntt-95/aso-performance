@@ -72,9 +72,21 @@ export type DataSourceKey =
   | 'allTabs'
   | 'countryTabs';
 
+/**
+ * Which spreadsheet a source physically lives in.
+ *
+ * Cần cho footer "Nguồn" ở mỗi tab: ba spreadsheet khác nhau, và nói "nguồn là
+ * Shopify_daily" mà link sang sheet ASO thì người đọc mở ra không thấy tab đó.
+ * Lưu ý 'Shopify_daily' (tổng theo camp) là TAB trong sheet ASO, còn export
+ * theo ngày mới nằm ở spreadsheet Shopify Ads — hai thứ tên gần giống nhau.
+ */
+export type SheetId = 'aso' | 'shopify' | 'gads';
+
 interface SourceDef {
   /** The tab / export name as the user knows it in the sheet. */
   label: string;
+  /** Spreadsheet chứa tab này. */
+  sheet: SheetId;
   /** What shrinks or falls back when this source is short. */
   drives: string;
   kind: 'dated' | 'tab' | 'tabset';
@@ -87,30 +99,35 @@ interface SourceDef {
 const SOURCES: Record<DataSourceKey, SourceDef> = {
   historyDaily: {
     label: 'History_Daily',
+    sheet: 'aso',
     drives: 'biểu đồ theo ngày · chế độ chọn ngày',
     kind: 'dated',
     dates: (d) => (d.historyDaily ?? []).map((r) => r.snapshotDate),
   },
   historyDailyCountry: {
     label: 'History_Daily_Country',
+    sheet: 'aso',
     drives: 'tách theo nước ở chế độ chọn ngày',
     kind: 'dated',
     dates: (d) => (d.historyDailyCountry ?? []).map((r) => r.snapshotDate),
   },
   history: {
     label: 'History',
+    sheet: 'aso',
     drives: 'snapshot L7D theo keyword',
     kind: 'dated',
     dates: (d) => (d.history ?? []).map((r) => r.snapshotDate),
   },
   shopifyDaily: {
     label: 'Shopify Ads (per-day)',
+    sheet: 'shopify',
     drives: 'chi phí App Store Ads theo ngày · kênh trả phí · camp health · chi phí theo category',
     kind: 'dated',
     dates: (d) => (d.shopifyDaily ?? []).map((r) => r.date),
   },
   googleAds: {
     label: 'Google Ads',
+    sheet: 'gads',
     drives: 'trang Google Ads · kênh trả phí',
     kind: 'dated',
     dates: (d) => (d.googleAds?.campaigns ?? []).map((r) => r.date),
@@ -118,60 +135,70 @@ const SOURCES: Record<DataSourceKey, SourceDef> = {
 
   shopifyCamps: {
     label: 'Shopify_daily',
+    sheet: 'aso',
     drives: 'tổng chi theo camp — overbid · chi phí theo category',
     kind: 'tab',
     rows: (d) => d.shopifyCamps ?? [],
   },
   bidCap: {
     label: 'Max bid cap',
+    sheet: 'aso',
     drives: 'bid đề xuất · mốc so cho overbid · trần CPI theo category',
     kind: 'tab',
     rows: (d) => d.bidCap ?? [],
   },
   perGeoCpiCap: {
     label: 'PerGeo_CPI_Cap',
+    sheet: 'aso',
     drives: 'trần CPI theo nước',
     kind: 'tab',
     rows: (d) => d.perGeoCpiCap ?? [],
   },
   perGeoRevenue: {
     label: 'PerGeo_CPI_Cap (block doanh thu)',
+    sheet: 'aso',
     drives: 'giá trị 1 install theo nước',
     kind: 'tab',
     rows: (d) => d.perGeoRevenue ?? [],
   },
   marketTiers: {
     label: 'PerGeo_CPI_Cap (block tier)',
+    sheet: 'aso',
     drives: 'tier của nước · trần bid theo tier',
     kind: 'tab',
     rows: (d) => d.marketTiers ?? [],
   },
   masterKwLookup: {
     label: 'Master KW Lookup',
+    sheet: 'aso',
     drives: 'keyword đang bid · category của camp',
     kind: 'tab',
     rows: (d) => d.masterKwLookup ?? [],
   },
   campLinks: {
     label: 'Camp_Links',
+    sheet: 'aso',
     drives: 'URL camp · Geo target · category của camp',
     kind: 'tab',
     rows: (d) => d.campLinks ?? [],
   },
   pausedKw: {
     label: 'Paused_camp',
+    sheet: 'aso',
     drives: 'nhận biết camp đã tắt — thiếu nó thì camp đã pause vẫn hiện như đang chạy',
     kind: 'tab',
     rows: (d) => d.pausedKw ?? [],
   },
   marketIndex: {
     label: 'Market_Index',
+    sheet: 'aso',
     drives: 'market health · dynamic basket',
     kind: 'tab',
     rows: (d) => d.marketIndex?.summary ?? [],
   },
   actionQueue: {
     label: 'Action_Queue',
+    sheet: 'aso',
     drives: 'việc cần làm',
     kind: 'tab',
     rows: (d) => d.actionQueue ?? [],
@@ -179,6 +206,7 @@ const SOURCES: Record<DataSourceKey, SourceDef> = {
 
   allTabs: {
     label: 'All_L* (theo keyword)',
+    sheet: 'aso',
     drives: 'nhu cầu theo keyword ở mọi window',
     kind: 'tabset',
     members: (d) => [
@@ -192,6 +220,7 @@ const SOURCES: Record<DataSourceKey, SourceDef> = {
   },
   countryTabs: {
     label: 'Country_L* (theo nước)',
+    sheet: 'aso',
     drives: 'mọi khối tách theo nước',
     kind: 'tabset',
     members: (d) => [
@@ -264,6 +293,30 @@ const blank = (key: DataSourceKey, def: SourceDef): SourceHealth => ({
   empty: false,
   emptyMembers: [],
 });
+
+/**
+ * Source của một trang, nhóm theo spreadsheet — cho footer "Nguồn".
+ *
+ * Trả về đúng thứ tự khai báo trong trang, bỏ trùng: một trang đọc ba block
+ * khác nhau của PerGeo_CPI_Cap thì footer chỉ cần kể tên tab một lần cho mỗi
+ * nhãn, chứ không phải ba lần.
+ */
+export function sourcesBySheet(
+  keys: readonly DataSourceKey[],
+): { sheet: SheetId; labels: string[] }[] {
+  const bySheet = new Map<SheetId, string[]>();
+  for (const k of keys) {
+    const def = SOURCES[k];
+    if (!def) continue;
+    const cur = bySheet.get(def.sheet) ?? [];
+    if (!cur.includes(def.label)) cur.push(def.label);
+    bySheet.set(def.sheet, cur);
+  }
+  const order: SheetId[] = ['aso', 'shopify', 'gads'];
+  return order
+    .filter((s) => bySheet.has(s))
+    .map((s) => ({ sheet: s, labels: bySheet.get(s) as string[] }));
+}
 
 export function buildDataGapReport(
   data: SheetPayload | null | undefined,

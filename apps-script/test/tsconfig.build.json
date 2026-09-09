@@ -20,6 +20,7 @@
     "../../lib/sheets/campName.ts",
     "../../lib/utils/keywordQuery.ts",
     "../../lib/market/countryWeighting.ts",
-    "../../lib/sheets/campGeo.ts"
+    "../../lib/sheets/campGeo.ts",
+    "../../lib/market/dataGaps.ts"
   ]
 }

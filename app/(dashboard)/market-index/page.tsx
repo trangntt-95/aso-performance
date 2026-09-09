@@ -1,5 +1,6 @@
 import { MarketIndexCards } from '@/components/market-index/MarketIndexCards';
 import { DataGapNote } from '@/components/shared/DataGapNote';
+import { SheetSources } from '@/components/shared/SheetSources';
 import { PageIntro } from '@/components/shared/PageIntro';
 import type { DataSourceKey } from '@/lib/market/dataGaps';
 
@@ -30,6 +31,7 @@ export default function MarketIndexPage() {
       </PageIntro>
       <MarketIndexCards />
       <DataGapNote sources={SOURCES} />
+      <SheetSources sources={SOURCES} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { InstallOriginView } from '@/components/install-origin/InstallOriginView';
 import { DataGapNote } from '@/components/shared/DataGapNote';
+import { SheetSources } from '@/components/shared/SheetSources';
 import type { DataSourceKey } from '@/lib/market/dataGaps';
 
 // What this screen reads, for the missing-data footnote at the bottom. Listed
@@ -15,6 +16,7 @@ export default function InstallOriginPage() {
     <div className="space-y-4">
       <InstallOriginView />
       <DataGapNote sources={SOURCES} />
+      <SheetSources sources={SOURCES} />
     </div>
   );
 }

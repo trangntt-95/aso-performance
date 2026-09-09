@@ -1,5 +1,6 @@
 import { BidCapView } from '@/components/bid-cap/BidCapView';
 import { DataGapNote } from '@/components/shared/DataGapNote';
+import { SheetSources } from '@/components/shared/SheetSources';
 import { PageIntro } from '@/components/shared/PageIntro';
 import type { DataSourceKey } from '@/lib/market/dataGaps';
 
@@ -34,6 +35,7 @@ export default function BidCapPage() {
       </PageIntro>
       <BidCapView />
       <DataGapNote sources={SOURCES} />
+      <SheetSources sources={SOURCES} />
     </div>
   );
 }

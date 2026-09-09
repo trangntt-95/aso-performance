@@ -1,5 +1,6 @@
 import { CampHealthView } from '@/components/camp-health/CampHealthView';
 import { DataGapNote } from '@/components/shared/DataGapNote';
+import { SheetSources } from '@/components/shared/SheetSources';
 import type { DataSourceKey } from '@/lib/market/dataGaps';
 
 // What this screen reads, for the missing-data footnote at the bottom. Listed
@@ -18,6 +19,7 @@ export default function CampHealthPage() {
     <div className="space-y-4">
       <CampHealthView />
       <DataGapNote sources={SOURCES} />
+      <SheetSources sources={SOURCES} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { OverbidView } from '@/components/overbid/OverbidView';
 import { DataGapNote } from '@/components/shared/DataGapNote';
+import { SheetSources } from '@/components/shared/SheetSources';
 import type { DataSourceKey } from '@/lib/market/dataGaps';
 
 // What this screen reads, for the missing-data footnote at the bottom. Listed
@@ -18,6 +19,7 @@ export default function OverbidCampsPage() {
     <div className="space-y-4">
       <OverbidView />
       <DataGapNote sources={SOURCES} />
+      <SheetSources sources={SOURCES} />
     </div>
   );
 }

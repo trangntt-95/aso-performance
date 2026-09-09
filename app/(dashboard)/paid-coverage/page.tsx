@@ -1,5 +1,6 @@
 import { PaidCoverageView } from '@/components/paid-coverage/PaidCoverageView';
 import { DataGapNote } from '@/components/shared/DataGapNote';
+import { SheetSources } from '@/components/shared/SheetSources';
 import { PageIntro } from '@/components/shared/PageIntro';
 import type { DataSourceKey } from '@/lib/market/dataGaps';
 
@@ -27,6 +28,7 @@ export default function PaidCoveragePage() {
       </PageIntro>
       <PaidCoverageView />
       <DataGapNote sources={SOURCES} />
+      <SheetSources sources={SOURCES} />
     </div>
   );
 }

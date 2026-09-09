@@ -1,5 +1,6 @@
 import { CategoryDrilldown } from '@/components/categories/CategoryDrilldown';
 import { DataGapNote } from '@/components/shared/DataGapNote';
+import { SheetSources } from '@/components/shared/SheetSources';
 import { PageIntro } from '@/components/shared/PageIntro';
 import type { DataSourceKey } from '@/lib/market/dataGaps';
 
@@ -21,6 +22,7 @@ export default function CategoriesPage() {
       </PageIntro>
       <CategoryDrilldown />
       <DataGapNote sources={SOURCES} />
+      <SheetSources sources={SOURCES} />
     </div>
   );
 }

@@ -526,7 +526,7 @@ export interface SheetPayload {
   /** The spreadsheets behind this payload, so a screen can link its own source
    *  instead of describing it in prose. Only the configured ones appear. A
    *  spreadsheet id is a document the owner already has open, not a credential. */
-  sheetSources: { label: string; url: string }[];
+  sheetSources: { id: 'aso' | 'shopify' | 'gads'; label: string; url: string }[];
   fetchedAt: string;
 }
 

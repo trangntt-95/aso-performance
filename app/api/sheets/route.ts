@@ -37,16 +37,19 @@ export const revalidate = 600;
 export const dynamic = 'force-dynamic';
 
 /** Configured spreadsheet ids → links, skipping the ones that aren't set. */
-function sheetSources(): { label: string; url: string }[] {
-  const of = (label: string, id: string | undefined) => {
-    const t = id?.trim();
-    return t ? { label, url: `https://docs.google.com/spreadsheets/d/${t}/edit` } : null;
+type SheetSource = { id: 'aso' | 'shopify' | 'gads'; label: string; url: string };
+
+/** Configured spreadsheet ids → links, skipping the ones that aren't set. */
+function sheetSources(): SheetSource[] {
+  const of = (id: SheetSource['id'], label: string, sheetId: string | undefined) => {
+    const t = sheetId?.trim();
+    return t ? { id, label, url: `https://docs.google.com/spreadsheets/d/${t}/edit` } : null;
   };
   return [
-    of('ASO (sheet chính)', process.env.GOOGLE_SHEET_ID),
-    of('Shopify Ads', process.env.GOOGLE_SHEET_ID_SHOPIFY),
-    of('Google Ads', process.env.GOOGLE_SHEET_ID_GADS),
-  ].filter((x): x is { label: string; url: string } => x !== null);
+    of('aso', 'ASO (sheet chính)', process.env.GOOGLE_SHEET_ID),
+    of('shopify', 'Shopify Ads', process.env.GOOGLE_SHEET_ID_SHOPIFY),
+    of('gads', 'Google Ads', process.env.GOOGLE_SHEET_ID_GADS),
+  ].filter((x): x is SheetSource => x !== null);
 }
 
 export async function GET() {
