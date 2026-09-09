@@ -1,13 +1,25 @@
-# Acceptance tests — Trend Dashboard
+# Acceptance tests
 
 Chạy từ **thư mục gốc repo** (đường dẫn `apps-script/...` là tương đối):
 
 ```
 node apps-script/test/trend-dashboard.parse.test.mjs apps-script/test/fixture-by-categories-2026-08.json
 node apps-script/test/trend-dashboard.ui.test.mjs    apps-script/test/fixture-by-categories-2026-08.json
+node apps-script/test/paid-category-trend.test.mjs
+node apps-script/test/revenue-weighted.test.mjs
 ```
 
-Hai file test nạp thẳng `trend-dashboard.gs` và khối `<script>` của
+## Vì sao có `build.mjs`
+
+Hai file test cuối chạy trên module TypeScript của dashboard, nên phải biên dịch
+trước. `tsc` hiểu alias `@/` khi check type nhưng khi emit vẫn giữ nguyên
+`require("@/lib/...")`, và Node không biết alias đó — webpack của Next.js phân
+giải hộ nên module chạy tốt trên web mà vẫn không nạp được trong test.
+`build.mjs` chạy `tsc` rồi đổi các alias đó thành đường dẫn tương đối. Module
+nào bị import gián tiếp cũng phải nằm trong `include` của
+`tsconfig.build.json`, nếu không sẽ thiếu file khi nạp.
+
+Hai file `trend-dashboard.*` nạp thẳng `trend-dashboard.gs` và khối `<script>` của
 `trend-dashboard.html` rồi eval — **code được test đúng là code chạy thật**, không
 phải một bản copy dễ lệch. `SpreadsheetApp`, DOM và Chart.js được stub vì không
 hàm nào trong phần đang test cần tới chúng.

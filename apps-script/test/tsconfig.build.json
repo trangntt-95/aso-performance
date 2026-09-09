@@ -17,6 +17,9 @@
     "../../lib/market/paidCategoryTrend.ts",
     "../../lib/sheets/paidCategoryBoard.ts",
     "../../lib/market/categoryTaxonomy.ts",
-    "../../lib/sheets/campName.ts"
+    "../../lib/sheets/campName.ts",
+    "../../lib/utils/keywordQuery.ts",
+    "../../lib/market/revenueWeighted.ts",
+    "../../lib/sheets/campGeo.ts"
   ]
 }
