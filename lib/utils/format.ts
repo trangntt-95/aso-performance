@@ -130,40 +130,53 @@ export function formatDateTime(iso: string): string {
 
 // ── Dates ─────────────────────────────────────────────────────────────────
 //
-// Every date shown to the reader goes through here, in dd/mm/yyyy. Two reasons
-// it is worth centralising rather than formatting at each call site:
+// Every date shown to the reader goes through here, as '08 Sep 2026'.
 //
-// 1. dd/mm and mm/dd are indistinguishable for the first twelve days of a month,
-//    so a screen that mixes conventions is not just inconsistent, it is
-//    ambiguous — 03/09 could be March or September and the reader cannot tell.
-// 2. The sheets speak ISO (2026-09-08) and the UI speaks dd/mm/yyyy. Converting
-//    at the boundary keeps the raw value intact for sorting and comparison,
-//    which is why nothing upstream of the render should be reformatted.
+// The month is spelled, not numbered, and that is the whole point: 08/09/2026
+// still requires the reader to know whether the convention is dd/mm or mm/dd,
+// and for the first twelve days of any month the two are indistinguishable —
+// 03/09 could be March or September and nothing on screen resolves it. A spelled
+// month cannot be misread by anyone, including someone who opens the dashboard
+// expecting the American order.
 //
-// ISO strings stay ISO in tooltips that quote a sheet cell verbatim — there the
-// point is to match what is in the sheet.
+// It also removes a dependency this app could not control: `<input type="date">`
+// renders in the OS locale, and the picker popup still does. Naming the month
+// means the two never contradict each other.
+//
+// ISO stays ISO in state, in sorting, and in export filenames — only the display
+// is formatted. A display format leaking into a comparison would break both.
 
-/** ISO 'YYYY-MM-DD' (or anything Date accepts) → 'dd/mm/yyyy'. */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Month index (0-11) → 'Sep'. Exported so an input can parse what it prints. */
+export const MONTH_ABBR = MONTHS;
+
+/** Anything date-like → '08 Sep 2026'. */
 export function formatDMY(v: string | number | Date | null | undefined): string {
   if (v === null || v === undefined || v === '') return '—';
-  // Handle 'YYYY-MM-DD' without going through Date, so a date-only string is not
+  // A 'YYYY-MM-DD' string is handled without Date so a date-only value is not
   // shifted by the viewer's timezone — the sheet means that calendar day.
   if (typeof v === 'string') {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v.trim());
-    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    if (m) {
+      const mi = Number(m[2]) - 1;
+      if (mi >= 0 && mi < 12) return `${m[3]} ${MONTHS[mi]} ${m[1]}`;
+    }
   }
   const d = v instanceof Date ? v : new Date(v);
   if (Number.isNaN(d.getTime())) return String(v);
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  return `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-/** dd/mm, for axis ticks and other places where the year is already established. */
+/** '08 Sep' — for axis ticks, where the year is already established. */
 export function formatDM(v: string | number | Date | null | undefined): string {
   const full = formatDMY(v);
-  return full === '—' ? full : full.slice(0, 5);
+  if (full === '—') return full;
+  const parts = full.split(' ');
+  return parts.length === 3 ? `${parts[0]} ${parts[1]}` : full;
 }
 
-/** 'dd/mm/yyyy HH:mm' — for "read at" stamps. */
+/** '08 Sep 2026 16:05' — for "read at" stamps. */
 export function formatDMYTime(v: string | number | Date | null | undefined): string {
   if (v === null || v === undefined || v === '') return '—';
   const d = v instanceof Date ? v : new Date(v);
@@ -171,7 +184,7 @@ export function formatDMYTime(v: string | number | Date | null | undefined): str
   return `${formatDMY(d)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-/** An ISO range → 'dd/mm/yyyy → dd/mm/yyyy'. */
+/** '01 Aug 2026 → 31 Aug 2026', collapsing to one date when they match. */
 export function formatDMYRange(from?: string | null, to?: string | null): string {
   if (!from && !to) return '—';
   if (from && to && from === to) return formatDMY(from);
