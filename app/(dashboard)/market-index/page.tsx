@@ -20,11 +20,13 @@ export default function MarketIndexPage() {
     <div className="space-y-4">
       <PageIntro>
         <b>Sức khoẻ thị trường</b> — thị trường đang lên hay xuống, trước khi đi vào từng keyword.
-        Mặc định mọi bảng ở đây <b>cân theo doanh thu của nước</b>: nước sinh nhiều tiền thì nặng,
-        nước chưa có doanh thu không kéo verdict. Công tắc <b>Thô</b> ở đầu trang trả về cách đếm
-        cũ (mỗi user tính như nhau) để đối chiếu. Verdict/prose theo window vẫn do Apps Script viết
-        trong tab <code>Market_Index</code>; phần cân theo doanh thu tính tại trang này từ{' '}
-        <code>Country_Lx</code> và block doanh thu trong <code>PerGeo_CPI_Cap</code>.
+        Trang chia làm hai nửa. <b>Nửa trên</b> (executive summary, WoW, verdict theo window,
+        funnel, top keyword) là <b>toàn thị trường, không cân</b> — mỗi user tính như nhau, số do
+        Apps Script tính trong tab <code>Market_Index</code> cộng tổng từ <code>All_Lx</code>.{' '}
+        <b>Nửa dưới</b> (Trọng số quốc gia) mới cân, và cho chọn <b>cân theo doanh thu</b> hay{' '}
+        <b>cân theo user</b> — kèm cảnh báo nước nhiều traffic ít tiền và nước nhiều tiền ít
+        traffic. → “lên hay xuống” là câu hỏi về cả thị trường; “nước nào đáng nặng” là câu hỏi
+        khác, nên hai câu để riêng.
       </PageIntro>
       <MarketIndexCards />
       <DataGapNote sources={SOURCES} />

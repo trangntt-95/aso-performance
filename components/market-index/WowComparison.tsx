@@ -8,30 +8,16 @@ import { cn } from '@/lib/utils';
 
 interface Props {
   data: WowMetric[];
-  /** Khi cân theo doanh thu, con số là CHỈ SỐ chứ không phải số người/install. */
-  weighted?: boolean;
 }
 
-export function WowComparison({ data, weighted }: Props) {
+export function WowComparison({ data }: Props) {
   if (data.length === 0) return null;
-  // Chỉ số cân ra số thập phân (399 users × 0.48). Làm tròn về 1 chữ số thay vì
-  // dùng compact, vì "0.4K" cho một chỉ số là vô nghĩa.
-  const fmt = (n: number) => (weighted ? n.toFixed(1) : formatNumber(n, { compact: true }));
   return (
     <Card className="border-slate-200 shadow-sm">
       <CardContent className="p-4 sm:p-5 space-y-3">
         <div>
           <h2 className="text-sm font-semibold text-slate-900">WoW comparison · L7 vs P7</h2>
-          <p className="text-[11px] text-slate-500">
-            Tuần này so với tuần trước
-            {weighted && (
-              <>
-                {' '}
-                · số là <b>chỉ số cân theo doanh thu</b>, không phải số người —{' '}
-                <span className="text-slate-400">so sánh được theo thời gian, không đọc như count</span>
-              </>
-            )}
-          </p>
+          <p className="text-[11px] text-slate-500">Tuần này so với tuần trước</p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {data.map((m) => {
@@ -44,9 +30,9 @@ export function WowComparison({ data, weighted }: Props) {
                 <div className="flex items-baseline gap-3 flex-wrap">
                   <div>
                     <span className="text-2xl font-semibold text-slate-900 tabular-nums">
-                      {fmt(m.thisPeriod)}
+                      {formatNumber(m.thisPeriod, { compact: true })}
                     </span>
-                    <span className="text-[11px] text-slate-400 ml-1">vs {fmt(m.lastPeriod)}</span>
+                    <span className="text-[11px] text-slate-400 ml-1">vs {formatNumber(m.lastPeriod, { compact: true })}</span>
                   </div>
                   <span className={cn('inline-flex items-center gap-0.5 font-medium text-sm', toneCls)}>
                     <Arrow className="h-3.5 w-3.5" />
@@ -54,8 +40,7 @@ export function WowComparison({ data, weighted }: Props) {
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-500 mt-1">
-                  Δ {m.deltaValue > 0 ? '+' : ''}
-                  {weighted ? m.deltaValue.toFixed(1) : formatNumber(m.deltaValue)}
+                  Δ {m.deltaValue > 0 ? '+' : ''}{formatNumber(m.deltaValue)}
                 </div>
               </div>
             );

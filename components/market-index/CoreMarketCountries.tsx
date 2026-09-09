@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import { Globe } from 'lucide-react';
-import { countryMarketWeights, type CountryWeight, type OverviewWindow } from '@/components/overview/aggregate';
+import { countryMarketWeights, type CountryWeight as TrafficWeight, type OverviewWindow } from '@/components/overview/aggregate';
 import type { SheetPayload } from '@/lib/sheets/types';
+import type { CountryWeights, WeightBasis } from '@/lib/market/countryWeighting';
 import { Card, CardContent } from '@/components/ui/card';
 import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
@@ -18,25 +19,43 @@ import { cn } from '@/lib/utils';
 // The revenue answer lives in the same tab, in the block Trang refreshes each
 // quarter (PerGeo_CPI_Cap columns I–P): real revenue per country, plus what one
 // install is worth there. Ranking by that excludes India and Vietnam without
-// any special-casing — India earns $0.86 per install, Vietnam is not in the
-// block at all.
+// any special-casing — India earns $4 per install, Vietnam is not in the block
+// at all.
 //
-// The users view is kept, but relabelled as what it is — traffic, not market.
+// Cả hai cách cân đều giữ, và công tắc nằm ở phần Core market chứ không phải cả
+// trang: nửa trên trang này là câu hỏi "toàn thị trường lên hay xuống" nên
+// không cân gì, chỗ này mới là câu hỏi "nước nào đáng nặng".
+//
+// Hai trọng số không cùng phạm vi, và điều đó là chủ đích:
+//
+//   theo user   — share users của CỬA SỔ đang chọn (L7/L30/L90)
+//   theo tiền   — share doanh thu của block cố định, cập nhật theo quý
+//
+// Nên nút window đổi thứ tự khi cân theo user, và không đổi khi cân theo tiền.
+// Ghi rõ ở chú thích dưới bảng thay vì để người đọc tự đoán.
 
-type Basis = 'revenue' | 'users';
 type Metric = 'users' | 'install';
 
 interface Props {
   data: SheetPayload | undefined;
   limit?: number;
   /**
-   * Cách cân, do công tắc của cả trang Market Health quyết định.
+   * Trọng số đang dùng, do công tắc của phần Core market quyết định.
    *
-   * Trước đây card này có công tắc riêng. Bỏ đi vì hai công tắc cho cùng một
-   * lựa chọn thì sẽ có lúc chúng lệch nhau, và khi đó card cạnh nó đang cân
-   * theo doanh thu còn card này theo lưu lượng mà không có gì báo.
+   * Trước đây card này có công tắc riêng đặt tên 'Doanh thu / Lưu lượng'. Đổi
+   * sang prop để công tắc và bảng cảnh báo lệch cùng nghe một nguồn — hai công
+   * tắc cho cùng một lựa chọn thì sẽ có lúc chúng lệch nhau mà không có gì báo.
    */
-  basis?: Basis;
+  weightBasis?: WeightBasis;
+  /**
+   * Bảng trọng số dùng chung.
+   *
+   * Cần thiết, không phải tiện tay: bảng này ghép tên nước qua countryKey, nên
+   * 'Türkiye' trong Country_L* khớp với 'Turkey' trong block doanh thu. Bản cũ
+   * của card so bằng `country.trim().toLowerCase()` nên bỏ mất đúng những nước
+   * viết khác dấu.
+   */
+  weights?: CountryWeights | null;
 }
 
 const WINDOWS: OverviewWindow[] = ['L7', 'L30', 'L90'];
@@ -52,7 +71,7 @@ function deltaCls(v: number | null): string {
 }
 
 /** A country in the basket, plus what the revenue block says about it. */
-interface Row extends CountryWeight {
+interface Row extends TrafficWeight {
   rank: number | null;
   tier1: boolean;
   revenue: number | null;
@@ -61,8 +80,7 @@ interface Row extends CountryWeight {
   valuePerInstall: number | null;
 }
 
-export function CoreMarketCountries({ data, limit = 15, basis: basisProp }: Props) {
-  const basis: Basis = basisProp ?? 'revenue';
+export function CoreMarketCountries({ data, limit = 15, weightBasis = 'revenue', weights }: Props) {
   const [metric, setMetric] = useState<Metric>('users');
   const [window, setWindow] = useState<OverviewWindow>('L30');
 
@@ -77,113 +95,86 @@ export function CoreMarketCountries({ data, limit = 15, basis: basisProp }: Prop
     return m;
   }, [data?.perGeoCpiCap]);
 
-  const revenueBy = useMemo(() => {
-    const rows = data?.perGeoRevenue ?? [];
-    const total = rows.reduce((sum, r) => sum + (Number.isFinite(r.revenue) ? r.revenue : 0), 0);
-    const m = new Map<string, { rank: number | null; revenue: number; share: number; vpi: number | null }>();
-    for (const r of rows) {
-      m.set(r.country.trim().toLowerCase(), {
-        // 70 of the 122 countries in the block carry no rank. Their cell parses
-        // to 0, and `0 ?? 9999` is 0 — left as-is they sort ahead of the United
-        // States. Normalise to null here, once, at the boundary.
-        rank: r.rank > 0 ? r.rank : null,
-        revenue: r.revenue,
-        share: total > 0 ? r.revenue / total : 0,
-        vpi: r.valuePerInstall,
-      });
-    }
-    return m;
-  }, [data?.perGeoRevenue]);
-
-  // Ranked countries are what makes a revenue ordering possible at all; a block
-  // present but entirely unranked is the same as having no ordering.
-  const hasRevenueRank = useMemo(
-    () => (data?.perGeoRevenue ?? []).some((r) => r.rank > 0),
-    [data?.perGeoRevenue],
-  );
-  const revenuePeriod = data?.perGeoRevenuePeriod ?? '';
+  const hasRevenue = !!weights && weights.totalRevenue > 0;
+  const revenuePeriod = weights?.period ?? '';
 
   const enriched = useMemo<Row[]>(
     () =>
       rows.map((r) => {
-        const k = r.country.trim().toLowerCase();
-        const rev = revenueBy.get(k);
+        const info = weights?.infoOf(r.country) ?? null;
         return {
           ...r,
-          rank: rev?.rank ?? null,
-          tier1: tier1By.get(k) ?? false,
-          revenue: rev?.revenue ?? null,
-          revenueShare: rev?.share ?? null,
-          valuePerInstall: rev?.vpi ?? null,
+          rank: info?.rank ?? null,
+          tier1: tier1By.get(r.country.trim().toLowerCase()) ?? false,
+          revenue: info?.revenue ?? null,
+          revenueShare: info?.revenueShare ?? null,
+          valuePerInstall: info?.valuePerInstall ?? null,
         };
       }),
-    [rows, revenueBy, tier1By],
+    [rows, weights, tier1By],
   );
 
-  // The revenue block lists countries GA4 may not have reported any traffic for
-  // in the selected window. They are still core market — a country earning
-  // money with no measured users this week has not stopped mattering.
-  const coreRows = useMemo<Row[]>(() => {
-    if (!hasRevenueRank) return [];
-    const byCountry = new Map(enriched.map((r) => [r.country.trim().toLowerCase(), r]));
+  // Block doanh thu có những nước mà GA4 không báo traffic nào trong cửa sổ
+  // đang chọn. Chúng vẫn là core market — một nước đang mang tiền về mà tuần
+  // này không đo được user nào thì không phải là đã hết quan trọng.
+  const revenueRows = useMemo<Row[]>(() => {
+    if (!weights || !hasRevenue) return [];
+    const byKey = new Map(enriched.map((r) => [r.country.trim().toLowerCase(), r]));
     const out: Row[] = [];
-    for (const r of data?.perGeoRevenue ?? []) {
-      const k = r.country.trim().toLowerCase();
-      const hit = byCountry.get(k);
-      const rev = revenueBy.get(k);
+    weights.byKey.forEach((info) => {
+      if (info.revenue <= 0) return;
+      const hit = byKey.get(info.country.trim().toLowerCase());
       out.push(
         hit ?? {
-          country: r.country,
+          country: info.country,
           users: 0,
           getApp: 0,
           usersShare: 0,
           getAppShare: 0,
           deltaUsersPct: null,
           deltaGetAppPct: null,
-          rank: r.rank > 0 ? r.rank : null,
-          tier1: tier1By.get(k) ?? false,
-          revenue: rev?.revenue ?? r.revenue,
-          revenueShare: rev?.share ?? null,
-          valuePerInstall: r.valuePerInstall,
+          rank: info.rank,
+          tier1: tier1By.get(info.country.trim().toLowerCase()) ?? false,
+          revenue: info.revenue,
+          revenueShare: info.revenueShare,
+          valuePerInstall: info.valuePerInstall,
         },
       );
-    }
-    return out
-      .filter((r) => r.rank !== null)
-      .sort((a, b) => (a.rank as number) - (b.rank as number));
-  }, [hasRevenueRank, enriched, data?.perGeoRevenue, revenueBy, tier1By]);
+    });
+    return out.sort((a, b) => (b.revenueShare ?? 0) - (a.revenueShare ?? 0));
+  }, [weights, hasRevenue, enriched, tier1By]);
+
+  const byRevenue = weightBasis === 'revenue' && hasRevenue;
+  const share = (r: Row) => (metric === 'users' ? r.usersShare : r.getAppShare);
+  // Cân theo tiền thì thanh bar LÀ share doanh thu; cân theo user thì nó vẫn
+  // là share users/install của cửa sổ như trước.
+  const weight = (r: Row) => (byRevenue ? (r.revenueShare ?? 0) : share(r));
 
   const shown = useMemo(() => {
-    const share = (r: Row) => (metric === 'users' ? r.usersShare : r.getAppShare);
-    if (basis === 'revenue' && hasRevenueRank) return coreRows.slice(0, limit);
+    if (byRevenue) return revenueRows.slice(0, limit);
     return [...enriched].sort((a, b) => share(b) - share(a)).slice(0, limit);
-  }, [enriched, coreRows, basis, hasRevenueRank, metric, limit]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enriched, revenueRows, byRevenue, metric, limit]);
 
-  // Countries big enough by traffic to make the users top-N but not the revenue
-  // one. Naming them is the point — this is the gap the old card hid.
+  // Nước đủ traffic để lọt top-N theo users nhưng không lọt top-N theo tiền.
+  // Kể tên chúng chính là điểm của card — đây là khoảng trống bản cũ che đi.
   const trafficOnly = useMemo(() => {
-    if (basis !== 'revenue' || !hasRevenueRank) return [];
+    if (!byRevenue) return [];
     const inCore = new Set(shown.map((r) => r.country));
-    const share = (r: Row) => (metric === 'users' ? r.usersShare : r.getAppShare);
     return [...enriched]
       .sort((a, b) => share(b) - share(a))
       .slice(0, limit)
       .filter((r) => !inCore.has(r.country));
-  }, [enriched, shown, basis, hasRevenueRank, metric, limit]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enriched, shown, byRevenue, metric, limit]);
 
   if (rows.length === 0) return null;
-  const share = (r: Row) => (metric === 'users' ? r.usersShare : r.getAppShare);
   const value = (r: Row) => (metric === 'users' ? r.users : r.getApp);
   const delta = (r: Row) => (metric === 'users' ? r.deltaUsersPct : r.deltaGetAppPct);
-  const byRevenueBasis = basis === 'revenue' && hasRevenueRank;
-  // Under the revenue basis the bar IS revenue share; under the traffic basis
-  // it stays the users/install share it always was.
-  const weight = (r: Row) => (byRevenueBasis ? (r.revenueShare ?? 0) : share(r));
   const maxShare = shown.reduce((m, r) => Math.max(m, weight(r)), 0);
   const shownShare = shown.reduce((s, r) => s + weight(r), 0);
   const unit = metric === 'users' ? 'users' : 'install';
   const fellBack = effWindow !== window;
-  const byRevenue = byRevenueBasis;
 
   return (
     <Card className="border-slate-200 shadow-sm">
@@ -202,8 +193,8 @@ export function CoreMarketCountries({ data, limit = 15, basis: basisProp }: Prop
                 </>
               ) : (
                 <>
-                  Top {shown.length} nước theo <b>{metric === 'users' ? 'Users' : 'Install'}</b> — đây là lưu lượng,
-                  không phải doanh thu · chiếm {(shownShare * 100).toFixed(0)}% / {totalCountries} nước
+                  Top {shown.length} nước theo <b>{metric === 'users' ? 'Users' : 'Install'}</b> của {effWindow} — đây là
+                  lưu lượng, không phải doanh thu · chiếm {(shownShare * 100).toFixed(0)}% / {totalCountries} nước
                 </>
               )}
               {fellBack && <span className="text-amber-600"> · country data theo {effWindow}</span>}
@@ -216,6 +207,11 @@ export function CoreMarketCountries({ data, limit = 15, basis: basisProp }: Prop
                   key={w}
                   type="button"
                   onClick={() => setWindow(w)}
+                  title={
+                    byRevenue
+                      ? `Đổi cửa sổ của cột users/install. Thứ tự không đổi vì đang cân theo doanh thu (block cố định).`
+                      : `Cân theo users của ${w}`
+                  }
                   className={cn(
                     'px-2 py-0.5 font-medium transition',
                     w !== WINDOWS[0] && 'border-l border-slate-200',
@@ -249,7 +245,7 @@ export function CoreMarketCountries({ data, limit = 15, basis: basisProp }: Prop
           {shown.map((r, i) => (
             <li key={r.country} className="flex items-center gap-2 text-sm">
               <span className="w-5 shrink-0 text-right font-mono text-[10px] text-slate-400">
-                {byRevenue ? r.rank : i + 1}.
+                {i + 1}.
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
@@ -285,9 +281,12 @@ export function CoreMarketCountries({ data, limit = 15, basis: basisProp }: Prop
                   </div>
                 </div>
               ) : (
-                <div className="w-24 shrink-0 text-right font-mono text-[11px] tabular-nums text-slate-500">
+                <div className="w-32 shrink-0 text-right font-mono text-[11px] tabular-nums text-slate-500">
                   {formatNumber(value(r), { compact: true })} {unit}
                   <span className={cn('ml-1', deltaCls(delta(r)))}>{fmtDelta(delta(r))}</span>
+                  <div className="text-[10px] text-slate-400">
+                    {r.valuePerInstall === null ? 'chưa có doanh thu' : `$${r.valuePerInstall.toFixed(0)}/install`}
+                  </div>
                 </div>
               )}
             </li>
@@ -315,17 +314,18 @@ export function CoreMarketCountries({ data, limit = 15, basis: basisProp }: Prop
             <>
               Doanh thu lấy từ khối bên phải tab <code className="text-[9px]">PerGeo_CPI_Cap</code> (cột I–P), cập nhật
               theo quý{revenuePeriod ? ` — kỳ hiện tại: ${revenuePeriod}` : ''}. <b>%</b> là share doanh thu, không phải
-              share traffic. <b>$/install</b> = doanh thu ÷ install ở nước đó: trần CPI phải nằm dưới con số này thì
-              install mới tự trả được cho mình.
+              share traffic — nên nút L7/L30/L90 chỉ đổi cột users/install, không đổi thứ tự. <b>$/install</b> = doanh
+              thu ÷ install ở nước đó: trần CPI phải nằm dưới con số này thì install mới tự trả được cho mình.
             </>
           ) : (
             <>
-              Đang xếp theo <b>lưu lượng</b>, nên danh sách này gồm cả nước không tạo doanh thu (India, Vietnam,
-              Pakistan…). Bấm <b>Cân doanh thu</b> ở đầu trang để lấy core market thật.
+              Đang cân theo <b>user của {effWindow}</b>, nên danh sách gồm cả nước không tạo doanh thu (India, Vietnam,
+              Pakistan…) và thứ tự đổi theo nút L7/L30/L90. Cột <b>$/install</b> vẫn hiện để thấy ngay nước nào không
+              sinh tiền. Đổi sang <b>Doanh thu</b> ở trên để lấy core market theo tiền.
             </>
           )}
-          {fellBack && ` Country_${window} chưa có data → dùng ${effWindow}.`} <b>Verdict</b> Market Health tính trên rổ{' '}
-          <b>keyword</b> (Dynamic basket), không phải danh sách này.
+          {fellBack && ` Country_${window} chưa có data → dùng ${effWindow}.`} <b>Verdict</b> ở nửa trên trang tính trên{' '}
+          <b>toàn thị trường, không cân</b> — không phải danh sách này.
         </p>
       </CardContent>
     </Card>

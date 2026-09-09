@@ -2,15 +2,15 @@
 
 import { useState } from 'react';
 import { ChevronDown, TriangleAlert } from 'lucide-react';
-import type { MismatchReport, MismatchRow } from '@/lib/market/revenueWeighting';
+import type { MismatchReport, MismatchRow } from '@/lib/market/countryWeighting';
 import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 
 // Nước mà traffic và doanh thu không đi cùng nhau.
 //
 // Mặc định thu lại một dòng. Đây là cảnh báo chẩn đoán, không phải số cần theo
-// dõi hằng ngày: mở ra khi muốn biết chỉ số đang bị nước nào kéo, còn lại thì
-// nó không nên chiếm chỗ của verdict.
+// dõi hằng ngày: mở ra khi muốn biết trọng số đang lệch ở đâu, còn lại thì nó
+// không nên chiếm chỗ.
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
@@ -19,7 +19,7 @@ function Row({ r, kind }: { r: MismatchRow; kind: 'traffic' | 'revenue' }) {
     <li className="flex items-baseline gap-2 text-[11px]">
       <span className="min-w-0 flex-1 truncate text-slate-700">{r.country}</span>
       <span className="w-24 shrink-0 text-right font-mono text-[10px] text-slate-500">
-        {formatNumber(r.usersL, { compact: true })} u · {pct(r.usersShare)}
+        {formatNumber(r.users, { compact: true })} u · {pct(r.usersShare)}
       </span>
       <span
         className={cn(
@@ -100,8 +100,9 @@ export function WeightMismatchNote({ report }: { report: MismatchReport | null }
           <p className="text-[10px] leading-relaxed text-slate-500 sm:col-span-2">
             So share users trong <code className="text-[9px]">Country_{report.window}</code> với share
             doanh thu trong <code className="text-[9px]">PerGeo_CPI_Cap</code>. Vào danh sách khi lệch
-            từ <b>2,5 lần</b> trở lên, và bỏ qua nước dưới <b>10 users</b> — tỷ lệ tính trên 2 users
-            lệch bao nhiêu cũng không nói lên điều gì.
+            từ <b>2,5 lần</b> trở lên. Nước dưới <b>10 users</b> không được so theo tỷ lệ — tỷ lệ tính
+            trên 2 users lệch bao nhiêu cũng không nói lên điều gì — nhưng nếu nó nắm từ 1% doanh thu
+            thì vẫn được nêu ở cột phải, vì nước có tiền mà không có traffic là loại dễ bị bỏ qua nhất.
           </p>
         </div>
       )}
