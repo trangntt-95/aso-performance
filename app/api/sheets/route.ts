@@ -12,6 +12,7 @@ import {
   parsePerGeoCpiCap,
   parsePerGeoRevenue,
   parseNetValuePerInstall,
+  parseSearchTermUnbidded,
   parseHistory,
   parseHistoryDaily,
   parseHistoryDailyCountry,
@@ -104,6 +105,7 @@ export async function GET() {
     // Parsed once: the revenue block yields both the rows and the period label.
     const perGeoRevenue = parsePerGeoRevenue(raw['Countries performance'] ?? []);
     const netValue = parseNetValuePerInstall(raw['Net value per install'] ?? []);
+    const unbidded = parseSearchTermUnbidded(raw['Search_Term_Unbidded'] ?? []);
     const langKws = languageOnlyKeywords(masterKwLookup);
     // Language reclassify, then category fixes (brand, "profit" → Profit, tracker → Feature).
     const fixKw = (rows: KeywordRow[]) => overrideCategoryExact(overrideToLanguage(rows, langKws));
@@ -157,6 +159,8 @@ export async function GET() {
       googleAds: parseGoogleAds(gadsRaw),
       negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
       windowDates,
+      searchTermUnbidded: unbidded.rows,
+      searchTermRange: { from: unbidded.from, to: unbidded.to },
       netValuePerInstall: netValue.rows,
       netValueScope: netValue.scope,
       sheetSources: sheetSources(),

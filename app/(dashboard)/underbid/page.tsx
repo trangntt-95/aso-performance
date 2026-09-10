@@ -13,6 +13,7 @@ const SOURCES: readonly DataSourceKey[] = [
   'campLinks',
   'shopifyDaily',
   'historyDaily',
+  'netValuePerInstall',
 ];
 
 export default function UnderbidPage() {

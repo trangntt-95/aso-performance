@@ -1,4 +1,5 @@
 import { PaidCoverageView } from '@/components/paid-coverage/PaidCoverageView';
+import { UnbiddedSearchTerms } from '@/components/paid-coverage/UnbiddedSearchTerms';
 import { DataGapNote } from '@/components/shared/DataGapNote';
 import { SheetSources } from '@/components/shared/SheetSources';
 import { PageIntro } from '@/components/shared/PageIntro';
@@ -14,6 +15,7 @@ const SOURCES: readonly DataSourceKey[] = [
   'pausedKw',
   'bidCap',
   'campLinks',
+  'searchTermUnbidded',
 ];
 
 export default function PaidCoveragePage() {
@@ -27,6 +29,9 @@ export default function PaidCoveragePage() {
         quyết định đã ra rồi, không phải việc cần làm.
       </PageIntro>
       <PaidCoverageView />
+      {/* Grain khác — câu tìm kiếm, không phải keyword — nên đứng riêng dưới
+          bảng chính thay vì trộn vào bốn cột window của nó. */}
+      <UnbiddedSearchTerms />
       <DataGapNote sources={SOURCES} />
       <SheetSources sources={SOURCES} />
     </div>

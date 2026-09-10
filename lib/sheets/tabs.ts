@@ -33,6 +33,8 @@ export const TABS = [
   // duy nhất trên toàn workbook trả lời "một install của keyword này đáng bao
   // nhiêu tiền", thay vì chỉ đáng bao nhiêu ở nước nào.
   'Net value per install',
+  // Báo cáo search term của Apple Search Ads, đã lọc 'Bid Status = Chưa bid'.
+  'Search_Term_Unbidded',
 ] as const;
 
 export type TabName = (typeof TABS)[number];

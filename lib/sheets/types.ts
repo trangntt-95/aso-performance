@@ -392,6 +392,35 @@ export interface NetValueRow {
   shopsZeroOrders: number | null;
 }
 
+/**
+ * Một câu tìm kiếm trong 'Search_Term_Unbidded' — query broad match đã bắt
+ * được nhưng chưa được bid thành keyword riêng.
+ *
+ * Grain là CÂU NGƯỜI TA GÕ, không phải keyword đang bid, nên nó không xếp
+ * chung bảng với phần còn lại của Paid Coverage: cả tab dùng chung một khoảng
+ * ngày, không có cửa sổ L7/L30/L90 nào để điền.
+ */
+export interface SearchTermRow {
+  searchTerm: string;
+  /** Keyword đang bid đã bắt được câu này. */
+  matchedKeyword: string;
+  matchType: string;
+  camp: string;
+  /** Bid của keyword đã bắt được nó — không phải giá trả cho câu này. */
+  bid: number | null;
+  impressions: number;
+  clicks: number;
+  installs: number;
+  spend: number;
+  position: number | null;
+  customers: number;
+  revenue: number;
+  /** Return on spend từ sheet. */
+  roas: number | null;
+  /** Cột Bid Status của sheet, ví dụ '⚠️ Chưa bid'. */
+  bidStatus: string;
+}
+
 export interface BidCapRow {
   tier: string;
   country: string;
@@ -603,6 +632,10 @@ export interface SheetPayload {
   /** The spreadsheets behind this payload, so a screen can link its own source
    *  instead of describing it in prose. Only the configured ones appear. A
    *  spreadsheet id is a document the owner already has open, not a credential. */
+  /** Tab 'Search_Term_Unbidded' — query broad match chưa được bid. */
+  searchTermUnbidded: SearchTermRow[];
+  /** Khoảng ngày báo cáo đó phủ. */
+  searchTermRange: { from: string; to: string };
   /** Tab 'Net value per install' — net value theo keyword × nước. */
   netValuePerInstall: NetValueRow[];
   /** Ghi chú phạm vi của tab đó, ví dụ 'Keyword x country — YTD'. */

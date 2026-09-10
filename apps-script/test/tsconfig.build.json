@@ -24,6 +24,7 @@
     "../../lib/market/dataGaps.ts",
     "../../lib/market/organicDiscovery.ts",
     "../../lib/sheets/kwNorm.ts",
-    "../../lib/sheets/parsers.ts"
+    "../../lib/sheets/parsers.ts",
+    "../../lib/market/keywordNetValue.ts"
   ]
 }

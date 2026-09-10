@@ -1,6 +1,7 @@
 import { normalizeCampName } from './campName';
 import type {
   NetValueRow,
+  SearchTermRow,
   ActionQueueRow,
   AlertLogRow,
   AlertType,
@@ -1553,4 +1554,123 @@ export function parseNetValuePerInstall(rows: string[][]): {
     });
   }
   return { rows: out, scope };
+}
+
+// ---------------------------------------------------------------------------
+// 'Search_Term_Unbidded' — query mà broad match đã bắt được nhưng chưa bid.
+//
+// Đây là báo cáo search term của Apple Search Ads, lọc sẵn theo cột
+// 'Bid Status' = '⚠️ Chưa bid'. Khác hẳn mọi nguồn khác của Paid Coverage: nó
+// ở grain SEARCH TERM (câu người ta gõ), không phải keyword đang bid, và nó
+// mang sẵn Impressions / Installs / Spend / Revenue cho từng câu.
+//
+// Grain khác nên số cũng khác: cả tab dùng CHUNG một khoảng ngày ở cột Start
+// Date / End Date, không có cửa sổ L7/L30/L90 nào. Trộn nó vào bảng chính của
+// Paid Coverage sẽ khiến bốn cột window thành số bịa, nên nó đứng riêng.
+// ---------------------------------------------------------------------------
+
+/** Serial Excel hoặc chuỗi ISO → 'YYYY-MM-DD'; '' khi không phải ngày thật. */
+function serialOrIsoToDate(v: unknown): string {
+  if (typeof v === 'number' && Number.isFinite(v) && v > 20000 && v < 80000) {
+    return new Date(EXCEL_EPOCH_MS + v * 86400000).toISOString().slice(0, 10);
+  }
+  const t = str(v).trim();
+  const iso = /^(d{4}-d{2}-d{2})/.exec(t);
+  if (iso) return iso[1];
+  const n = Number(t);
+  if (Number.isFinite(n) && n > 20000 && n < 80000) {
+    return new Date(EXCEL_EPOCH_MS + n * 86400000).toISOString().slice(0, 10);
+  }
+  return '';
+}
+
+export function parseSearchTermUnbidded(rows: string[][]): {
+  rows: SearchTermRow[];
+  from: string;
+  to: string;
+} {
+  const empty = { rows: [] as SearchTermRow[], from: '', to: '' };
+  if (!rows || rows.length < 2) return empty;
+  const norm = (c: unknown): string => str(c).trim().toLowerCase().replace(/\s+/g, ' ');
+
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 8); i++) {
+    const r = (rows[i] ?? []).map(norm);
+    if (r.includes('search term') && r.some((h) => h.startsWith('impressions'))) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return empty;
+  const header = (rows[headerIdx] ?? []).map(norm);
+  const find = (...cands: string[]): number => {
+    for (const c of cands) {
+      const i = header.indexOf(c);
+      if (i >= 0) return i;
+    }
+    for (const c of cands) {
+      const i = header.findIndex((h) => h.startsWith(c));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const ci = {
+    camp: find('ad name', 'campaign'),
+    start: find('start date'),
+    end: find('end date'),
+    searchTerm: find('search term'),
+    // 'keyword' đứng sau 'search term' trong tab này và là keyword ĐANG bid đã
+    // bắt được câu đó — không phải câu người ta gõ.
+    keyword: find('keyword'),
+    matchType: find('match type'),
+    bid: find('bid'),
+    impressions: find('impressions'),
+    clicks: find('clicks'),
+    installs: find('installs'),
+    spend: find('spend'),
+    position: find('average position'),
+    customers: find('customers'),
+    revenue: find('revenue'),
+    roas: find('return on spend'),
+    status: find('bid status'),
+  };
+  if (ci.searchTerm < 0) return empty;
+
+  const at = (row: string[], idx: number): unknown => (idx >= 0 ? row[idx] : undefined);
+  const optNum = (v: unknown): number | null => {
+    const t = str(v).trim();
+    if (!t || t === '—' || t === '-') return null;
+    const n = num(t.replace('%', ''));
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const out: SearchTermRow[] = [];
+  let from = '';
+  let to = '';
+  for (const row of rows.slice(headerIdx + 1)) {
+    const searchTerm = str(at(row, ci.searchTerm)).trim();
+    if (!searchTerm) continue;
+    // Ngày là serial Excel; giữ ISO để hiển thị và so sánh như mọi chỗ khác.
+    const s = serialOrIsoToDate(at(row, ci.start));
+    const e = serialOrIsoToDate(at(row, ci.end));
+    if (s && (!from || s < from)) from = s;
+    if (e && e > to) to = e;
+    out.push({
+      searchTerm,
+      matchedKeyword: str(at(row, ci.keyword)).trim(),
+      matchType: str(at(row, ci.matchType)).trim(),
+      camp: str(at(row, ci.camp)).trim(),
+      bid: optNum(at(row, ci.bid)),
+      impressions: num(at(row, ci.impressions)),
+      clicks: num(at(row, ci.clicks)),
+      installs: num(at(row, ci.installs)),
+      spend: num(at(row, ci.spend)),
+      position: optNum(at(row, ci.position)),
+      customers: num(at(row, ci.customers)),
+      revenue: num(at(row, ci.revenue)),
+      roas: optNum(at(row, ci.roas)),
+      bidStatus: str(at(row, ci.status)).trim(),
+    });
+  }
+  return { rows: out, from, to };
 }

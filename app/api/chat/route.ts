@@ -124,6 +124,8 @@ async function fetchPayload(): Promise<SheetPayload> {
     // underlying tabs instead.
     paidCategoryBoard: null,
     // The chat has no UI to link a source from.
+    searchTermUnbidded: [],
+    searchTermRange: { from: '', to: '' },
     netValuePerInstall: [],
     netValueScope: '',
     sheetSources: [],

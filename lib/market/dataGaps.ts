@@ -68,6 +68,8 @@ export type DataSourceKey =
   | 'pausedKw'
   | 'marketIndex'
   | 'actionQueue'
+  | 'netValuePerInstall'
+  | 'searchTermUnbidded'
   // Tab families — reports which members are empty.
   | 'allTabs'
   | 'countryTabs';
@@ -195,6 +197,20 @@ const SOURCES: Record<DataSourceKey, SourceDef> = {
     drives: 'market health · dynamic basket',
     kind: 'tab',
     rows: (d) => d.marketIndex?.summary ?? [],
+  },
+  netValuePerInstall: {
+    label: 'Net value per install',
+    sheet: 'aso',
+    drives: 'net value 1 install theo keyword × nước',
+    kind: 'tab',
+    rows: (d) => d.netValuePerInstall ?? [],
+  },
+  searchTermUnbidded: {
+    label: 'Search_Term_Unbidded',
+    sheet: 'aso',
+    drives: 'search term broad match chưa được bid',
+    kind: 'tab',
+    rows: (d) => d.searchTermUnbidded ?? [],
   },
   actionQueue: {
     label: 'Action_Queue',

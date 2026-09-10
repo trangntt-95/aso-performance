@@ -14,10 +14,11 @@ import { KeywordLink } from '@/components/shared/KeywordLink';
 import { ImpactCell } from './ImpactCell';
 import { PerCampImpactCell, type PerCampImpact } from './PerCampImpactCell';
 import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
-import { normKw } from '@/lib/sheets/kwNorm';
 import { buildPaidShareIndex, summarizeImpact, type NoteImpact } from '@/lib/market/noteImpact';
 import { buildCampDailyIndex, campBidImpact } from '@/lib/market/campBidImpact';
 import { formatNumber, formatPercent, formatPos } from '@/lib/utils/format';
+import { buildKeywordNetValue, breakevenBid, type KeywordNetValue } from '@/lib/market/keywordNetValue';
+import { normKw } from '@/lib/sheets/kwNorm';
 import {
   findUnderbidKeywords,
   windowSnapshotRows,
@@ -42,6 +43,21 @@ const dmy = (ms: number): string => {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
+type NetValueMap = Map<string, KeywordNetValue>;
+
+/**
+ * Dòng Underbid kèm giá trị thật của keyword.
+ *
+ * Gắn vào dòng chứ không tra trong lúc render: cột này sort được, mà hàm sort
+ * chỉ nhận một dòng — tra bảng ngoài trong đó thì mỗi lần so hai dòng lại tra
+ * hai lần.
+ */
+type RowWithValue = import('@/lib/market/underbid').UnderbidRow & {
+  nv: KeywordNetValue | null;
+  /** Trần bid hoà vốn: net/install × 90% × CR organic. */
+  breakeven: number | null;
+};
+
 type SortKey =
   | 'keyword'
   | 'category'
@@ -55,13 +71,15 @@ type SortKey =
   | 'paidPos'
   | 'paidPosL30'
   | 'paidShare'
+  | 'netPerInstall'
+  | 'breakeven'
   | 'score';
 type SortDir = 'asc' | 'desc';
 
 // Per-column value + type. 'num' defaults to desc on first click, 'text' to asc.
 const SORT_COLS: Record<
   SortKey,
-  { kind: 'num' | 'text'; get: (r: import('@/lib/market/underbid').UnderbidRow) => number | string | null }
+  { kind: 'num' | 'text'; get: (r: RowWithValue) => number | string | null }
 > = {
   keyword: { kind: 'text', get: (r) => r.term },
   category: { kind: 'text', get: (r) => r.category },
@@ -75,6 +93,8 @@ const SORT_COLS: Record<
   paidPos: { kind: 'num', get: (r) => r.paidPos },
   paidPosL30: { kind: 'num', get: (r) => r.paidPosL30 },
   paidShare: { kind: 'num', get: (r) => r.paidShare },
+  netPerInstall: { kind: 'num', get: (r) => r.nv?.netPerInstall ?? null },
+  breakeven: { kind: 'num', get: (r) => r.breakeven },
   score: { kind: 'num', get: (r) => r.score },
 };
 
@@ -346,6 +366,28 @@ export function UnderbidView() {
     );
   }, [data, window, minOrganic, maxShare, posTh]);
 
+  // Giá trị thật của keyword, từ tab 'Net value per install'.
+  const netValueBy: NetValueMap = useMemo(() => buildKeywordNetValue(data), [data]);
+
+  // organicCr là phân số (0.35), còn breakevenBid nhận phần trăm — nhân 100 ở
+  // đúng một chỗ, chứ trộn hai đơn vị là lỗi đã làm màn CPI cap báo 37/40 nước
+  // vượt trần hồi tháng 8.
+  const valued: RowWithValue[] = useMemo(
+    () =>
+      rows.map((r) => {
+        const nv = netValueBy.get(normKw(r.term)) ?? null;
+        return {
+          ...r,
+          nv,
+          breakeven: breakevenBid(
+            nv?.netPerInstall ?? null,
+            r.organicCr === null ? null : r.organicCr * 100,
+          ),
+        };
+      }),
+    [rows, netValueBy],
+  );
+
   // Keywords still inside their post-note hide window → term -> reappear time.
   const hiddenUntil = useMemo(() => {
     const map = new Map<string, number>();
@@ -374,7 +416,7 @@ export function UnderbidView() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const out = rows.filter((r) => {
+    const out = valued.filter((r) => {
       if (!showHidden && hiddenUntil.has(r.term)) return false;
       if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
       if (q && !r.term.toLowerCase().includes(q)) return false;
@@ -396,7 +438,7 @@ export function UnderbidView() {
       return base * dir || b.score - a.score;
     });
     return out;
-  }, [rows, search, categoryFilter, sortKey, sortDir, showHidden, hiddenUntil]);
+  }, [valued, search, categoryFilter, sortKey, sortDir, showHidden, hiddenUntil]);
 
   const hiddenCount = hiddenUntil.size;
   const dirty = search !== '' || categoryFilter !== 'all';
@@ -420,6 +462,17 @@ export function UnderbidView() {
           paid xuất hiện rất ít so với organic <b>(paid share &lt; {maxShare}%)</b> và/hoặc vị trí paid yếu{' '}
           <b>(&gt; {posTh}</b> hoặc chưa lên paid). → nên cân nhắc <b>tăng bid</b> để hứng thêm install. Cột{' '}
           <b>Camp</b> cho biết nó đang nằm ở camp nào (kèm link).
+          {' '}
+          <span className="mt-1 block border-t border-amber-200 pt-1">
+            <b>Hai cột tiền:</b> <b>$/install</b> là net value một install của keyword
+            ((doanh thu − phí Shopify) ÷ install, gộp mọi nước), <b>Trần bid</b> là bid tối đa còn
+            hoà vốn = $/install × 90% × CR organic — cùng công thức sheet dùng ở{' '}
+            <code className="text-[10px]">Max bid cap</code>. Xếp giảm dần theo <b>$/install</b> để
+            thấy keyword <b>volume thấp mà đáng tiền</b>; so <b>Trần bid</b> với bid đang set để biết
+            còn dư chỗ nâng hay đã vượt. Nhãn <b>mỏng</b> nghĩa là dưới 3 shop trả tiền — con số đó
+            là một lần tung xúc xắc, đừng đổi bid theo nó. Nguồn:{' '}
+            <code className="text-[10px]">Net value per install</code>.
+          </span>
         </div>
       </div>
 
@@ -539,6 +592,24 @@ export function UnderbidView() {
                   <SortHead label="Paid pos L30" col="paidPosL30" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 )}
                 <SortHead label="Paid share" col="paidShare" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortHead
+                  label="$/install"
+                  col="netPerInstall"
+                  align="right"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={toggleSort}
+                  title="Net value một install của keyword này = (doanh thu − phí Shopify) ÷ install, gộp mọi nước. Nguồn: tab 'Net value per install'. Xếp giảm dần để thấy keyword volume thấp nhưng đáng tiền."
+                />
+                <SortHead
+                  label="Trần bid"
+                  col="breakeven"
+                  align="right"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={toggleSort}
+                  title="Bid tối đa còn hoà vốn = $/install × 90% × CR organic. Cùng công thức sheet dùng ở tab 'Max bid cap'. Bid trả cho CLICK còn giá trị tính trên INSTALL, nên phải nhân CR — thiếu bước đó là so hai đơn vị khác nhau."
+                />
                 <th className="px-2 py-2 text-left font-medium min-w-[12rem]">Camp (đang bid)</th>
                 <th
                   className="px-2 py-2 text-left font-medium min-w-[7rem]"
@@ -627,6 +698,50 @@ export function UnderbidView() {
                     )}
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       <span className="font-mono text-[11px] font-semibold text-amber-700">{formatPercent(r.paidShare)}</span>
+                    </td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px]">
+                      {r.nv?.netPerInstall == null ? (
+                        <span
+                          className="text-slate-300"
+                          title="Keyword này chưa có dòng nào trong tab 'Net value per install' — chưa có install paid nào truy được về nó."
+                        >
+                          —
+                        </span>
+                      ) : (
+                        <span
+                          className={r.nv.thin ? 'text-amber-700' : 'text-slate-800'}
+                          title={
+                            `${r.nv.installs} install · ${r.nv.payingShops} shop trả tiền · net ${Math.round(r.nv.netValue)}` +
+                            (r.nv.topCountry
+                              ? ` · ${r.nv.topCountry} chiếm ${(r.nv.topCountryShare * 100).toFixed(0)}% (${r.nv.countries} nước)`
+                              : '') +
+                            (r.nv.largestShopOrders !== null
+                              ? ` · shop lớn nhất ${r.nv.largestShopOrders} đơn/30d`
+                              : '') +
+                            (r.nv.thin ? ` — ${r.nv.thinReason}` : '')
+                          }
+                        >
+                          ${r.nv.netPerInstall.toFixed(0)}
+                          {r.nv.thin && <span className="ml-0.5 text-[9px]">mỏng</span>}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px]">
+                      {r.breakeven === null ? (
+                        <span
+                          className="text-slate-300"
+                          title="Thiếu $/install hoặc CR organic — không tính được trần mà không đoán."
+                        >
+                          —
+                        </span>
+                      ) : (
+                        <span
+                          className={r.nv?.thin ? 'text-amber-700' : 'font-semibold text-indigo-700'}
+                          title={`${(r.nv?.netPerInstall ?? 0).toFixed(0)} × 90% × CR ${formatPercent(r.organicCr)}`}
+                        >
+                          ${r.breakeven.toFixed(2)}
+                        </span>
+                      )}
                     </td>
                     <CampCell
                       camps={r.camps}
