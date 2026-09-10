@@ -688,18 +688,36 @@ export function parsePerGeoRevenue(rows: string[][]): {
   if (!rows || rows.length < 2) return empty;
   const norm = (c: unknown): string => str(c).trim().toLowerCase();
 
-  // Find the header cell of the revenue block: a row where some column at
-  // index >= 4 says 'country' and a later column says 'revenue'.
+  // Tìm header của khối doanh thu: một ô 'country' có 'revenue' ở bên phải
+  // trong cùng hàng.
+  //
+  // Trước đây chỗ này đòi cột >= 4 để bỏ qua khối cấu hình CPI cap nằm ở A–E.
+  // Khối đó đã bị xoá và 9/2026 cả tab được sắp lại — 'Country' về cột C — nên
+  // điều kiện vị trí đó làm parser trả 0 dòng: mọi trần CPI và trọng số doanh
+  // thu biến mất, không một lỗi nào. Nay chọn theo NỘI DUNG: ứng viên nào có
+  // nhiều tiêu đề của khối doanh thu nhất thì thắng, vị trí không còn quan
+  // trọng nữa.
+  const WANTED = ['revenue', 'arppu', 'installed', 'first paid', 'giá trị 1 install'];
   let headerIdx = -1;
   let base = -1;
+  let bestScore = 0;
   for (let i = 0; i < Math.min(rows.length, 12); i++) {
     const r = (rows[i] ?? []).map(norm);
-    const ci = r.findIndex((c, idx) => idx >= 4 && c === 'country');
-    if (ci < 0) continue;
-    if (!r.some((c, idx) => idx > ci && c === 'revenue')) continue;
-    headerIdx = i;
-    base = ci;
-    break;
+    for (let ci = 0; ci < r.length; ci++) {
+      if (r[ci] !== 'country') continue;
+      // Chỉ nhìn trong vài cột kế bên: khối doanh thu rộng 7 cột và các
+      // tiêu đề của nó nằm ngay sau cột Country. Quét tới hết hàng thì một ô
+      // 'Country' của khối khác cũng 'thấy' được revenue ở tận cuối hàng và
+      // thắng chỉ vì nó đứng trước.
+      const right = r.slice(ci + 1, ci + 10);
+      if (!right.some((c) => c === 'revenue')) continue;
+      const score = WANTED.filter((w) => right.some((c) => c.startsWith(w))).length;
+      if (score > bestScore) {
+        bestScore = score;
+        headerIdx = i;
+        base = ci;
+      }
+    }
   }
   if (headerIdx < 0) return empty;
 

@@ -23,6 +23,7 @@
     "../../lib/sheets/campGeo.ts",
     "../../lib/market/dataGaps.ts",
     "../../lib/market/organicDiscovery.ts",
-    "../../lib/sheets/kwNorm.ts"
+    "../../lib/sheets/kwNorm.ts",
+    "../../lib/sheets/parsers.ts"
   ]
 }

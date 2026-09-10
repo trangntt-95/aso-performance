@@ -87,6 +87,12 @@ export async function GET(req: Request) {
       widestRow: rows.reduce((w, r) => Math.max(w, (r ?? []).length), 0),
       headerRowLen: (rows[0] ?? []).length,
       parsedExcluded: parseExcludedCountries(rows).length,
+      // Ảnh chụp thô: khi một block ngừng parse ra dòng nào, thứ cần nhìn là
+      // header của nó còn nằm ở cột nào — không phải đoán.
+      sample: rows.slice(0, 14).map((r, i) => ({
+        row: i + 1,
+        cells: (r ?? []).slice(0, 26).map((c) => (c === '' || c == null ? null : String(c).slice(0, 22))),
+      })),
       parsedTiers: parseMarketTiers(rows).map((t) => ({
         tier: t.tier,
         bid: t.bidText,
