@@ -966,6 +966,13 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
     crActual: find('cr %', 'cr act', 'cr_actual'),
     cpiCap: find('cpi cap', 'cpi_cap'),
     tierCeiling: find('tier ceil', 'tier_ceiling'),
+    // Bản dựng lại 9/2026. 'net val' phải thử trước 'val ' — nếu không thì
+    // 'Val T4-7' (kỳ trước) chiếm mất chỗ của cột Net Val.
+    netValue: find('net val'),
+    capAt90: find('cap×90', 'cap x90', 'cap 90'),
+    crUsedPct: find('cr used'),
+    crSource: find('cr source'),
+    warning: find('warning', '⚠️ warning'),
     // 'bid rec' appears twice; find() returns the FIRST match, which is the live
     // column M. The stale column O twin is intentionally left unparsed.
     bidRecommended: find('bid rec', 'bid_recommended'),
@@ -983,6 +990,25 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
   // — returns 0 for the CR column. Strip the sign here and keep the value in
   // percent units, which is how the column is labelled and displayed.
   const pct = (v: unknown): number => num(str(v).replace('%', ''));
+  /** Số của bản mới: null khi ô trống, khác hẳn 0 nghĩa là "không đáng gì". */
+  const money = (v: unknown): number | null => {
+    const t = str(v).trim();
+    if (!t || t === '—' || t === '-') return null;
+    const n = num(t);
+    return Number.isFinite(n) ? n : null;
+  };
+  const pctOrNull = (v: unknown): number | null => {
+    const t = str(v).trim();
+    if (!t || t === '—' || t === '-') return null;
+    const n = num(t.replace('%', ''));
+    return Number.isFinite(n) ? n : null;
+  };
+  // Hai cột giá trị theo kỳ không có tên cố định ('Val T4-7', 'Val T5-8' — đổi
+  // theo tháng), nên nhận diện theo dạng 'val <gì đó>' và bỏ qua 'net val'.
+  const valCols = header
+    .map((h, i) => ({ h, i }))
+    .filter(({ h }) => /^val\b/.test(h) && !h.startsWith('net val'))
+    .map(({ i }) => i);
   return rows
     .slice(headerIdx + 1)
     .map((row): BidCapRow | null => {
@@ -1004,6 +1030,14 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
         tierCeiling: num(at(row, ci.tierCeiling)),
         bidRecommended: num(at(row, ci.bidRecommended)),
         actionRecommended: text(at(row, ci.actionRecommended)),
+        netValue: money(at(row, ci.netValue)),
+        // Hai cột kỳ đứng theo thứ tự trong sheet: kỳ cũ trước, kỳ mới sau.
+        netValuePrev: valCols.length >= 2 ? money(row[valCols[0]]) : null,
+        netValueCurr: valCols.length >= 2 ? money(row[valCols[1]]) : money(row[valCols[0]]),
+        capAt90: money(at(row, ci.capAt90)),
+        crUsedPct: pctOrNull(at(row, ci.crUsedPct)),
+        crSource: text(at(row, ci.crSource)),
+        warning: text(at(row, ci.warning)),
       };
     })
     .filter((r): r is BidCapRow => r !== null);

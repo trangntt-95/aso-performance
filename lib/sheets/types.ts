@@ -363,13 +363,48 @@ export interface BidCapRow {
   keywordCluster: string;
   /** Sample keywords of the cluster, comma-separated, as typed in the sheet. */
   exampleKeywords: string;
-  /** Installs over the last 90 days ('Inst L90' col). */
+// ── Cột của bản dựng lại 9/2026 ────────────────────────────────────────────
+  //
+  // Tab được dựng lại quanh một công thức ghi ngay ở dòng tiêu đề:
+  //   Bid = min(NetVal × 90% × CR, Tier Ceiling)
+  // nên giờ nó mang đủ từng thành phần của phép tính, không chỉ kết quả.
+  /**
+   * Net value trên mỗi install của nước này ('Net Val' col).
+   *
+   * Trang xác nhận định nghĩa: (doanh thu − phí Shopify) ÷ install. Đã trừ phí
+   * nền tảng nhưng CHƯA trừ tiền quảng cáo — nên nó so trực tiếp được với trần
+   * CPI, và trừ spend lần nữa ở phía dashboard sẽ là trừ hai lần.
+   *
+   * null khi sheet để trống ô đó — khác 0, vốn có nghĩa "một install ở đây
+   * không đáng gì".
+   */
+  netValue: number | null;
+  /** Net value của kỳ trước ('Val T4-7' col) — để thấy nó đang lên hay xuống. */
+  netValuePrev: number | null;
+  /** Net value của kỳ này ('Val T5-8' col). */
+  netValueCurr: number | null;
+  /** Trần đã hạ 10% cho an toàn ('Cap×90%' col) — mốc mà bid thật phải nằm dưới. */
+  capAt90: number | null;
+  /** CR dùng trong công thức ('CR used %' col), đơn vị phần trăm. */
+  crUsedPct: number | null;
+  /** CR đó lấy từ đâu ('CR source' col): 'L90 actual 70% ×0.95', 'Cat avg 18% ×2.11'… */
+  crSource: string;
+  /** Cảnh báo của chính sheet ('⚠️ Warning' col), ví dụ 'BID $51.68 > $45'. */
+  warning: string;
+
+  // ── Cột của bản cũ, đã biến mất khỏi sheet 9/2026 ─────────────────────────
+  //
+  // Giữ lại field để phần đọc cũ không vỡ, nhưng chúng về 0 trên mọi dòng của
+  // bản dựng lại. Đo live 10/9/2026: cpiCap, instL90, clicksL30, installsL30,
+  // crActual, countryCode, actionRecommended đều rỗng toàn bộ 274 dòng. Màn
+  // nào đang dựa vào chúng thì đang hiển thị số 0, không phải số thật.
+  /** Installs over the last 90 days ('Inst L90' col). Đã bỏ khỏi sheet. */
   instL90: number;
-  /** Clicks per month ('Clicks/mo' col). */
+  /** Clicks per month ('Clicks/mo' col). Đã bỏ khỏi sheet. */
   clicksL30: number;
-  /** Installs per month ('Inst/mo' col). */
+  /** Installs per month ('Inst/mo' col). Đã bỏ khỏi sheet. */
   installsL30: number;
-  /** Conversion rate the bid was computed from ('CR %' col), in percent. */
+  /** CR ('CR %' col), in percent. Đã bỏ khỏi sheet — dùng crUsedPct. */
   crActual: number;
   /** Allowed CPI ceiling for this cell ('CPI cap' col). 0 = the sheet left it
    *  blank, which it does on every row it tells you to cut. NOT a measured CPI —
