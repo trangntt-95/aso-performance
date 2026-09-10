@@ -125,6 +125,7 @@ async function fetchPayload(): Promise<SheetPayload> {
     paidCategoryBoard: null,
     // The chat has no UI to link a source from.
     sheetSources: [],
+    missingTabs: [],
     shopifyDateRange: parseShopifyDateRange(raw['Shopify_daily'] ?? []),
     negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
     windowDates: (() => {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchAllTabs, fetchShopifyDailyRows, fetchShopifyByCategoryRows } from '@/lib/sheets/client';
+import { fetchAllTabs, fetchShopifyDailyRows, fetchShopifyByCategoryRows, getMissingTabs } from '@/lib/sheets/client';
 import { parsePaidCategoryBoard } from '@/lib/sheets/paidCategoryBoard';
 import { fetchGoogleAdsTabs, parseGoogleAds } from '@/lib/sheets/googleAds';
 import { normalizeCampName } from '@/lib/sheets/campName';
@@ -156,6 +156,7 @@ export async function GET() {
       negativeKw: parseNegativeKw(raw['Negative KW list'] ?? []),
       windowDates,
       sheetSources: sheetSources(),
+      missingTabs: getMissingTabs(),
       fetchedAt: new Date().toISOString(),
     };
     // Guard: a transient Google API failure makes fetchAllTabs swallow the

@@ -527,6 +527,13 @@ export interface SheetPayload {
    *  instead of describing it in prose. Only the configured ones appear. A
    *  spreadsheet id is a document the owner already has open, not a credential. */
   sheetSources: { id: 'aso' | 'shopify' | 'gads'; label: string; url: string }[];
+  /**
+   * Tab đã khai trong TABS nhưng không có trong spreadsheet.
+   *
+   * Có mặt vì lần đổi tên PerGeo_CPI_Cap làm mất sạch trần CPI và trọng số
+   * doanh thu mà không có một lỗi nào — 0 dòng trông y hệt "chưa có data".
+   */
+  missingTabs: string[];
   fetchedAt: string;
 }
 

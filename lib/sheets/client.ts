@@ -38,11 +38,16 @@ export function getWriteSheetsClient() {
 
 export { getSpreadsheetId };
 
+/** Tên tab trong A1 notation: luôn có nháy, nháy trong tên thì nhân đôi. */
+const a1Tab = (title: string): string => `'${title.replace(/'/g, "''")}'`;
+
 export async function fetchTab(tabName: string): Promise<string[][]> {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: getSpreadsheetId(),
-    range: `${tabName}!A:Z`,
+    // Nháy quanh tên tab: A1 notation cần nó khi tên có dấu cách
+    // ('Max bid cap', 'Countries performance').
+    range: `${a1Tab(tabName)}!A:Z`,
     valueRenderOption: 'UNFORMATTED_VALUE',
   });
   return (res.data.values || []) as string[][];
@@ -244,11 +249,52 @@ export async function probeShopifyWide(tab?: string, range?: string): Promise<un
   }
 }
 
+
 /**
- * Tab nào rỗng thì thử tên cũ của nó.
+ * Tên tab đã khai → tên tab CÓ THẬT trong spreadsheet.
  *
- * Chạy sau khi đã đọc xong, nên tab còn tên hiện tại không tốn thêm lượt gọi
- * nào. Chỉ tab vừa bị đổi tên mới đi thêm một lượt.
+ * Một lượt gọi metadata, và nó thay cho cả nhánh dự phòng cũ: tab bị đổi tên
+ * hay bị xoá thì đơn giản là không được xin, thay vì làm hỏng cả batch rồi kéo
+ * mọi request xuống đường 28 lượt gọi.
+ *
+ * Khớp không phân biệt hoa thường và bỏ khoảng trắng thừa, vì đây đúng là chỗ
+ * người ta gõ tay: 'Countries performance' với 'Countries Performance' là cùng
+ * một tab, và im lặng trả 0 dòng vì một chữ hoa là kiểu hỏng tệ nhất.
+ */
+async function resolveTabTitles(): Promise<Map<TabName, string> | null> {
+  try {
+    const sheets = getSheetsClient();
+    const info = await sheets.spreadsheets.get({
+      spreadsheetId: getSpreadsheetId(),
+      fields: 'sheets.properties(title)',
+    });
+    const real = new Map<string, string>();
+    for (const sh of info.data.sheets ?? []) {
+      const t = sh.properties?.title;
+      if (t) real.set(t.trim().toLowerCase(), t);
+    }
+    const out = new Map<TabName, string>();
+    for (const tab of TABS) {
+      const names = [tab, ...(LEGACY_TAB_NAMES[tab] ?? [])];
+      for (const n of names) {
+        const hit = real.get(n.trim().toLowerCase());
+        if (hit) {
+          out.set(tab, hit);
+          break;
+        }
+      }
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Tab nào đọc ra rỗng thì thử tên cũ của nó.
+ *
+ * Chỉ còn dùng khi không đọc được metadata. Chạy sau khi đã đọc xong nên tab
+ * còn tên hiện tại không tốn thêm lượt nào.
  */
 async function fillFromLegacyNames(result: Record<string, string[][]>): Promise<void> {
   await Promise.all(
@@ -269,33 +315,51 @@ async function fillFromLegacyNames(result: Record<string, string[][]>): Promise<
   );
 }
 
+/** Tab đã khai nhưng không có trong spreadsheet, từ lần đọc gần nhất. */
+let lastMissingTabs: string[] = [];
+export const getMissingTabs = (): string[] => [...lastMissingTabs];
+
 export async function fetchAllTabs(): Promise<Record<string, string[][]>> {
   const sheets = getSheetsClient();
   const result: Record<string, string[][]> = {};
+  const titles = await resolveTabTitles();
+
+  // Chỉ xin tab có thật. Tab không có thì để mảng rỗng — parser nào đọc nó sẽ
+  // trả về rỗng, và DataGapNote báo 'nguồn rỗng' đúng như nó vốn làm.
+  const wanted: { tab: TabName; title: string }[] = titles
+    ? TABS.flatMap((t) => {
+        const title = titles.get(t);
+        return title ? [{ tab: t, title }] : [];
+      })
+    : TABS.map((t) => ({ tab: t, title: t }));
+  lastMissingTabs = titles ? TABS.filter((t) => !titles.has(t)) : [];
+  for (const t of TABS) result[t] = [];
+
   try {
-    const ranges = TABS.map((t) => `${t}!A:Z`);
     const res = await sheets.spreadsheets.values.batchGet({
       spreadsheetId: getSpreadsheetId(),
-      ranges,
+      ranges: wanted.map((w) => `${a1Tab(w.title)}!A:Z`),
       valueRenderOption: 'UNFORMATTED_VALUE',
     });
     (res.data.valueRanges || []).forEach((vr, i) => {
-      result[TABS[i]] = (vr.values || []) as string[][];
+      const w = wanted[i];
+      if (w) result[w.tab] = (vr.values || []) as string[][];
     });
-    await fillFromLegacyNames(result);
+    if (!titles) await fillFromLegacyNames(result);
     return result;
   } catch {
-    // Fallback: a tab is missing — fetch each tab individually, skip 404s.
+    // Chỉ tới đây khi chính batchGet hỏng (quota, mạng) — không còn vì một tab
+    // sai tên nữa.
     await Promise.all(
-      TABS.map(async (t) => {
+      wanted.map(async (w) => {
         try {
-          result[t] = await fetchTab(t);
+          result[w.tab] = await fetchTab(w.title);
         } catch {
-          result[t] = [];
+          result[w.tab] = [];
         }
       }),
     );
-    await fillFromLegacyNames(result);
+    if (!titles) await fillFromLegacyNames(result);
     return result;
   }
 }
