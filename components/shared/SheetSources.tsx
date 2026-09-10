@@ -31,7 +31,7 @@ export function SheetSources({
    * Có một loại tab như vậy: App_Notes đọc qua /api/notes chứ không nằm trong
    * payload, nên không thể có DataSourceKey (registry cần một hàm đếm dòng từ
    * payload). Không nêu nó ra thì footer của Change log chỉ kể Camp_Links và
-   * PerGeo_CPI_Cap — đúng, vì trang dùng chúng để dựng dropdown, nhưng người
+   * Countries performance — đúng, vì trang dùng chúng để dựng dropdown, nhưng người
    * đọc sẽ tưởng log nằm ở đó. Đứng trước vì nó là nguồn chính của trang.
    */
   extra?: readonly string[];

@@ -197,7 +197,7 @@ export function GoogleAdsDeepSections() {
       {deep.country && (
         <Section
           title="Chi phí theo nước · đối chiếu trần CPI"
-          hint="cột duy nhất của Google nối được với PerGeo_CPI_Cap"
+          hint="cột duy nhất của Google nối được với Countries performance"
           defaultOpen
         >
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -290,7 +290,7 @@ export function GoogleAdsDeepSections() {
                         {r.excluded && (
                           <span
                             className="ml-1 rounded bg-rose-100 px-1 text-[9px] font-medium text-rose-700"
-                            title="Nước này nằm trong cột 'Excluded Countries' của PerGeo_CPI_Cap — nhưng Google vẫn đang chi tiền vào đây."
+                            title="Nước này nằm trong cột 'Excluded Countries' của Countries performance — nhưng Google vẫn đang chi tiền vào đây."
                           >
                             exclude
                           </span>
@@ -326,7 +326,7 @@ export function GoogleAdsDeepSections() {
                       </td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px] text-slate-500">
                         {r.capUsd === null ? (
-                          <span className="text-amber-600" title="Nước này chưa có dòng trong PerGeo_CPI_Cap">
+                          <span className="text-amber-600" title="Nước này chưa có dòng trong Countries performance">
                             chưa đặt
                           </span>
                         ) : (

@@ -610,7 +610,7 @@ export function parseMasterKw(rows: string[][]): MasterKwRow[] {
 // ---------------------------------------------------------------------------
 
 /**
- * 'PerGeo_CPI_Cap' — Country | Country Rank | CPI Cap ($) | Tier 1 Market? | Note.
+ * 'Countries performance' — Country | Country Rank | CPI Cap ($) | Tier 1 Market? | Note.
  *
  * The tab carries an unrelated RAW DATA block further right (columns J+), so
  * columns are located by header rather than by position, and any row without a
@@ -674,7 +674,7 @@ export function parsePerGeoCpiCap(rows: string[][]): PerGeoCpiCapRow[] {
 }
 
 /**
- * The revenue block living to the right of 'PerGeo_CPI_Cap' (columns I–P).
+ * The revenue block living to the right of 'Countries performance' (columns I–P).
  *
  * Located by its own header row (the cell reading 'Country' in that block)
  * rather than by a fixed column letter, so inserting a column on either side
@@ -775,7 +775,7 @@ export function parsePerGeoRevenue(rows: string[][]): {
 }
 
 /**
- * The 'Excluded Countries' column of PerGeo_CPI_Cap.
+ * The 'Excluded Countries' column of Countries performance.
  *
  * Located by its header text, not by column letter — it sits to the right of an
  * unrelated revenue block and has already moved once.
@@ -834,7 +834,7 @@ function parseMaxBid(text: string): number | null {
 }
 
 /**
- * The tier block of PerGeo_CPI_Cap: one column per tier, tier name in the header
+ * The tier block of Countries performance: one column per tier, tier name in the header
  * row, the max bid on the row below it, then the countries.
  *
  * Located by finding a row containing at least two cells that look like tier

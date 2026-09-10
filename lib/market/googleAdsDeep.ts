@@ -10,7 +10,7 @@ import { isInstallAction } from './googleAdsReport';
 // Each answers a question the campaign-level table cannot. Money per campaign
 // says a campaign is expensive; money per country says WHERE it is expensive,
 // and that is the only Google column that joins to the App Store side at all —
-// PerGeo_CPI_Cap sets a ceiling per country, and until now nothing checked
+// Countries performance sets a ceiling per country, and until now nothing checked
 // Google spend against it.
 //
 // Everything here is in the ACCOUNT currency (VND) unless a field says usd.
@@ -40,9 +40,9 @@ export interface GadsCountryRow {
   cpcUsd: number | null;
   /** Cost per Google-reported conversion. NOT a CPI; see the note in the UI. */
   cpaUsd: number | null;
-  /** CPI ceiling from PerGeo_CPI_Cap, USD. null when the country isn't configured. */
+  /** CPI ceiling from Countries performance, USD. null when the country isn't configured. */
   capUsd: number | null;
-  /** Revenue rank from PerGeo_CPI_Cap. */
+  /** Revenue rank from Countries performance. */
   rank: number | null;
   tier1: boolean;
   /** True when the country is a hard exclude on the App Store side. */
@@ -62,7 +62,7 @@ export interface GadsCountryRow {
 }
 
 /**
- * Look up a country in the exclude list Trang maintains in PerGeo_CPI_Cap.
+ * Look up a country in the exclude list Trang maintains in Countries performance.
  *
  * The list used to be a constant in this file, which meant every edit to the
  * sheet needed a deploy to take effect — and until it did, the dashboard and the
@@ -92,7 +92,7 @@ export interface GadsCountryReport {
   totalCostUsd: number;
   /** Spend in countries the App Store side excludes. */
   excludedCostUsd: number;
-  /** Spend in countries PerGeo_CPI_Cap never gave a ceiling. */
+  /** Spend in countries Countries performance never gave a ceiling. */
   uncappedCostUsd: number;
   /** Countries with spend but no configured cap. */
   uncappedCount: number;

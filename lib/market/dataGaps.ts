@@ -148,21 +148,21 @@ const SOURCES: Record<DataSourceKey, SourceDef> = {
     rows: (d) => d.bidCap ?? [],
   },
   perGeoCpiCap: {
-    label: 'PerGeo_CPI_Cap',
+    label: 'Countries performance',
     sheet: 'aso',
     drives: 'trần CPI theo nước',
     kind: 'tab',
     rows: (d) => d.perGeoCpiCap ?? [],
   },
   perGeoRevenue: {
-    label: 'PerGeo_CPI_Cap (block doanh thu)',
+    label: 'Countries performance (block doanh thu)',
     sheet: 'aso',
     drives: 'giá trị 1 install theo nước',
     kind: 'tab',
     rows: (d) => d.perGeoRevenue ?? [],
   },
   marketTiers: {
-    label: 'PerGeo_CPI_Cap (block tier)',
+    label: 'Countries performance (block tier)',
     sheet: 'aso',
     drives: 'tier của nước · trần bid theo tier',
     kind: 'tab',
@@ -298,7 +298,7 @@ const blank = (key: DataSourceKey, def: SourceDef): SourceHealth => ({
  * Source của một trang, nhóm theo spreadsheet — cho footer "Nguồn".
  *
  * Trả về đúng thứ tự khai báo trong trang, bỏ trùng: một trang đọc ba block
- * khác nhau của PerGeo_CPI_Cap thì footer chỉ cần kể tên tab một lần cho mỗi
+ * khác nhau của Countries performance thì footer chỉ cần kể tên tab một lần cho mỗi
  * nhãn, chứ không phải ba lần.
  */
 export function sourcesBySheet(

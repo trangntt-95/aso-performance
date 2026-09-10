@@ -66,7 +66,7 @@ export const COUNTRY_CAP_COLS: CapCol[] = [
     align: 'right',
     title: "Trần CPI mà model bid đang chạy theo (cột 'CPI cap' của Max bid cap). Là mức CHO PHÉP, không phải CPI đã tiêu — sheet không còn cột Spend.",
   },
-  { key: 'cap', label: 'Trần cấu hình', align: 'right', title: 'Trần CPI đã đặt trong PerGeo_CPI_Cap' },
+  { key: 'cap', label: 'Trần cấu hình', align: 'right', title: 'Trần CPI đã đặt trong Countries performance' },
   { key: 'gap', label: 'vs trần', align: 'right', title: 'Trần sheet so với trần cấu hình. Dương = model được phép trả cao hơn mức đã thống nhất.' },
   { key: 'verdict', label: 'Trạng thái', align: 'left' },
 ];

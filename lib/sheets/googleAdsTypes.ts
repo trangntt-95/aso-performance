@@ -70,7 +70,7 @@ export interface GoogleAdsKeywordDay {
   absTopIs: number | null;
 }
 
-/** Spend per country — the one Google tab that joins to PerGeo_CPI_Cap. */
+/** Spend per country — the one Google tab that joins to Countries performance. */
 export interface GoogleAdsCountryDay {
   date: string;
   campaignName: string;

@@ -452,7 +452,7 @@ export function makeDashboardTools(data: SheetPayload) {
       // the 'Max bid cap' tab has no Spend column and no other tab splits spend by
       // country, so per-country measured CPI does not exist in this dataset.
       description:
-        "Per-country CPI ceilings: the ceiling the bid model works to (from Max bid cap) against what one install is actually WORTH there (revenue per install). Answers whether a ceiling can pay for itself — a ceiling above install value loses money on every install bought at it. IMPORTANT: this returns ALLOWANCES, not outcomes. There is no measured CPI or spend per country anywhere in this data (the sheet dropped its Spend column), so never report cpi_cap_sheet as money actually paid, and say so if asked for actual CPI by country. The 'CPI Cap ($)' column of PerGeo_CPI_Cap is currently empty, so cpi_cap_config is 0 everywhere and must not be quoted as a configured ceiling. For real spend, use the per-campaign or per-category tools instead.",
+        "Per-country CPI ceilings: the ceiling the bid model works to (from Max bid cap) against what one install is actually WORTH there (revenue per install). Answers whether a ceiling can pay for itself — a ceiling above install value loses money on every install bought at it. IMPORTANT: this returns ALLOWANCES, not outcomes. There is no measured CPI or spend per country anywhere in this data (the sheet dropped its Spend column), so never report cpi_cap_sheet as money actually paid, and say so if asked for actual CPI by country. The 'CPI Cap ($)' column of Countries performance is currently empty, so cpi_cap_config is 0 everywhere and must not be quoted as a configured ceiling. For real spend, use the per-campaign or per-category tools instead.",
       inputSchema: z.object({
         only: z
           .enum(['all', 'cap-above-value', 'bidding', 'no-value'])
@@ -464,7 +464,7 @@ export function makeDashboardTools(data: SheetPayload) {
       }),
       execute: async ({ only, limit }) => {
         const ov = buildCpiCapOverview(data);
-        if (!ov) return { error: 'Chưa đọc được PerGeo_CPI_Cap.' };
+        if (!ov) return { error: 'Chưa đọc được Countries performance.' };
         const pick = (() => {
           switch (only) {
             case 'cap-above-value': return ov.rows.filter((r) => r.verdict === 'over');
@@ -477,7 +477,7 @@ export function makeDashboardTools(data: SheetPayload) {
           note:
             'cpi_cap_sheet là mức CPI model bid được phép chạy tới, KHÔNG phải CPI đã tiêu. ' +
             "Sheet 'Max bid cap' bỏ cột Spend từ 8/2026 nên không có spend/CPI thực theo nước. " +
-            "Cột 'CPI Cap ($)' của PerGeo_CPI_Cap đang trống nên cpi_cap_config = 0 ở mọi nước; " +
+            "Cột 'CPI Cap ($)' của Countries performance đang trống nên cpi_cap_config = 0 ở mọi nước; " +
             'so sánh ở đây là trần CPI vs giá trị 1 install, cùng đơn vị per-install.',
           totals: {
             countries_configured: ov.totals.configured,

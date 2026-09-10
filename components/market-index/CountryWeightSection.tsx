@@ -76,7 +76,7 @@ export function CountryWeightSection({ data: dataProp }: { data?: SheetPayload |
           <button
             type="button"
             onClick={() => setBasis('revenue')}
-            title="Trọng số = share doanh thu của nước trong block PerGeo_CPI_Cap (cập nhật theo quý)"
+            title="Trọng số = share doanh thu của nước trong block Countries performance (cập nhật theo quý)"
             className={cn(
               'px-2 py-0.5 font-medium transition',
               basis === 'revenue' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',

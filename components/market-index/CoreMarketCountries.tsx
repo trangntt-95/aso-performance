@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 // question about which markets matter.
 //
 // The revenue answer lives in the same tab, in the block Trang refreshes each
-// quarter (PerGeo_CPI_Cap columns I–P): real revenue per country, plus what one
+// quarter (Countries performance columns I–P): real revenue per country, plus what one
 // install is worth there. Ranking by that excludes India and Vietnam without
 // any special-casing — India earns $4 per install, Vietnam is not in the block
 // at all.
@@ -312,7 +312,7 @@ export function CoreMarketCountries({ data, limit = 15, weightBasis = 'revenue',
           ⓘ{' '}
           {byRevenue ? (
             <>
-              Doanh thu lấy từ khối bên phải tab <code className="text-[9px]">PerGeo_CPI_Cap</code> (cột I–P), cập nhật
+              Doanh thu lấy từ khối bên phải tab <code className="text-[9px]">Countries performance</code> (cột I–P), cập nhật
               theo quý{revenuePeriod ? ` — kỳ hiện tại: ${revenuePeriod}` : ''}. <b>%</b> là share doanh thu, không phải
               share traffic — nên nút L7/L30/L90 chỉ đổi cột users/install, không đổi thứ tự. <b>$/install</b> = doanh
               thu ÷ install ở nước đó: trần CPI phải nằm dưới con số này thì install mới tự trả được cho mình.

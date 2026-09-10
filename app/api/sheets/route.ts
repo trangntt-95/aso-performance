@@ -101,7 +101,7 @@ export async function GET() {
     const masterKwLookup = parseMasterKw(raw['Master KW Lookup'] ?? []);
 
     // Parsed once: the revenue block yields both the rows and the period label.
-    const perGeoRevenue = parsePerGeoRevenue(raw['PerGeo_CPI_Cap'] ?? []);
+    const perGeoRevenue = parsePerGeoRevenue(raw['Countries performance'] ?? []);
     const langKws = languageOnlyKeywords(masterKwLookup);
     // Language reclassify, then category fixes (brand, "profit" → Profit, tracker → Feature).
     const fixKw = (rows: KeywordRow[]) => overrideCategoryExact(overrideToLanguage(rows, langKws));
@@ -136,11 +136,11 @@ export async function GET() {
       pausedKw: parsePausedCamp(raw['Paused_camp'] ?? []),
       campLinks: parseCampLinks(raw['Camp_Links'] ?? []),
       bidCap: parseBidCap(raw['Max bid cap'] ?? []),
-      perGeoCpiCap: parsePerGeoCpiCap(raw['PerGeo_CPI_Cap'] ?? []),
+      perGeoCpiCap: parsePerGeoCpiCap(raw['Countries performance'] ?? []),
       perGeoRevenue: perGeoRevenue.rows,
       perGeoRevenuePeriod: perGeoRevenue.period,
-      excludedCountries: parseExcludedCountries(raw['PerGeo_CPI_Cap'] ?? []),
-      marketTiers: parseMarketTiers(raw['PerGeo_CPI_Cap'] ?? []),
+      excludedCountries: parseExcludedCountries(raw['Countries performance'] ?? []),
+      marketTiers: parseMarketTiers(raw['Countries performance'] ?? []),
       shopifyCamps: shopifyCampRows,
       shopifyDateRange: shopifyRange,
       shopifyDaily: parseShopifyDaily(shopifyDailyRaw, shopifySince, shopifyCampAllow),

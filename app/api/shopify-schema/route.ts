@@ -72,14 +72,14 @@ export async function GET(req: Request) {
     out.separateSheet = { error: err instanceof Error ? err.message : 'Unknown error' };
   }
 
-  // What the route actually receives for PerGeo_CPI_Cap. Kept, not temporary:
+  // What the route actually receives for 'Countries performance'. Kept, not temporary:
   // both the exclude column and the tier block have already been renamed and
   // moved once, and Sheets trims trailing empty cells so the header row can be
   // SHORTER than the rows below it — that combination is what made the exclude
   // list parse locally and come back empty in the payload. Row widths and the
   // parsed count together make that visible in one look.
   try {
-    const rows = await fetchTab('PerGeo_CPI_Cap');
+    const rows = await fetchTab('Countries performance');
     out.perGeoTab = {
       rows: rows.length,
       // Widest row vs header row: when these differ, a column exists that a

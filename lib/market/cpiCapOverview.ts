@@ -4,14 +4,14 @@ import { aggregateBidCapCells } from '@/lib/market/bidCapAgg';
 // Is the CPI ceiling we are bidding to worth paying at all?
 //
 // 'Max bid cap' supplies the ceiling the bid model works to, per Country ×
-// Category. The revenue block of PerGeo_CPI_Cap supplies what one install is
+// Category. The revenue block of Countries performance supplies what one install is
 // actually worth in that country. Both are per-install amounts, so subtracting
 // one from the other is meaningful and answers the question that decides whether
 // a market should be bought: a ceiling above the value of an install loses money
 // on every install bought at it, no matter how well the campaign runs.
 //
 // ── Why it is no longer compared against the config ceiling ────────────────
-// The 'CPI Cap ($)' column of PerGeo_CPI_Cap (columns A–E) has been cleared:
+// The 'CPI Cap ($)' column of Countries performance (columns A–E) has been cleared:
 // verified live 2026-09-08, the header row is intact and 0 of 124 rows carry
 // data. The tab's live content sits in two other blocks — RAW DATA (revenue, cols
 // I–P) and the tier block (cols S–Z).
@@ -162,7 +162,7 @@ function verdictOf(r: {
 /**
  * The roster of countries we have decided to buy, from the tier block.
  *
- * The original Country | Rank | CPI Cap columns of PerGeo_CPI_Cap were cleared in
+ * The original Country | Rank | CPI Cap columns of Countries performance were cleared in
  * favour of this block: one column per tier holding a bid range, with per-country
  * overrides in parentheses. The tier block is therefore the only remaining record
  * of WHICH countries are in play and which tier each sits in — worth reading, and

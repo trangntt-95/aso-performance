@@ -1,5 +1,5 @@
 import { google } from 'googleapis';
-import { TABS } from './tabs';
+import { TABS, LEGACY_TAB_NAMES, type TabName } from './tabs';
 
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
 // Read/write scope — only used by the bid-notes writer; needs the sheet shared
@@ -244,6 +244,31 @@ export async function probeShopifyWide(tab?: string, range?: string): Promise<un
   }
 }
 
+/**
+ * Tab nào rỗng thì thử tên cũ của nó.
+ *
+ * Chạy sau khi đã đọc xong, nên tab còn tên hiện tại không tốn thêm lượt gọi
+ * nào. Chỉ tab vừa bị đổi tên mới đi thêm một lượt.
+ */
+async function fillFromLegacyNames(result: Record<string, string[][]>): Promise<void> {
+  await Promise.all(
+    (Object.entries(LEGACY_TAB_NAMES) as [TabName, string[]][]).map(async ([tab, olds]) => {
+      if ((result[tab]?.length ?? 0) > 0) return;
+      for (const old of olds) {
+        try {
+          const rows = await fetchTab(old);
+          if (rows.length > 0) {
+            result[tab] = rows;
+            return;
+          }
+        } catch {
+          // Tên cũ không còn — đúng như mong đợi sau khi đổi tên xong.
+        }
+      }
+    }),
+  );
+}
+
 export async function fetchAllTabs(): Promise<Record<string, string[][]>> {
   const sheets = getSheetsClient();
   const result: Record<string, string[][]> = {};
@@ -257,6 +282,7 @@ export async function fetchAllTabs(): Promise<Record<string, string[][]>> {
     (res.data.valueRanges || []).forEach((vr, i) => {
       result[TABS[i]] = (vr.values || []) as string[][];
     });
+    await fillFromLegacyNames(result);
     return result;
   } catch {
     // Fallback: a tab is missing — fetch each tab individually, skip 404s.
@@ -269,6 +295,7 @@ export async function fetchAllTabs(): Promise<Record<string, string[][]>> {
         }
       }),
     );
+    await fillFromLegacyNames(result);
     return result;
   }
 }

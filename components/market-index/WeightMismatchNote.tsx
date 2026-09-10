@@ -99,7 +99,7 @@ export function WeightMismatchNote({ report }: { report: MismatchReport | null }
           </div>
           <p className="text-[10px] leading-relaxed text-slate-500 sm:col-span-2">
             So share users trong <code className="text-[9px]">Country_{report.window}</code> với share
-            doanh thu trong <code className="text-[9px]">PerGeo_CPI_Cap</code>. Vào danh sách khi lệch
+            doanh thu trong <code className="text-[9px]">Countries performance</code>. Vào danh sách khi lệch
             từ <b>2,5 lần</b> trở lên. Nước dưới <b>10 users</b> không được so theo tỷ lệ — tỷ lệ tính
             trên 2 users lệch bao nhiêu cũng không nói lên điều gì — nhưng nếu nó nắm từ 1% doanh thu
             thì vẫn được nêu ở cột phải, vì nước có tiền mà không có traffic là loại dễ bị bỏ qua nhất.

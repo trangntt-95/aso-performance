@@ -28,7 +28,7 @@ import {
 // comparing the sheet's own CPI cap against the configured one.
 //
 // That comparison was broken in a way that was easy to miss: the configured
-// ceiling ('CPI Cap ($)' in PerGeo_CPI_Cap) is empty — header intact, 0 of 124
+// ceiling ('CPI Cap ($)' in Countries performance) is empty — header intact, 0 of 124
 // rows filled — so the value fell back to the tier block's 'Max bid' row. Max bid
 // is money per CLICK and a CPI ceiling is money per INSTALL, and comparing them
 // reported 37 of 40 countries as over cap with gaps to +293%, measuring nothing
@@ -213,7 +213,7 @@ export function CpiCapOverview() {
                       ) : (
                         <span
                           className="cursor-help text-amber-700"
-                          title="Nước này không có trong block doanh thu của PerGeo_CPI_Cap, nên không có gì để cân trần CPI."
+                          title="Nước này không có trong block doanh thu của Countries performance, nên không có gì để cân trần CPI."
                         >
                           chưa có
                         </span>
@@ -221,7 +221,7 @@ export function CpiCapOverview() {
                       {r.cap > 0 && (
                         <div
                           className="cursor-help text-[9px] text-slate-400"
-                          title="Trần CPI đã cấu hình trong PerGeo_CPI_Cap. Cột này hiện trống ở mọi nước; khi được điền lại thì nó hiện ở đây."
+                          title="Trần CPI đã cấu hình trong Countries performance. Cột này hiện trống ở mọi nước; khi được điền lại thì nó hiện ở đây."
                         >
                           trần đặt {money(r.cap)}
                         </div>
@@ -260,12 +260,12 @@ export function CpiCapOverview() {
         <div>
           Bảng này cân <b>trần CPI</b> (mức model bid được phép trả cho 1 install, cột{' '}
           <code className="text-[9px]">CPI cap</code> của Max bid cap) với <b>giá trị 1 install</b>{' '}
-          (doanh thu ÷ install, block doanh thu của PerGeo_CPI_Cap). Cả hai đều là tiền trên mỗi
+          (doanh thu ÷ install, block doanh thu của Countries performance). Cả hai đều là tiền trên mỗi
           install nên trừ được cho nhau: trần cao hơn giá trị thì mỗi install mua ở trần đều lỗ, dù
           camp chạy tốt cỡ nào — đó là lỗi <b>cấu hình trần</b>, cần sửa khác với lỗi vận hành.
         </div>
         <div>
-          Trước 9/2026 cột này so trần sheet với <b>trần cấu hình</b> trong PerGeo_CPI_Cap. Cột đó
+          Trước 9/2026 cột này so trần sheet với <b>trần cấu hình</b> trong Countries performance. Cột đó
           hiện <b>trống ở cả 124 dòng</b> nên số liệu rơi về dòng <code className="text-[9px]">Max
           bid</code> của block tier — mà Max bid là tiền/<b>click</b> còn trần CPI là tiền/
           <b>install</b>, hai đơn vị khác nhau. Kết quả là 37/40 nước bị báo &ldquo;vượt trần&rdquo;

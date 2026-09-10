@@ -45,13 +45,13 @@ console.log('\nGiữ thứ tự khai báo, bỏ trùng nhãn');
 {
   const g = sourcesBySheet(['campLinks', 'masterKwLookup', 'bidCap']);
   eq('đúng thứ tự trang khai', g[0].labels, ['Camp_Links', 'Master KW Lookup', 'Max bid cap']);
-  // Ba block của PerGeo_CPI_Cap là ba source khác nhau nhưng nhãn khác nhau,
+  // Ba block của tab này là ba source khác nhau, nhãn cũng khác nhau,
   // nên vẫn kể ba — trùng chỉ bị gộp khi nhãn giống hệt.
   const p = sourcesBySheet(['perGeoCpiCap', 'perGeoRevenue', 'marketTiers']);
-  eq('ba block PerGeo kể riêng', p[0].labels, [
-    'PerGeo_CPI_Cap',
-    'PerGeo_CPI_Cap (block doanh thu)',
-    'PerGeo_CPI_Cap (block tier)',
+  eq('ba block của Countries performance kể riêng', p[0].labels, [
+    'Countries performance',
+    'Countries performance (block doanh thu)',
+    'Countries performance (block tier)',
   ]);
   eq('khai trùng key thì chỉ kể một lần',
     sourcesBySheet(['bidCap', 'bidCap'])[0].labels, ['Max bid cap']);

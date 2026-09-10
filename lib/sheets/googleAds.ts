@@ -312,7 +312,7 @@ export function parseGoogleAds(raw: Record<string, unknown[][]>): GoogleAdsPaylo
   }
 
   // country_daily keys on Google's numeric geo-target id; dim_country turns it
-  // into the country name that PerGeo_CPI_Cap and the ASO tables use.
+  // into the country name that Countries performance and the ASO tables use.
   const dim = rowsOf(raw['dim_country']);
   const countryById = new Map<string, { name: string; code: string }>();
   if (dim) {

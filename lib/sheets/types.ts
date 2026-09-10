@@ -274,7 +274,7 @@ export interface MasterKwRow {
  * sheet tab (Apps Script). The dashboard only reads + filters — no recompute.
  */
 /**
- * One country in the revenue block of 'PerGeo_CPI_Cap' (columns I–P).
+ * One country in the revenue block of 'Countries performance' (columns I–P).
  *
  * This is the block Trang refreshes each quarter, and it is the authority on
  * what the core market is: actual revenue, not a hand-kept rank. `valuePerInstall`
@@ -298,7 +298,7 @@ export interface PerGeoRevenueRow {
 }
 
 /**
- * One entry of the hand-kept 'Excluded Countries' column in PerGeo_CPI_Cap.
+ * One entry of the hand-kept 'Excluded Countries' column in Countries performance.
  *
  * The column mixes two decisions in one list: a bare country name is a hard
  * exclude, while a name carrying a parenthetical note ("Brazil (bid thấp)",
@@ -315,7 +315,7 @@ export interface ExcludedCountryRow {
 }
 
 /**
- * A market tier from the PerGeo_CPI_Cap tier block, with the countries in it.
+ * A market tier from the Countries performance tier block, with the countries in it.
  *
  * Each tier column states a max-bid figure ("100", "$30-40", "$8-15") and lists
  * its countries below. A country may carry its own override in parentheses —
@@ -338,7 +338,7 @@ export interface MarketTierRow {
   }[];
 }
 
-/** One row of the 'PerGeo_CPI_Cap' tab — the CPI ceiling set per country. */
+/** One row of the 'Countries performance' tab — the CPI ceiling set per country. */
 export interface PerGeoCpiCapRow {
   country: string;
   /** Revenue rank of the country (1 = biggest). null when the cell is blank. */
@@ -487,21 +487,21 @@ export interface SheetPayload {
   campLinks: CampLinkRow[];
   /** Recommended bid per Country × Category ('Max bid cap' tab). */
   bidCap: BidCapRow[];
-  /** CPI ceiling + revenue rank per country ('PerGeo_CPI_Cap' tab). This is the
+  /** CPI ceiling + revenue rank per country ('Countries performance' tab). This is the
    *  config the bid recommendations are derived FROM, so it's carried
    *  separately to let the UI show intent next to outcome. */
   perGeoCpiCap: PerGeoCpiCapRow[];
-  /** Revenue per country ('PerGeo_CPI_Cap' columns I–P), refreshed quarterly.
+  /** Revenue per country ('Countries performance' columns I–P), refreshed quarterly.
    *  The definition of the core market and the only source of what an install
    *  is actually worth. */
   perGeoRevenue: PerGeoRevenueRow[];
   /** Period the revenue block covers, e.g. "tháng 4-7". */
   perGeoRevenuePeriod: string;
-  /** Tier → countries → max bid, from the tier block of PerGeo_CPI_Cap. This is
+  /** Tier → countries → max bid, from the tier block of Countries performance. This is
    *  what lets a camp named "… Tier 2" be resolved to actual countries. */
   marketTiers: MarketTierRow[];
   /** Countries Trang has decided not to buy, or to buy only at a low bid
-   *  ('Excluded Countries' column of PerGeo_CPI_Cap). Replaces the list that
+   *  ('Excluded Countries' column of Countries performance). Replaces the list that
    *  used to be hardcoded in the Google Ads report. */
   excludedCountries: ExcludedCountryRow[];
   /** Per-campaign aggregate paid spend ('Shopify_daily' tab) — for overbid detection. */
