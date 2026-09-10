@@ -25,6 +25,9 @@
     "../../lib/market/organicDiscovery.ts",
     "../../lib/sheets/kwNorm.ts",
     "../../lib/sheets/parsers.ts",
-    "../../lib/market/keywordNetValue.ts"
+    "../../lib/market/keywordNetValue.ts",
+    "../../lib/market/campHealth.ts",
+    "../../lib/market/overbid.ts",
+    "../../lib/market/underbid.ts"
   ]
 }

@@ -99,7 +99,18 @@ export function aggregateBidCapCells(bidCap: BidCapRow[]): Map<string, BidCapCel
       a.bids.push(r.bidRecommended);
       a.clustersWithBid += 1;
     }
-    if (r.cpiCap > 0) a.caps.push(r.cpiCap);
+    // Trần CPI của một cluster.
+    //
+    // Sheet đổi tên cột này hai lần trong tháng 9: 'CPI cap' → 'Net Val' →
+    // 'NPI (Max CPI)'. Chỉ đọc tên cũ thì cả 1.433 dòng ra 0 và chiều CPI của
+    // Overbid chết lặng — đo live 10/9: 37 camp được chấm, 37 có mốc bid, 0 có
+    // mốc CPI. Camp vượt CPI vẫn hiện 'ok' vì không có gì để so.
+    //
+    // Thứ tự ưu tiên: NPI×90% là trần sheet THẬT SỰ bid tới (công thức của nó
+    // ghi min(NPI×90%×CR, tier ceil)), NPI là điểm hoà vốn, còn cpiCap là tên
+    // cũ giữ cho bản sheet chưa cập nhật.
+    const cap = r.capAt90 ?? r.netValue ?? (r.cpiCap > 0 ? r.cpiCap : null);
+    if (cap !== null && cap > 0) a.caps.push(cap);
     if (isCutAction(r.actionRecommended)) a.clustersToCut += 1;
   }
   const out = new Map<string, BidCapCell>();
