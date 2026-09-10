@@ -103,5 +103,22 @@ export async function GET(req: Request) {
     out.perGeoTab = { error: err instanceof Error ? err.message : 'Unknown error' };
   }
 
+  // 'Max bid cap' cũng vừa được sắp lại: nhiều cột parser vẫn đọc giờ rỗng
+  // toàn bộ (cpiCap, instL90, clicksL30, crActual). Cần nhìn header thật để
+  // biết cột đã dời đi đâu hay đã bỏ hẳn.
+  try {
+    const rows = await fetchTab('Max bid cap');
+    out.bidCapTab = {
+      rows: rows.length,
+      widestRow: rows.reduce((w, r) => Math.max(w, (r ?? []).length), 0),
+      sample: rows.slice(0, 8).map((r, i) => ({
+        row: i + 1,
+        cells: (r ?? []).slice(0, 26).map((c) => (c === '' || c == null ? null : String(c).slice(0, 22))),
+      })),
+    };
+  } catch (err) {
+    out.bidCapTab = { error: err instanceof Error ? err.message : 'Unknown error' };
+  }
+
   return NextResponse.json(out);
 }
