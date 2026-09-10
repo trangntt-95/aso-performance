@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
 import { parseExcludedCountries, parseMarketTiers } from '@/lib/sheets/parsers';
-import { fetchShopifyDailyRows, fetchTab, listShopifyTabs, probeShopifyWide } from '@/lib/sheets/client';
+import {
+  fetchShopifyDailyRows,
+  fetchTab,
+  listMainTabs,
+  listShopifyTabs,
+  probeMainTab,
+  probeShopifyWide,
+} from '@/lib/sheets/client';
 
 // What the two Shopify Ads sources actually contain right now.
 //
@@ -30,6 +37,14 @@ export async function GET(req: Request) {
     out.shopifyTabs = { error: err instanceof Error ? err.message : 'Unknown error' };
   }
 
+  // Tab thật sự có trong sheet chính. TABS là danh sách muốn đọc; hai cái lệch
+  // nhau là lúc một tab vừa đổi tên hoặc vừa được thêm.
+  try {
+    out.mainTabs = await listMainTabs();
+  } catch (err) {
+    out.mainTabs = { error: err instanceof Error ? err.message : 'Unknown error' };
+  }
+
   try {
     const rows = await fetchTab('Shopify_daily');
     out.mainSheetTab = {
@@ -44,6 +59,11 @@ export async function GET(req: Request) {
   // returns 306, so the per-day table has moved out of those columns. Dump a
   // wider range to find where it went instead of guessing.
   const url = new URL(req.url);
+  // ?main=<tên tab>&mainRange=A1:Z20 — chụp thô một tab của sheet chính.
+  const mainTab = url.searchParams.get('main') || '';
+  if (mainTab) {
+    out.mainProbe = await probeMainTab(mainTab, url.searchParams.get('mainRange') || undefined);
+  }
   const tab = url.searchParams.get('tab') || '';
   try {
     out.probedTab = tab;

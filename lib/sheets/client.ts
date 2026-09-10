@@ -199,6 +199,60 @@ export async function listShopifyTabs(): Promise<
 }
 
 /**
+ * Mọi tab của sheet CHÍNH, kèm kích thước lưới.
+ *
+ * TABS là danh sách tab dashboard MUỐN đọc; đây là danh sách tab thật sự có.
+ * Khi hai cái lệch nhau — tab đổi tên, tab mới thêm — không nhìn được cái sau
+ * thì chỉ còn cách đoán tên, và đoán sai trông y hệt tab rỗng.
+ */
+export async function listMainTabs(): Promise<
+  { title: string; rows: number; cols: number }[] | { error: string }
+> {
+  try {
+    const sheets = getSheetsClient();
+    const res = await sheets.spreadsheets.get({
+      spreadsheetId: getSpreadsheetId(),
+      fields: 'sheets.properties(title,gridProperties)',
+    });
+    return (res.data.sheets ?? []).map((sh) => ({
+      title: sh.properties?.title ?? '',
+      rows: sh.properties?.gridProperties?.rowCount ?? 0,
+      cols: sh.properties?.gridProperties?.columnCount ?? 0,
+    }));
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+/** Chụp thô một tab của sheet chính — để đọc layout thật thay vì đoán. */
+export async function probeMainTab(
+  tab: string,
+  range = 'A1:AB14',
+): Promise<unknown> {
+  try {
+    const sheets = getSheetsClient();
+    const a1 = range.replace(/[^A-Za-z0-9:]/g, '') || 'A1:AB14';
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: getSpreadsheetId(),
+      range: `${a1Tab(tab)}!${a1}`,
+      valueRenderOption: 'UNFORMATTED_VALUE',
+    });
+    const rows = (res.data.values ?? []) as unknown[][];
+    return {
+      tab,
+      returnedRows: rows.length,
+      widestRow: rows.reduce((w, r) => Math.max(w, (r ?? []).length), 0),
+      sample: rows.map((r, i) => ({
+        row: i + 1,
+        cells: (r ?? []).slice(0, 28).map((c) => (c === '' || c == null ? null : String(c).slice(0, 24))),
+      })),
+    };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+/**
  * A wide, shallow read of the Shopify 'By campaign' tab.
  *
  * Diagnostic only. The tab's grid is ~101k rows while the A:F read returns a few

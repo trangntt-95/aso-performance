@@ -124,6 +124,8 @@ async function fetchPayload(): Promise<SheetPayload> {
     // underlying tabs instead.
     paidCategoryBoard: null,
     // The chat has no UI to link a source from.
+    netValuePerInstall: [],
+    netValueScope: '',
     sheetSources: [],
     missingTabs: [],
     shopifyDateRange: parseShopifyDateRange(raw['Shopify_daily'] ?? []),

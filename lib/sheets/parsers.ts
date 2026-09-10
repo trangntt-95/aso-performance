@@ -1,5 +1,6 @@
 import { normalizeCampName } from './campName';
 import type {
+  NetValueRow,
   ActionQueueRow,
   AlertLogRow,
   AlertType,
@@ -924,7 +925,9 @@ export function parseMarketTiers(rows: string[][]): MarketTierRow[] {
 
 export function parseBidCap(rows: string[][]): BidCapRow[] {
   if (!rows || rows.length < 2) return [];
-  const norm = (c: unknown): string => str(c).trim().toLowerCase();
+  // Gộp khoảng trắng: tiêu đề 'NPI\n(Max CPI)' có xuống dòng ngay giữa ô, nên
+  // so bằng chuỗi thô sẽ trượt.
+  const norm = (c: unknown): string => str(c).trim().toLowerCase().replace(/\s+/g, ' ');
   // The header is row 1 (row 0 is a title banner), but scan a few rows so an
   // extra banner line inserted above it doesn't break parsing.
   let headerIdx = -1;
@@ -966,13 +969,16 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
     crActual: find('cr %', 'cr act', 'cr_actual'),
     cpiCap: find('cpi cap', 'cpi_cap'),
     tierCeiling: find('tier ceil', 'tier_ceiling'),
-    // Bản dựng lại 9/2026. 'net val' phải thử trước 'val ' — nếu không thì
-    // 'Val T4-7' (kỳ trước) chiếm mất chỗ của cột Net Val.
-    netValue: find('net val'),
-    capAt90: find('cap×90', 'cap x90', 'cap 90'),
-    crUsedPct: find('cr used'),
+    // Bản dựng lại 9/2026, đổi header hai lần trong một tuần:
+    //   bản 1: 'Net Val' | 'Cap×90%' | 'CR used %' | 'CR source' | '⚠️ Warning'
+    //   bản 2: 'NPI (Max CPI)' | 'NPI×90%' | 'CR used' | (bỏ) | '⚠️'
+    // Nhận cả hai. Thứ tự ứng viên quan trọng: 'npi' trần sẽ khớp cả 'NPI×90%',
+    // nên tên đầy đủ phải đứng trước.
+    netValue: find('npi (max cpi)', 'net val', 'npi'),
+    capAt90: find('npi×90%', 'npi×90', 'npi x90', 'cap×90', 'cap x90', 'cap 90'),
+    crUsedPct: find('cr used %', 'cr used'),
     crSource: find('cr source'),
-    warning: find('warning', '⚠️ warning'),
+    warning: find('⚠️', '⚠️ warning', 'warning'),
     // 'bid rec' appears twice; find() returns the FIRST match, which is the live
     // column M. The stale column O twin is intentionally left unparsed.
     bidRecommended: find('bid rec', 'bid_recommended'),
@@ -1433,4 +1439,118 @@ export function parseHistory(rows: string[][]): HistoryRow[] {
       };
     })
     .filter((r): r is HistoryRow => r !== null);
+}
+
+// ---------------------------------------------------------------------------
+// 'Net value per install' — net value theo keyword × nước.
+//
+// Tab Trang thêm 9/2026, và là nguồn duy nhất trong workbook trả lời "một
+// install của KEYWORD này đáng bao nhiêu". 'Countries Performance' chỉ tới
+// mức nước, mà hai keyword trong cùng một nước lệch rất xa: đo trên chính
+// sheet, 'true profit' ở Mỹ là $141/install còn 'trueprofit' là $82.
+//
+// Layout (đọc live 10/9/2026): ba dòng ghi chú, một dòng trống, header ở r5:
+//   Surface | Keyword (raw) | Keyword (decoded) | Cluster | Country |
+//   Installs | Paying shops | Net value ($) | Net / install ($) |
+//   Paid CR (%) | Largest shop (orders/30d) | Shops with 0 orders/30d
+//
+// Header dò theo TÊN chứ không theo vị trí: ba tab khác trong workbook này đã
+// bị sắp lại trong một tuần, mỗi lần đều làm parser trả 0 dòng mà không có lỗi
+// nào, nên bám vị trí ở đây chỉ là hẹn ngày hỏng.
+// ---------------------------------------------------------------------------
+
+export function parseNetValuePerInstall(rows: string[][]): {
+  rows: NetValueRow[];
+  scope: string;
+} {
+  const empty = { rows: [] as NetValueRow[], scope: '' };
+  if (!rows || rows.length < 2) return empty;
+  const norm = (c: unknown): string => str(c).trim().toLowerCase().replace(/\s+/g, ' ');
+
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 12); i++) {
+    const r = (rows[i] ?? []).map(norm);
+    if (r.some((h) => h.startsWith('keyword')) && r.some((h) => h.startsWith('net value'))) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return empty;
+  const header = (rows[headerIdx] ?? []).map(norm);
+  const find = (...cands: string[]): number => {
+    for (const c of cands) {
+      const i = header.indexOf(c);
+      if (i >= 0) return i;
+    }
+    for (const c of cands) {
+      const i = header.findIndex((h) => h.startsWith(c));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const ci = {
+    surface: find('surface'),
+    // 'Keyword (raw)' phải thắng 'Keyword (decoded)' — cả hai đều bắt đầu bằng
+    // 'keyword', nên tên đầy đủ đứng trước.
+    keyword: find('keyword (raw)', 'keyword'),
+    keywordDecoded: find('keyword (decoded)'),
+    cluster: find('cluster'),
+    country: find('country'),
+    installs: find('installs'),
+    payingShops: find('paying shops'),
+    // 'Net value ($)' trước 'Net / install ($)': cùng bắt đầu bằng 'net'.
+    netValue: find('net value ($)', 'net value'),
+    netPerInstall: find('net / install ($)', 'net / install', 'net/install'),
+    paidCr: find('paid cr (%)', 'paid cr'),
+    largestShop: find('largest shop'),
+    shopsZero: find('shops with 0'),
+  };
+  if (ci.keyword < 0 || ci.netValue < 0) return empty;
+
+  const at = (row: string[], idx: number): unknown => (idx >= 0 ? row[idx] : undefined);
+  const optNum = (v: unknown): number | null => {
+    const t = str(v).trim();
+    if (!t || t === '—' || t === '-') return null;
+    const n = num(t.replace('%', ''));
+    return Number.isFinite(n) ? n : null;
+  };
+
+  // Ghi chú phạm vi nằm ở mấy dòng đầu ('Keyword x country — YTD …'). Lấy dòng
+  // đầu tiên có chữ mà không phải tiêu đề của cả tab.
+  let scope = '';
+  for (let i = 0; i < headerIdx; i++) {
+    const v = str((rows[i] ?? [])[0]).trim();
+    if (v && !/^shopify\b/i.test(v) && !/^complete\b/i.test(v)) {
+      scope = v;
+      break;
+    }
+  }
+
+  const out: NetValueRow[] = [];
+  for (const row of rows.slice(headerIdx + 1)) {
+    const keyword = str(at(row, ci.keyword)).trim();
+    if (!keyword) continue;
+    const installs = num(at(row, ci.installs));
+    const netValue = num(at(row, ci.netValue));
+    const perInstall = optNum(at(row, ci.netPerInstall));
+    out.push({
+      // Sheet ghi 'search' / 'search_ad' như các tab khác; mọi thứ khác coi là
+      // organic thay vì đoán bừa.
+      surface: norm(at(row, ci.surface)) === 'search_ad' ? 'search_ad' : 'search',
+      keyword,
+      keywordDecoded: str(at(row, ci.keywordDecoded)).trim(),
+      cluster: str(at(row, ci.cluster)).trim(),
+      country: str(at(row, ci.country)).trim(),
+      installs,
+      payingShops: num(at(row, ci.payingShops)),
+      netValue,
+      // Tự tính khi sheet không đưa, nhưng không bịa khi không có install:
+      // chia cho 0 ra Infinity và nó sẽ trôi thẳng vào bảng bid.
+      netPerInstall: perInstall ?? (installs > 0 ? netValue / installs : null),
+      paidCrPct: optNum(at(row, ci.paidCr)),
+      largestShopOrders: optNum(at(row, ci.largestShop)),
+      shopsZeroOrders: optNum(at(row, ci.shopsZero)),
+    });
+  }
+  return { rows: out, scope };
 }

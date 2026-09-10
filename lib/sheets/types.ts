@@ -350,6 +350,48 @@ export interface PerGeoCpiCapRow {
   note: string;
 }
 
+/**
+ * Một dòng của tab 'Net value per install': keyword × nước.
+ *
+ * Trang xác nhận định nghĩa: net value = doanh thu − phí Shopify. Đã trừ phí
+ * nền tảng, CHƯA trừ tiền quảng cáo — nên netPerInstall so trực tiếp được với
+ * trần CPI, và trừ spend lần nữa ở phía dashboard là trừ hai lần.
+ *
+ * Đây là grain mà 'Countries Performance' không có: nó chỉ nói một install ở
+ * Mỹ đáng bao nhiêu, còn tab này nói install của 'true profit' ở Mỹ đáng bao
+ * nhiêu — và hai keyword trong cùng một nước lệch nhau rất xa ($141 cho
+ * 'true profit' so với $82 cho 'trueprofit').
+ */
+export interface NetValueRow {
+  /** 'search' (organic) hoặc 'search_ad' (paid) — như cột Surface của sheet. */
+  surface: Surface;
+  /** Keyword như sheet ghi. */
+  keyword: string;
+  /** Bản đã giải mã, khi keyword gốc bị encode. Rỗng thì dùng keyword. */
+  keywordDecoded: string;
+  cluster: string;
+  country: string;
+  installs: number;
+  /** Số shop đã trả tiền — mẫu số thật của độ tin cậy, không phải installs. */
+  payingShops: number;
+  /** Doanh thu trừ phí Shopify, tổng cho nhóm install này. */
+  netValue: number;
+  /** netValue ÷ installs. */
+  netPerInstall: number | null;
+  /** CR của paid, đơn vị phần trăm. */
+  paidCrPct: number | null;
+  /**
+   * Số đơn 30 ngày của shop lớn nhất trong nhóm.
+   *
+   * Đây là cột cảnh báo tập trung: một keyword có net value cao vì một shop
+   * khổng lồ thì con số đó không lặp lại được, và bid theo nó là bid theo một
+   * lần may. Không có cột này thì không phân biệt được với keyword đều đặn.
+   */
+  largestShopOrders: number | null;
+  /** Số shop không có đơn nào trong 30 ngày — phần đã tắt của nhóm. */
+  shopsZeroOrders: number | null;
+}
+
 export interface BidCapRow {
   tier: string;
   country: string;
@@ -561,6 +603,10 @@ export interface SheetPayload {
   /** The spreadsheets behind this payload, so a screen can link its own source
    *  instead of describing it in prose. Only the configured ones appear. A
    *  spreadsheet id is a document the owner already has open, not a credential. */
+  /** Tab 'Net value per install' — net value theo keyword × nước. */
+  netValuePerInstall: NetValueRow[];
+  /** Ghi chú phạm vi của tab đó, ví dụ 'Keyword x country — YTD'. */
+  netValueScope: string;
   sheetSources: { id: 'aso' | 'shopify' | 'gads'; label: string; url: string }[];
   /**
    * Tab đã khai trong TABS nhưng không có trong spreadsheet.

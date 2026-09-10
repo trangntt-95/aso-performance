@@ -29,6 +29,10 @@ export const TABS = [
   'Paused_camp',
   'Camp_Links',
   'Shopify_daily',
+  // Thêm 9/2026: net value trên mỗi install ở grain keyword × nước — con số
+  // duy nhất trên toàn workbook trả lời "một install của keyword này đáng bao
+  // nhiêu tiền", thay vì chỉ đáng bao nhiêu ở nước nào.
+  'Net value per install',
 ] as const;
 
 export type TabName = (typeof TABS)[number];
