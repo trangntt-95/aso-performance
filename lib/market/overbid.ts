@@ -82,6 +82,14 @@ export interface OverbidParams {
   cpcTolerancePct?: number;
   /** Flag only when CPI exceeds the allowed CPI by > this %. Default 0. */
   cpiTolerancePct?: number;
+  /**
+   * Tiêu từ ngần này trở lên mà KHÔNG ra install nào thì báo, bất kể mốc bid.
+   *
+   * Luật tuyệt đối, không phải luật tỷ lệ: camp 0 install không có CPI để so
+   * (chia cho 0), nên nó lọt qua cả hai chiều cũ và hiện 'ok' — đúng camp tệ
+   * nhất lại là camp bảng báo bình thường. Mặc định $30.
+   */
+  noInstallSpend?: number;
 }
 
 // Camp-name category token → 'Max bid cap' category taxonomy.
@@ -142,6 +150,7 @@ export function assessCamps(
   params: OverbidParams = {},
 ): OverbidRow[] {
   const minClicks = params.minClicks ?? 5;
+  const noInstallSpend = params.noInstallSpend ?? 30;
   // Camps in the 'Paused_camp' tab are no longer running — drop them so the
   // table only lists live camps whose bid you can still act on. Resolve on the
   // base name so a paused camp renamed with a "(CPI …)" tag or a free-text note
@@ -320,6 +329,22 @@ export function assessCamps(
       out.push(stub('paused', campCategory(c.pausedNames[0] ?? '') ?? 'Unknown'));
       continue;
     }
+
+    // Tiêu đủ nhiều mà không ra install nào.
+    //
+    // Đứng TRƯỚC cửa low-clicks là chủ đích: camp 0 install thường cũng ít
+    // click, để sau thì nó thoát ra bằng cửa đó và không ai thấy. Ngưỡng ở đây
+    // là TIỀN — tiền đã tiêu thì không cần đủ click mới đáng tin.
+    if (c.installs === 0 && c.spend >= noInstallSpend) {
+      const row = stub('overbid', campCategory(c.name) ?? 'Unknown');
+      row.reasons = [`Tiêu $${c.spend.toFixed(2)}, chưa ra install nào`];
+      // Xếp hạng theo tiền đã đốt: không có % vượt để so, mà tiền thì so được
+      // trực tiếp với các camp vượt mốc khác.
+      row.score = c.spend;
+      out.push(row);
+      continue;
+    }
+
     if (c.clicks < minClicks) {
       out.push(stub('low-clicks', campCategory(c.name) ?? 'Unknown')); // too little data to trust CPC
       continue;

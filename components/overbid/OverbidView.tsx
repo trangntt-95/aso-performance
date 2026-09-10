@@ -298,6 +298,12 @@ export function OverbidView() {
       <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
         <Flame className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
         <div>
+          <span className="mb-1 block">
+            <b>Hai loại cảnh báo.</b> (1) <b>Vượt mốc</b>: CPC vượt bid cho phép, hoặc CPI vượt CPI
+            cho phép. (2) <b>Đốt tiền không ra install</b>: tiêu từ <b>$30</b> trở lên mà chưa có
+            install nào — luật tuyệt đối, không cần đủ click, vì camp 0 install thì CPI không tồn
+            tại (chia cho 0) nên nó lọt qua mọi luật so tỷ lệ và trước đây hiện “ok”.
+          </span>
           <b>Camp bị overbid</b> — camp trong <code className="text-[10px]">Shopify_daily</code> có{' '}
           <b>CPC thực tế (Spend/Clicks)</b> vượt <b>bid cho phép</b> (<code className="text-[10px]">Bid Rec ⭐</code>)
           hoặc <b>CPI</b> vượt <b>CPI cho phép</b> (<code className="text-[10px]">CPI cap</code>, tab{' '}
