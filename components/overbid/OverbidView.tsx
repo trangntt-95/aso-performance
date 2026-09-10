@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { categoryStyle, CATEGORY_ORDER } from '@/lib/utils/colors';
 import { formatNumber } from '@/lib/utils/format';
 import { assessCamps, type CampVerdict, type OverbidRow } from '@/lib/market/overbid';
+import { campTotalsFromDaily } from '@/lib/sheets/parsers';
 import { cn } from '@/lib/utils';
 import type { Category } from '@/lib/sheets/types';
 
@@ -186,14 +187,35 @@ export function OverbidView() {
 
   // Every camp in Shopify_daily with its verdict — the overbid ones drive the
   // main table, the rest are what the "đã xử lý" view is made of.
+  /**
+   * Chi phí camp trong 30 ngày gần nhất.
+   *
+   * Cộng từ export theo ngày chứ không đọc tab tổng: tab tổng cộng nguyên một
+   * khoảng do lần export cuối quyết định, nên ngưỡng "$30" của luật đốt tiền
+   * sẽ mang nghĩa khác nhau mỗi tháng mà không ai biết. Hôm nay hai nguồn ra
+   * cùng kết quả — tab tổng đang đúng 30 ngày — và đó chính là lý do phải chốt
+   * lại: nó đang trùng, không phải được bảo đảm.
+   *
+   * Cửa sổ neo vào ngày mới nhất CÓ TRONG data, không phải hôm nay: export trễ
+   * một hai ngày, neo vào hôm nay thì cửa sổ tự ngắn dần mỗi sáng.
+   */
+  const window30 = useMemo(
+    () => campTotalsFromDaily(data?.shopifyDaily ?? [], 30),
+    [data?.shopifyDaily],
+  );
+
   const assessed = useMemo(() => {
     if (!data) return [];
-    return assessCamps(data.shopifyCamps ?? [], data.bidCap ?? [], data.campLinks ?? [], data.pausedKw ?? [], {
+    // Không có export theo ngày thì lùi về tab tổng, và phần chú thích bên dưới
+    // nói rõ đang đọc nguồn nào — im lặng đổi nguồn là cách chắc nhất để hai
+    // tuần sau không ai giải thích được con số.
+    const camps = window30.camps.length > 0 ? window30.camps : data.shopifyCamps ?? [];
+    return assessCamps(camps, data.bidCap ?? [], data.campLinks ?? [], data.pausedKw ?? [], {
       minClicks: Number(minClicks) || 0,
       cpcTolerancePct: Number(cpcTol) || 0,
       cpiTolerancePct: Number(cpiTol) || 0,
     });
-  }, [data, minClicks, cpcTol, cpiTol]);
+  }, [data, window30, minClicks, cpcTol, cpiTol]);
 
   const overbidRows = useMemo(() => assessed.filter((r) => r.verdict === 'overbid'), [assessed]);
 
@@ -300,9 +322,13 @@ export function OverbidView() {
         <div>
           <span className="mb-1 block">
             <b>Hai loại cảnh báo.</b> (1) <b>Vượt mốc</b>: CPC vượt bid cho phép, hoặc CPI vượt CPI
-            cho phép. (2) <b>Đốt tiền không ra install</b>: tiêu từ <b>$30</b> trở lên mà chưa có
+            cho phép. (2) <b>Đốt tiền không ra install</b>: tiêu từ <b>$30</b> trở lên <b>hoặc</b> từ <b>6 click</b>
+            trở lên mà chưa có
             install nào — luật tuyệt đối, không cần đủ click, vì camp 0 install thì CPI không tồn
-            tại (chia cho 0) nên nó lọt qua mọi luật so tỷ lệ và trước đây hiện “ok”.
+            tại (chia cho 0) nên nó lọt qua mọi luật so tỷ lệ và trước đây hiện “ok”. 6 click
+            không install nghĩa là CR đang dưới 1/6 ≈ 16,7%. Bắt bằng click chứ không đợi đủ tiền:
+            camp bid thấp ăn được hàng chục click mà chưa tới $30, và vẫn là camp đang hỏng.
+            Tất cả tính trên <b>30 ngày gần nhất</b>, cộng từ export theo ngày.
           </span>
           <b>Camp bị overbid</b> — camp trong <code className="text-[10px]">Shopify_daily</code> có{' '}
           <b>CPC thực tế (Spend/Clicks)</b> vượt <b>bid cho phép</b> (<code className="text-[10px]">Bid Rec ⭐</code>)

@@ -94,6 +94,44 @@ console.log('\nCamp đã tắt vẫn không báo');
   eq('camp paused không bị chấm overbid', rows[0].verdict, 'paused');
 }
 
+console.log('\n6 click mà chưa ra install');
+{
+  // 6 click, 0 install, mới tiêu $12 — dưới ngưỡng tiền nhưng vẫn phải báo:
+  // CR chắc chắn dưới 1/6 ≈ 16,7%. Camp bid thấp ăn được hàng chục click mà
+  // chưa tới $30, và vẫn là camp đang hỏng.
+  const rows = assessCamps([camp('TP - Profit - I', 12, 0, 6)], CAPS, [], [], {});
+  eq('6 click 0 install ⇒ overbid', rows[0].verdict, 'overbid');
+  eq('lý do nói cả CR trần', rows[0].reasons, ['6 click, chưa ra install nào (CR < 16.7%)']);
+}
+{
+  // 5 click: chưa tới ngưỡng 6 của luật mới, nhưng ĐÃ tới minClicks (5) nên nó
+  // vẫn được chấm bình thường — CPC $2,40 dưới bid cho phép $10 ⇒ 'ok'.
+  const rows = assessCamps([camp('TP - Profit - J', 12, 0, 5)], CAPS, [], [], {});
+  eq('5 click chưa đủ cho luật mới, vẫn chấm như cũ', rows[0].verdict, 'ok');
+}
+{
+  // Dưới cả minClicks thì vẫn là low-clicks — luật mới không nới cửa đó ra.
+  const rows = assessCamps([camp('TP - Profit - J2', 12, 0, 4)], CAPS, [], [], {});
+  eq('4 click ⇒ low-clicks', rows[0].verdict, 'low-clicks');
+}
+{
+  const rows = assessCamps([camp('TP - Profit - K', 12, 1, 20)], CAPS, [], [], {});
+  eq('có install thì luật click không đụng tới',
+    rows[0].reasons.some((x) => /click, chưa/.test(x)), false);
+}
+{
+  // Vừa quá tiền vừa quá click ⇒ kể cả hai lý do, không chọn một.
+  const rows = assessCamps([camp('TP - Profit - L', 80, 0, 10)], CAPS, [], [], {});
+  eq('hai lý do cùng hiện', rows[0].reasons.length, 2);
+  eq('CR trần tính theo số click thật', /CR < 10\.0%/.test(rows[0].reasons[1]), true);
+}
+{
+  // Nâng ngưỡng lên 20 thì 6 click không còn bị bắt; nó rơi về đường chấm cũ
+  // (6 ≥ minClicks nên vẫn được chấm) và CPC $2 dưới bid cho phép ⇒ 'ok'.
+  const rows = assessCamps([camp('TP - Profit - M', 12, 0, 6)], CAPS, [], [], { noInstallClicks: 20 });
+  eq('đổi được ngưỡng click', rows[0].verdict, 'ok');
+}
+
 console.log('\nVào danh sách overbid');
 {
   const list = findOverbidCamps(

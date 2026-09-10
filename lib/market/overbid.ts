@@ -90,6 +90,15 @@ export interface OverbidParams {
    * nhất lại là camp bảng báo bình thường. Mặc định $30.
    */
   noInstallSpend?: number;
+  /**
+   * Từng này click mà KHÔNG ra install nào thì báo. Mặc định 6.
+   *
+   * 6 click không install nghĩa là CR đang dưới 1/6 ≈ 16,7% — dưới mức đó thì
+   * traffic đang vào nhưng không đổi thành gì. Bắt bằng click chứ không đợi đủ
+   * tiền: camp bid thấp có thể ăn hàng chục click mà chưa tới $30, và vẫn là
+   * camp đang hỏng.
+   */
+  noInstallClicks?: number;
 }
 
 // Camp-name category token → 'Max bid cap' category taxonomy.
@@ -151,6 +160,7 @@ export function assessCamps(
 ): OverbidRow[] {
   const minClicks = params.minClicks ?? 5;
   const noInstallSpend = params.noInstallSpend ?? 30;
+  const noInstallClicks = params.noInstallClicks ?? 6;
   // Camps in the 'Paused_camp' tab are no longer running — drop them so the
   // table only lists live camps whose bid you can still act on. Resolve on the
   // base name so a paused camp renamed with a "(CPI …)" tag or a free-text note
@@ -335,11 +345,21 @@ export function assessCamps(
     // Đứng TRƯỚC cửa low-clicks là chủ đích: camp 0 install thường cũng ít
     // click, để sau thì nó thoát ra bằng cửa đó và không ai thấy. Ngưỡng ở đây
     // là TIỀN — tiền đã tiêu thì không cần đủ click mới đáng tin.
-    if (c.installs === 0 && c.spend >= noInstallSpend) {
+    const burntMoney = c.installs === 0 && c.spend >= noInstallSpend;
+    const burntClicks = c.installs === 0 && c.clicks >= noInstallClicks;
+    if (burntMoney || burntClicks) {
       const row = stub('overbid', campCategory(c.name) ?? 'Unknown');
-      row.reasons = [`Tiêu $${c.spend.toFixed(2)}, chưa ra install nào`];
+      const reasons: string[] = [];
+      if (burntMoney) reasons.push(`Tiêu $${c.spend.toFixed(2)}, chưa ra install nào`);
+      if (burntClicks) {
+        // Nói luôn CR trần: 6 click 0 install thì CR chắc chắn dưới 1/6.
+        const ceiling = (100 / c.clicks).toFixed(1);
+        reasons.push(`${c.clicks} click, chưa ra install nào (CR < ${ceiling}%)`);
+      }
+      row.reasons = reasons;
       // Xếp hạng theo tiền đã đốt: không có % vượt để so, mà tiền thì so được
-      // trực tiếp với các camp vượt mốc khác.
+      // trực tiếp với các camp vượt mốc khác. Camp bị bắt vì click mà tiêu ít
+      // thì tự nhiên nằm dưới — đúng thứ tự đáng xử lý.
       row.score = c.spend;
       out.push(row);
       continue;
