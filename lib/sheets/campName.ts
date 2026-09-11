@@ -79,7 +79,7 @@ export function buildCampNameResolver(canonical: readonly string[]): CampNameRes
   const lcByLen = Array.from(byLc.keys()).sort((a, b) => b.length - a.length);
   // tier-agnostic form -> the lowercased base names that collapse onto it.
   const byTierless = new Map<string, string[]>();
-  for (const lc of byLc.keys()) {
+  for (const lc of Array.from(byLc.keys())) {
     const t = tierAgnostic(lc);
     if (t === lc) continue; // no tier token: nothing to be agnostic about
     const arr = byTierless.get(t);
