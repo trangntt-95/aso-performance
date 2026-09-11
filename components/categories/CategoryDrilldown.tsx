@@ -26,6 +26,12 @@ import type {
 import { buildPaidStatusIndex, resolvePaidStatus, type PaidStatus } from '@/lib/sheets/paidStatus';
 import { WasteKeywordsPanel } from './WasteKeywordsPanel';
 import { normKw } from '@/lib/sheets/kwNorm';
+import {
+  buildKeywordNetValueByPick,
+  sumNetValueAggs,
+  type NetValueAgg,
+  type NetValueByPick,
+} from '@/lib/market/keywordNetValue';
 
 interface KeywordSummary extends PaidStatus {
   category: string;
@@ -42,6 +48,12 @@ interface KeywordSummary extends PaidStatus {
    *  exists to say the keyword is bought and silent, which is itself the
    *  finding. */
   noImpressions: boolean;
+  /**
+   * Một install của keyword này trên KÊNH này đáng bao nhiêu (tab Net value
+   * per install, gộp mọi nước). Dòng organic lấy giá trị organic, dòng paid
+   * lấy paid. null = tab chưa có.
+   */
+  nv: NetValueAgg | null;
 }
 
 // Master KW Lookup labels categories with its own vocabulary, which does not
@@ -84,6 +96,7 @@ function buildSummaries(
   kwAddedManual: KwAddedManualRow[],
   negativeKw: string[],
   pausedKw: MasterKwRow[],
+  netValueByKw: Map<string, NetValueByPick> = new Map(),
 ): KeywordSummary[] {
   // category === null → all categories (flat view); otherwise scope to one.
   const inCategory = <T extends { category: string }>(rows: T[]) =>
@@ -109,6 +122,7 @@ function buildSummaries(
         l365: null,
         countries: [],
         noImpressions: false,
+        nv: netValueByKw.get(normKw(term))?.[surface === 'paid' ? 'paid' : 'organic'] ?? null,
         ...resolvePaidStatus(term, paidIndex),
       });
     }
@@ -313,8 +327,28 @@ export function CategoryDrilldown({ category }: { category?: string }) {
       data.kwAddedManual ?? [],
       data.negativeKw ?? [],
       data.pausedKw ?? [],
+      buildKeywordNetValueByPick(data),
     );
   }, [data, category]);
+
+  // Giá trị install của cả category (hoặc từng category ở chế độ All) — cộng
+  // net value và installs của mọi keyword × kênh có trong tab Net value, rồi
+  // chia. Lấy trên summaries (chưa lọc) để con số là của category, không phải
+  // của bộ lọc đang bật.
+  const categoryValue = useMemo(() => {
+    const byCat = new Map<string, NetValueAgg | null>();
+    const groups = new Map<string, NetValueAgg[]>();
+    for (const r of summaries) {
+      if (!r.nv) continue;
+      const arr = groups.get(r.category);
+      if (arr) arr.push(r.nv);
+      else groups.set(r.category, [r.nv]);
+    }
+    groups.forEach((items, cat) => byCat.set(cat, sumNetValueAggs(items)));
+    return byCat;
+  }, [summaries]);
+
+  const [sortBy, setSortBy] = useState<'users' | 'value'>('users');
 
   const silentCount = useMemo(() => summaries.filter((r) => r.noImpressions).length, [summaries]);
 
@@ -339,7 +373,7 @@ export function CategoryDrilldown({ category }: { category?: string }) {
     const minU = minUsers.trim() === '' ? null : Number(minUsers);
     const minG = minInstall.trim() === '' ? null : Number(minInstall);
     const maxP = maxPos.trim() === '' ? null : Number(maxPos);
-    return summaries.filter((r) => {
+    let list = summaries.filter((r) => {
       if (allMode && categoryFilter !== 'all' && r.category !== categoryFilter) return false;
       if (shownFilter === 'shown' && r.noImpressions) return false;
       if (shownFilter === 'silent' && !r.noImpressions) return false;
@@ -369,7 +403,17 @@ export function CategoryDrilldown({ category }: { category?: string }) {
       }
       return true;
     });
-  }, [summaries, shownFilter, search, allMode, categoryFilter, surfaceFilter, paidFilter, countryFilter, metricWindow, minUsers, minInstall, maxPos]);
+    if (sortBy === 'value') {
+      // buildSummaries đã sắp theo users; chỉ đảo lại khi chọn sắp theo giá
+      // trị. Không có giá trị → cuối bảng, giữ thứ tự users giữa chúng.
+      list = list.slice().sort((a, b) => {
+        const av = a.nv?.netPerInstall ?? -Infinity;
+        const bv = b.nv?.netPerInstall ?? -Infinity;
+        return bv - av;
+      });
+    }
+    return list;
+  }, [summaries, shownFilter, search, allMode, categoryFilter, surfaceFilter, paidFilter, countryFilter, metricWindow, minUsers, minInstall, maxPos, sortBy]);
 
   const dirty =
     search !== '' ||
@@ -559,6 +603,15 @@ export function CategoryDrilldown({ category }: { category?: string }) {
               <option value="l365">L365</option>
             </select>
           </div>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'users' | 'value')}
+            className="h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            title="Thứ tự bảng"
+          >
+            <option value="users">Sắp: Users</option>
+            <option value="value">Sắp: Net/install</option>
+          </select>
           {dirty && (
             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={resetAll}>
               <X className="h-3 w-3" />
@@ -599,6 +652,38 @@ export function CategoryDrilldown({ category }: { category?: string }) {
         </div>
       )}
 
+      {/* Giá trị install của category — để so ưu tiên ngân sách giữa các category. */}
+      {!isLoading && categoryValue.size > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span
+            className="text-slate-500 mr-0.5"
+            title={`Net value (doanh thu − phí Shopify, chưa trừ ads) ÷ installs, cộng trên mọi keyword × kênh của category có trong tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}. Mỏng = dưới 3 shop trả tiền.`}
+          >
+            Giá trị 1 install:
+          </span>
+          {Array.from(categoryValue.entries())
+            .filter(([, v]) => v && v.netPerInstall !== null)
+            .sort((a, b) => (b[1]!.netPerInstall ?? 0) - (a[1]!.netPerInstall ?? 0))
+            .map(([cat, v]) => {
+              const cs = categoryStyle(cat as Category);
+              return (
+                <span
+                  key={cat}
+                  className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-medium', cs.bg, cs.text, 'border-transparent')}
+                  title={`${cat}: ${v!.installs} install · ${v!.payingShops} shop trả tiền · net $${Math.round(v!.netValue)}${v!.thin ? ` — ${v!.thinReason}` : ''}`}
+                >
+                  {allMode && <span>{cs.emoji} {cat}</span>}
+                  <span className={cn('font-mono', v!.thin && 'text-amber-700')}>
+                    ${v!.netPerInstall!.toFixed(0)}
+                    {v!.thin && <span className="ml-0.5 text-[9px]">mỏng</span>}
+                  </span>
+                  <span className="opacity-70">· {v!.installs} inst</span>
+                </span>
+              );
+            })}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -620,6 +705,12 @@ export function CategoryDrilldown({ category }: { category?: string }) {
                 <th className="px-2 py-2 text-left font-medium">L30</th>
                 <th className="px-2 py-2 text-left font-medium">L90</th>
                 <th className="px-2 py-2 text-left font-medium">L365</th>
+                <th
+                  className="px-2 py-2 text-right font-medium"
+                  title={`Một install của keyword này trên kênh của dòng (organic / paid) đáng bao nhiêu: net value ÷ installs, gộp mọi nước. Nguồn: tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}. 'mỏng' = dưới 3 shop trả tiền.`}
+                >
+                  Net/install
+                </th>
                 <th className="px-2 py-2 text-left font-medium">Status</th>
               </tr>
             </thead>
@@ -686,6 +777,22 @@ export function CategoryDrilldown({ category }: { category?: string }) {
                   <MetricsCell row={row.l30} metrics={metrics} />
                   <MetricsCell row={row.l90} metrics={metrics} />
                   <SnapshotCell row={row.l365} metrics={metrics} />
+                  <td className="px-2 py-1.5 align-top text-right font-mono text-[11px] whitespace-nowrap">
+                    {row.nv?.netPerInstall == null ? (
+                      <span className="text-slate-300" title="Tab Net value per install chưa có keyword này trên kênh này">—</span>
+                    ) : (
+                      <span
+                        className={row.nv.thin ? 'text-amber-700' : 'font-semibold text-indigo-700'}
+                        title={
+                          `${row.nv.installs} install ${row.surface} · ${row.nv.payingShops} shop trả tiền · net $${Math.round(row.nv.netValue)}` +
+                          (row.nv.thin ? ` — ${row.nv.thinReason}` : '')
+                        }
+                      >
+                        ${row.nv.netPerInstall.toFixed(0)}
+                        {row.nv.thin && <span className="ml-0.5 text-[9px]">mỏng</span>}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-2 py-1.5 align-top">
                     <PaidStatusBadge status={row} />
                   </td>
@@ -695,7 +802,8 @@ export function CategoryDrilldown({ category }: { category?: string }) {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            U = Users · I = Install · CR = conversion · P = avg position
+            U = Users · I = Install · CR = conversion · P = avg position · <b>Net/install</b> = một install của keyword trên kênh
+            của dòng đáng bao nhiêu (tab Net value per install; <span className="text-amber-700">mỏng</span> = dưới 3 shop trả tiền)
           </div>
         </div>
       )}

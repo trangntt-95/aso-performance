@@ -291,3 +291,56 @@ export function sumCountryNetValue(
   });
   return any ? finish(a) : null;
 }
+
+/**
+ * keyword đã chuẩn hoá → giá trị theo kênh, gộp mọi nước.
+ *
+ * Cho bảng có một dòng cho mỗi keyword × surface (Categories): dòng organic
+ * phải hiện giá trị của install organic, dòng paid của install paid — hai con
+ * số này lệch nhau thật (install paid thường rẻ giá trị hơn), gộp chung sẽ
+ * tô hồng cả hai dòng bằng một số không thuộc dòng nào.
+ */
+export function buildKeywordNetValueByPick(
+  data: SheetPayload | null | undefined,
+): Map<string, NetValueByPick> {
+  const out = new Map<string, NetValueByPick>();
+  const rows = data?.netValuePerInstall ?? [];
+  if (rows.length === 0) return out;
+  type Cell = Record<NetValuePick, RawAcc | null>;
+  const acc = new Map<string, Cell>();
+  for (const r of rows as NetValueRow[]) {
+    const k = normKw(r.keyword ?? '');
+    if (!k) continue;
+    let cell = acc.get(k);
+    if (!cell) {
+      cell = { all: newAcc(), organic: null, paid: null };
+      acc.set(k, cell);
+    }
+    addRow(cell.all!, r);
+    const p = pickOf(r);
+    if (!cell[p]) cell[p] = newAcc();
+    addRow(cell[p]!, r);
+  }
+  acc.forEach((cell, k) => {
+    out.set(k, {
+      all: cell.all ? finish(cell.all) : null,
+      organic: cell.organic ? finish(cell.organic) : null,
+      paid: cell.paid ? finish(cell.paid) : null,
+    });
+  });
+  return out;
+}
+
+/** Gộp nhiều NetValueAgg (ví dụ mọi keyword của một category) thành một. */
+export function sumNetValueAggs(items: readonly (NetValueAgg | null | undefined)[]): NetValueAgg | null {
+  const a = newAcc();
+  let any = false;
+  for (const v of items) {
+    if (!v) continue;
+    a.installs += v.installs;
+    a.payingShops += v.payingShops;
+    a.netValue += v.netValue;
+    any = true;
+  }
+  return any ? finish(a) : null;
+}
