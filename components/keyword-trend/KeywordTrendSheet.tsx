@@ -18,6 +18,7 @@ import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
 import { useStatusStore } from '@/lib/store/statusStore';
 import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
 import { keywordPaidShare, summarizeImpact, type ImpactPoint } from '@/lib/market/noteImpact';
+import { buildKeywordCountryNetValue, type NetValueAgg } from '@/lib/market/keywordNetValue';
 import type {
   ActionQueueRow,
   HistoryRow,
@@ -120,7 +121,7 @@ function aggregateByCountry(
 }
 
 type ChannelView = 'all' | 'organic' | 'paid';
-type SortKey = 'country' | 'users' | 'installs' | 'cr' | 'pos' | 'delta';
+type SortKey = 'country' | 'users' | 'installs' | 'cr' | 'pos' | 'delta' | 'netPerInstall';
 
 interface ViewRow {
   country: string;
@@ -129,6 +130,9 @@ interface ViewRow {
   cr: number;
   pos: number | null;
   deltaUsersPct: number | null;
+  /** Một install của keyword này Ở NƯỚC NÀY đáng bao nhiêu (tab Net value per
+   *  install, theo kênh đang xem). null = tab chưa có dòng cho ô này. */
+  nv: NetValueAgg | null;
 }
 
 function projectRow(c: CountryRow, view: ChannelView): ViewRow {
@@ -140,6 +144,7 @@ function projectRow(c: CountryRow, view: ChannelView): ViewRow {
       cr: c.organicCr,
       pos: c.organicPos,
       deltaUsersPct: c.organicDeltaUsersPct,
+      nv: null,
     };
   }
   if (view === 'paid') {
@@ -150,6 +155,7 @@ function projectRow(c: CountryRow, view: ChannelView): ViewRow {
       cr: c.paidCr,
       pos: c.paidPos,
       deltaUsersPct: c.paidDeltaUsersPct,
+      nv: null,
     };
   }
   // all = combined
@@ -179,6 +185,7 @@ function projectRow(c: CountryRow, view: ChannelView): ViewRow {
     cr: totalUsers > 0 ? totalInstalls / totalUsers : 0,
     pos: pos !== null && isFinite(pos) && pos > 0 ? pos : null,
     deltaUsersPct: combinedDelta,
+    nv: null,
   };
 }
 
@@ -336,8 +343,22 @@ export function KeywordTrendSheet() {
     [data, keyword, drillWindow, surface],
   );
 
+  // keyword × nước → giá trị install. Tab Net value là YTD, không đổi theo
+  // drillWindow — nó nói install ở đó ĐÁNG bao nhiêu, không phải tuần này
+  // kiếm được bao nhiêu.
+  const kwCountryNv = useMemo(() => buildKeywordCountryNetValue(data), [data]);
+  const nvForKeyword = useMemo(
+    () => (keyword ? kwCountryNv.get(normKw(keyword)) ?? null : null),
+    [kwCountryNv, keyword],
+  );
+
   const tableRows = useMemo(() => {
-    const projected = countryBreakdown.map((c) => projectRow(c, channelView));
+    const projected = countryBreakdown.map((c) => {
+      const row = projectRow(c, channelView);
+      const cell = nvForKeyword?.get(c.country);
+      row.nv = cell ? cell[channelView] : null;
+      return row;
+    });
     const q = countrySearch.trim().toLowerCase();
     const filtered = q ? projected.filter((r) => r.country.toLowerCase().includes(q)) : projected;
     const cmp = (a: ViewRow, b: ViewRow): number => {
@@ -353,13 +374,19 @@ export function KeywordTrendSheet() {
         const bv = b.deltaUsersPct ?? -Infinity;
         return av - bv;
       }
+      if (sortKey === 'netPerInstall') {
+        // chưa có giá trị → cuối bảng dù sắp chiều nào
+        const av = a.nv?.netPerInstall ?? -Infinity;
+        const bv = b.nv?.netPerInstall ?? -Infinity;
+        return av - bv;
+      }
       const av = a[sortKey] as number;
       const bv = b[sortKey] as number;
       return av - bv;
     };
     filtered.sort((a, b) => (sortDir === 'desc' ? -cmp(a, b) : cmp(a, b)));
     return filtered;
-  }, [countryBreakdown, channelView, countrySearch, sortKey, sortDir]);
+  }, [countryBreakdown, channelView, countrySearch, sortKey, sortDir, nvForKeyword]);
 
   const toggleSort = (k: SortKey) => {
     if (sortKey === k) {
@@ -864,6 +891,17 @@ export function KeywordTrendSheet() {
                               onClick={() => toggleSort('delta')}
                             />
                           </th>
+                          <th
+                            className="text-right px-2 py-1.5 border-b border-slate-200"
+                            title={`Net value mỗi install của keyword này tại nước này (doanh thu − phí Shopify, chưa trừ ads). Nguồn: tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}. Số nhỏ 'mỏng' = dưới 3 shop trả tiền, chưa nên bid theo.`}
+                          >
+                            <SortHeader
+                              label="Net/install"
+                              active={sortKey === 'netPerInstall'}
+                              dir={sortDir}
+                              onClick={() => toggleSort('netPerInstall')}
+                            />
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -901,6 +939,22 @@ export function KeywordTrendSheet() {
                               <td className={cn('px-2 py-1 text-right font-mono font-medium', deltaCls)}>
                                 {r.deltaUsersPct === null ? '—' : formatDeltaPct(r.deltaUsersPct)}
                               </td>
+                              <td className="px-2 py-1 text-right font-mono">
+                                {r.nv?.netPerInstall == null ? (
+                                  <span className="text-slate-300" title="Tab Net value chưa có dòng cho keyword × nước này">—</span>
+                                ) : (
+                                  <span
+                                    className={r.nv.thin ? 'text-amber-700' : 'font-semibold text-indigo-700'}
+                                    title={
+                                      `${r.nv.installs} install · ${r.nv.payingShops} shop trả tiền · net $${Math.round(r.nv.netValue)}` +
+                                      (r.nv.thin ? ` — ${r.nv.thinReason}` : '')
+                                    }
+                                  >
+                                    ${r.nv.netPerInstall.toFixed(0)}
+                                    {r.nv.thin && <span className="ml-0.5 text-[9px]">mỏng</span>}
+                                  </span>
+                                )}
+                              </td>
                             </tr>
                           );
                         })}
@@ -913,6 +967,12 @@ export function KeywordTrendSheet() {
                       ? ` / ${countryBreakdown.length} total`
                       : ''}
                     · view: <b>{channelView}</b> · {drillWindow}
+                    {nvForKeyword && (
+                      <>
+                        {' '}· Net/install: {tableRows.filter((r) => r.nv?.netPerInstall != null).length} nước có giá trị
+                        {data?.netValueScope ? ` (${data.netValueScope})` : ''}
+                      </>
+                    )}
                   </div>
                 </div>
               )}
