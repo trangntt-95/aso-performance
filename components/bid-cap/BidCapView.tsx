@@ -11,6 +11,7 @@ import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 import type { BidCapRow } from '@/lib/sheets/types';
 import { useBidNoteStore } from '@/lib/store/bidNoteStore';
+import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
 import { currentBidByCategory, deriveBidAction } from '@/lib/market/currentBid';
 import { buildCampLinkIndex } from '@/lib/market/campLink';
 import { findCampBidConflicts } from '@/lib/market/campBidConflicts';
@@ -45,7 +46,7 @@ function NoteCell({ country, category }: { country: string; category: string }) 
   const setNote = useBidNoteStore((s) => s.setNote);
   return (
     <td className="px-2 py-1.5 align-top">
-      <textarea
+      <AutoGrowTextarea
         value={note}
         onChange={(e) => setNote(country, category, e.target.value)}
         placeholder="Ghi chú…"

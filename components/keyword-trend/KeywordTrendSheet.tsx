@@ -19,6 +19,7 @@ import { useStatusStore } from '@/lib/store/statusStore';
 import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
 import { keywordPaidShare, summarizeImpact, type ImpactPoint } from '@/lib/market/noteImpact';
 import { buildKeywordCountryNetValue, type NetValueAgg } from '@/lib/market/keywordNetValue';
+import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
 import type {
   ActionQueueRow,
   HistoryRow,
@@ -982,7 +983,7 @@ export function KeywordTrendSheet() {
 
             <section className="space-y-2">
               <h3 className="text-[11px] uppercase tracking-wide text-slate-500">Personal note</h3>
-              <textarea
+              <AutoGrowTextarea
                 value={currentNote}
                 onChange={(e) => setNote(noteKey, e.target.value)}
                 placeholder="e.g. tested broad match Q2, paused due to low CR"

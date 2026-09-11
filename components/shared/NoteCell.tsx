@@ -1,6 +1,7 @@
 'use client';
 
 import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
+import { AutoGrowTextarea } from './AutoGrowTextarea';
 
 // Editable note cell auto-saved to the App_Notes sheet tab (server-side, shared
 // across users). Optimistic + debounced; shows a tiny "lưu…" while in flight.
@@ -37,7 +38,7 @@ export function NoteCell({
   const setNote = useNotesStore((s) => s.setNote);
   return (
     <td className={className ?? 'px-2 py-1.5 align-top'}>
-      <textarea
+      <AutoGrowTextarea
         value={note}
         onChange={(e) => setNote(scope, noteId, e.target.value)}
         placeholder="Ghi chú…"
