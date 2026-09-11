@@ -15,6 +15,8 @@ import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
 import { currentBidByCategory, deriveBidAction } from '@/lib/market/currentBid';
 import { buildCampLinkIndex } from '@/lib/market/campLink';
 import { findCampBidConflicts } from '@/lib/market/campBidConflicts';
+import { buildCellNetValue, cellKey } from '@/lib/market/cellNetValue';
+import type { NetValueAgg } from '@/lib/market/keywordNetValue';
 import { CpiCapOverview } from './CpiCapOverview';
 import { CategoryCpiPanel } from './CategoryCpiPanel';
 
@@ -29,6 +31,13 @@ type BidCapRowX = BidCapRow & {
   bidNow: number | null;
   action: string;
   camp: RowCamp;
+  /** Một install PAID ở ô Country × Category này đáng bao nhiêu (tab Net value
+   *  per install, gộp mọi keyword của ô; category theo bộ phân loại All_L*).
+   *  Cùng một giá trị cho mọi cluster của ô — tab không có grain cluster. */
+  value: NetValueAgg | null;
+  /** cpiCap ÷ value.netPerInstall − 1. Dương = trần CPI cao hơn giá trị một
+   *  install: mua đúng ở trần vẫn lỗ. null khi thiếu một vế. */
+  capVsValuePct: number | null;
 };
 
 // Editable note cell, auto-saved to the Bid_Notes sheet tab (server-side, shared
@@ -114,6 +123,7 @@ type SortKey =
   | 'bid'
   | 'bidnow'
   | 'cpicap'
+  | 'value'
   | 'ceil'
   | 'cr'
   | 'installs'
@@ -152,6 +162,9 @@ const SORT_COLS: Record<SortKey, { kind: 'num' | 'text'; get: (r: BidCapRowX) =>
   bid: { kind: 'num', get: (r) => (r.bidRecommended > 0 ? r.bidRecommended : null) },
   bidnow: { kind: 'num', get: (r) => r.bidNow },
   cpicap: { kind: 'num', get: (r) => (r.cpiCap > 0 ? r.cpiCap : null) },
+  // Sắp theo mức trần vượt giá trị, không theo giá trị thô: câu hỏi của cột là
+  // "ô nào đang cho phép mua đắt hơn giá trị nhất".
+  value: { kind: 'num', get: (r) => r.capVsValuePct },
   ceil: { kind: 'num', get: (r) => (r.tierCeiling > 0 ? r.tierCeiling : null) },
   cr: { kind: 'num', get: (r) => (r.crActual > 0 ? r.crActual : null) },
   installs: { kind: 'num', get: (r) => r.installsL30 },
@@ -172,14 +185,22 @@ export function BidCapView() {
       const auto = campIdx.pick(r.country, r.category);
       return auto ? { name: auto.camp, url: auto.url } : null;
     };
+    const cellValue = buildCellNetValue(data, 'paid');
     return (data?.bidCap ?? []).map((r) => {
       const bidNow = cur.get(r.category)?.median ?? null;
+      const value = cellValue.get(cellKey(r.country, r.category)) ?? null;
+      const capVsValuePct =
+        r.cpiCap > 0 && value?.netPerInstall != null && value.netPerInstall > 0
+          ? r.cpiCap / value.netPerInstall - 1
+          : null;
       return {
         ...r,
         bidNow,
         // Prefer a sheet-supplied action; else derive from current vs recommended.
         action: r.actionRecommended || deriveBidAction(bidNow, r.bidRecommended),
         camp: resolveCamp(r),
+        value,
+        capVsValuePct,
       };
     });
   }, [data]);
@@ -504,6 +525,7 @@ export function BidCapView() {
                     { k: 'bid', label: 'Bid rec', align: 'right', title: 'Mức bid nên set (Bid Rec ⭐). Trống = sheet bảo cắt cluster này, không phải bid = 0.' },
                     { k: 'bidnow', label: 'Bid hiện tại', align: 'right', title: 'Median bid thực đang set (Master KW Lookup, theo category — không có data theo country hay cluster)' },
                     { k: 'cpicap', label: 'CPI cap', align: 'right', title: 'Trần CPI cho cluster này (cột CPI cap). Là trần cho phép, KHÔNG phải CPI đã tiêu — sheet không còn cột Spend.' },
+                    { k: 'value', label: 'Giá trị install', align: 'right', title: `Một install PAID ở ô Country × Category này ĐÁNG bao nhiêu: net value (doanh thu − phí Shopify, chưa trừ ads) ÷ installs, gộp mọi keyword của ô theo bộ phân loại All_L*. Nguồn: tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}. Đỏ = trần CPI cao hơn giá trị → mua đúng ở trần vẫn lỗ mỗi install. 'mỏng' = dưới 3 shop trả tiền. Cùng một số cho mọi cluster của ô. Sort theo % trần vượt giá trị.` },
                     { k: 'ceil', label: 'Tier ceil.', align: 'right', title: 'Trần bid do tier của nước áp xuống. Bid rec = Tier ceil. → tier đang quyết định bid, không phải thị trường.' },
                     { k: 'cr', label: 'CR %', align: 'right', title: 'Conversion rate dùng để tính bid' },
                     { k: 'installs', label: 'Clicks/inst /mo', align: 'right', title: 'Clicks/mo · Inst/mo · (Inst L90) — sort theo Inst/mo' },
@@ -641,6 +663,39 @@ export function BidCapView() {
                       </span>
                     </td>
                     <td className="px-2 py-1.5 align-top text-right whitespace-nowrap">
+                      {r.value?.netPerInstall == null ? (
+                        <span className="font-mono text-[11px] text-slate-300" title="Tab Net value per install chưa có install paid nào cho Country × Category này">—</span>
+                      ) : (
+                        <span
+                          className={cn(
+                            'font-mono text-[11px]',
+                            r.capVsValuePct !== null && r.capVsValuePct > 0
+                              ? 'font-semibold text-rose-600'
+                              : r.value.thin
+                                ? 'text-amber-700'
+                                : 'font-medium text-indigo-700',
+                          )}
+                          title={
+                            `${r.value.installs} install paid · ${r.value.payingShops} shop trả tiền · net $${Math.round(r.value.netValue)}` +
+                            (r.capVsValuePct !== null
+                              ? r.capVsValuePct > 0
+                                ? ` · trần CPI ${money(r.cpiCap)} cao hơn giá trị ${Math.round(r.capVsValuePct * 100)}% — mua đúng ở trần vẫn lỗ`
+                                : ` · trần CPI ${money(r.cpiCap)} thấp hơn giá trị ${Math.round(-r.capVsValuePct * 100)}%`
+                              : '') +
+                            (r.value.thin ? ` — ${r.value.thinReason}` : '')
+                          }
+                        >
+                          ${r.value.netPerInstall.toFixed(0)}
+                          {r.value.thin && <span className="ml-0.5 text-[9px]">mỏng</span>}
+                          {r.capVsValuePct !== null && (
+                            <span className={cn('block text-[9px]', r.capVsValuePct > 0 ? 'text-rose-500' : 'text-emerald-600')}>
+                              trần {r.capVsValuePct > 0 ? '+' : '−'}{Math.abs(Math.round(r.capVsValuePct * 100))}%
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top text-right whitespace-nowrap">
                       {r.tierCeiling > 0 ? (
                         <span
                           className={cn(
@@ -742,6 +797,8 @@ export function BidCapView() {
             <span className="text-rose-600">đỏ</span> = cao hơn rec (nên giảm); là median theo category (Master KW Lookup không có data theo country/cluster) ·{' '}
             <span className="text-amber-700">Tier ceil. vàng</span> = bid rec đang bị trần tier chặn ·
             CPI cap là <b>trần cho phép</b>, không phải CPI đã tiêu — sheet không còn cột Spend nên không đo được CPI thật theo nước ·
+            <b> Giá trị install</b> = một install paid ở ô Country × Category đáng bao nhiêu (tab Net value per install, gộp mọi keyword của ô, category theo bộ phân loại All_L*;
+            cùng một số cho mọi cluster của ô); <span className="text-rose-600">đỏ</span> = trần CPI cao hơn giá trị, <span className="text-amber-700">mỏng</span> = dưới 3 shop trả tiền ·
             Clicks/inst = Clicks/mo · Inst/mo · (Inst L90) ·{' '}
             <span className="text-indigo-700">Campaign</span> = auto-detect theo Country × Category từ Camp_Links (cột Link campaign tự điền đã bị xoá khỏi sheet) ·
             Note = lưu theo Country × Category nên các cluster trong cùng 1 cặp <b>dùng chung</b> 1 note; tự lưu vào tab Bid_Notes, share cho cả team
