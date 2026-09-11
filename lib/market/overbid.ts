@@ -2,6 +2,7 @@ import type { BidCapRow, CampLinkRow, MasterKwRow, ShopifyCampRow } from '@/lib/
 import { buildCampGeoIndex, isNeverTargeted, type CampGeo } from '@/lib/sheets/campGeo';
 import { aggregateBidCapCells, bidCapCellsByCategory } from '@/lib/market/bidCapAgg';
 import { normalizeCampName, buildCampNameResolver } from '@/lib/sheets/campName';
+import { sumCountryNetValue, type NetValueAgg } from '@/lib/market/keywordNetValue';
 
 // Detect OVERBID campaigns: paid camps (from Shopify_daily) whose effective
 // CPC (Spend/Clicks) and/or CPI (Spend/Installs) run ABOVE the allowed bid /
@@ -73,6 +74,16 @@ export interface OverbidRow {
    *  excluded from the totals. Also the names a note may have been filed under
    *  before the rename/pause. */
   pausedNames: string[];
+  /**
+   * Một install PAID ở các nước camp này chạy đáng bao nhiêu (tab Net value
+   * per install, gộp trên mọi keyword của các nước đó). ƯỚC LƯỢNG: camp biết
+   * nước mà không biết keyword, nên đây là giá trị của thị trường camp đứng,
+   * không phải của đúng các keyword camp bid. null = chưa có dữ liệu.
+   */
+  installValue: NetValueAgg | null;
+  /** cpi ÷ installValue.netPerInstall − 1. Dương = mỗi install mua về đắt hơn
+   *  giá trị của nó (lỗ trước cả khi tính ads khác). null khi thiếu một vế. */
+  cpiVsValuePct: number | null;
 }
 
 export interface OverbidParams {
@@ -157,6 +168,9 @@ export function assessCamps(
   campLinks: CampLinkRow[],
   pausedCamps: MasterKwRow[] = [],
   params: OverbidParams = {},
+  /** nước → giá trị install paid (buildCountryNetValue(data, 'paid')). Bỏ trống
+   *  thì cột giá trị để null — bảng vẫn chạy, chỉ thiếu một cột. */
+  netValueByCountry: Map<string, NetValueAgg> = new Map(),
 ): OverbidRow[] {
   const minClicks = params.minClicks ?? 5;
   const noInstallSpend = params.noInstallSpend ?? 30;
@@ -307,6 +321,23 @@ export function assessCamps(
   const out: OverbidRow[] = [];
   for (const c of Array.from(groups.values())) {
     const campKey = c.key; // note-stripped key of the representative name
+    // Geo của camp (Camp_Links) — dùng cho cả mốc bid (dưới) và giá trị install
+    // (ở đây), kể cả với camp bị chấm sớm (0 install / paused) để cột giá trị
+    // vẫn nói đúng thị trường của camp thay vì "mọi nước".
+    const geo = geoIndex.get(campKey);
+    const geoValue =
+      geo && geo.mode === 'include' && geo.countries.length > 0
+        ? sumCountryNetValue(netValueByCountry, geo.countries, 'include')
+        : geo && geo.mode === 'exclude' && geo.countries.length > 0
+          ? sumCountryNetValue(netValueByCountry, geo.countries, 'exclude')
+          : null;
+    // Geo trỏ vào nước tab Net value chưa có dòng → lùi về mọi nước, như mốc
+    // bid bên dưới cũng lùi về general khi không khớp nước nào.
+    const installValue: NetValueAgg | null = geoValue ?? sumCountryNetValue(netValueByCountry, [], 'all');
+    const gapOf = (cpiNow: number | null): number | null =>
+      cpiNow !== null && installValue?.netPerInstall != null && installValue.netPerInstall > 0
+        ? cpiNow / installValue.netPerInstall - 1
+        : null;
 
     // A camp that can't be assessed still gets a row so it stays findable.
     const stub = (verdict: CampVerdict, category: string): OverbidRow => ({
@@ -332,6 +363,8 @@ export function assessCamps(
       mergedCount: c.members.length,
       mergedNames: c.members,
       pausedNames: c.pausedNames,
+      installValue,
+      cpiVsValuePct: gapOf(c.installs > 0 ? c.spend / c.installs : null),
     });
 
     // Every row of this camp is a paused campaign → nothing live to assess.
@@ -387,7 +420,6 @@ export function assessCamps(
     // Resolve target cells from Camp_Links Geo; blank/missing geo = general.
     // General = every country in the category EXCEPT the account-level negative
     // geo, which is what a blank Geo cell actually means.
-    const geo = geoIndex.get(campKey);
     const generalCells = targetableByCat.get(category) ?? catCells;
     let targetCells: Cell[] = generalCells;
     let matchLevel: 'country' | 'category' = 'category';
@@ -461,6 +493,8 @@ export function assessCamps(
       mergedCount: c.members.length,
       mergedNames: c.members,
       pausedNames: c.pausedNames,
+      installValue,
+      cpiVsValuePct: gapOf(cpi),
     });
   }
 
@@ -475,8 +509,9 @@ export function findOverbidCamps(
   campLinks: CampLinkRow[],
   pausedCamps: MasterKwRow[] = [],
   params: OverbidParams = {},
+  netValueByCountry: Map<string, NetValueAgg> = new Map(),
 ): OverbidRow[] {
-  return assessCamps(shopifyCamps, bidCap, campLinks, pausedCamps, params).filter(
+  return assessCamps(shopifyCamps, bidCap, campLinks, pausedCamps, params, netValueByCountry).filter(
     (r) => r.verdict === 'overbid',
   );
 }

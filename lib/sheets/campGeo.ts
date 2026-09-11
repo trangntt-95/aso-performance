@@ -6,6 +6,9 @@ import type { CampLinkRow } from './types';
  * Real-world cell formats (verified live 2026-06-05):
  *   ""                                  → unknown (Trang hasn't filled it)
  *   "All countries/regions"            → all
+ *   "All (excl)"                       → all (9/2026: 187 dòng — "mọi nước trừ
+ *                                         nước không target ở cấp tài khoản",
+ *                                         đúng nghĩa của general)
  *   "180 countries"                    → all (Shopify "almost everywhere")
  *   "-IN, PK, VN"                      → exclude: India, Pakistan, Vietnam
  *   "exclude:\nTây Ban Nha\n..."       → exclude list (VN names, multiline)
@@ -122,7 +125,7 @@ export function parseCampGeo(geoRaw: string): CampGeo {
   const g = (geoRaw ?? '').trim();
   if (!g) return { mode: 'unknown', countries: [] };
   const lower = g.toLowerCase();
-  if (lower.includes('all countries') || /^\d+\s+countries/.test(lower)) {
+  if (lower.includes('all countries') || /^\d+\s+countries/.test(lower) || /^all\b/.test(lower)) {
     return { mode: 'all', countries: [] };
   }
   if (lower.startsWith('exclude')) {

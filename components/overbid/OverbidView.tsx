@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { categoryStyle, CATEGORY_ORDER } from '@/lib/utils/colors';
 import { formatNumber } from '@/lib/utils/format';
 import { assessCamps, type CampVerdict, type OverbidRow } from '@/lib/market/overbid';
+import { buildCountryNetValue } from '@/lib/market/keywordNetValue';
 import { campTotalsFromDaily } from '@/lib/sheets/parsers';
 import { cn } from '@/lib/utils';
 import type { Category } from '@/lib/sheets/types';
@@ -85,7 +86,7 @@ const VERDICT_TAG: Record<Exclude<CampVerdict, 'overbid'>, { label: string; cls:
   },
 };
 
-type SortKey = 'camp' | 'category' | 'cpc' | 'cpi' | 'targetBid' | 'spend' | 'clicks' | 'installs' | 'score' | 'noted';
+type SortKey = 'camp' | 'category' | 'cpc' | 'cpi' | 'installValue' | 'targetBid' | 'spend' | 'clicks' | 'installs' | 'score' | 'noted';
 type SortDir = 'asc' | 'desc';
 type ViewMode = 'active' | 'fixed';
 
@@ -94,6 +95,9 @@ const SORT_COLS: Record<SortKey, { kind: 'num' | 'text'; get: (r: OverbidRow) =>
   category: { kind: 'text', get: (r) => r.category },
   cpc: { kind: 'num', get: (r) => r.cpc },
   cpi: { kind: 'num', get: (r) => r.cpi },
+  // Sắp theo mức lỗ/lãi mỗi install (CPI so giá trị), không theo giá trị thô:
+  // câu hỏi của cột là "camp nào đang mua đắt hơn giá trị nhất".
+  installValue: { kind: 'num', get: (r) => r.cpiVsValuePct },
   targetBid: { kind: 'num', get: (r) => r.targetBid },
   spend: { kind: 'num', get: (r) => r.spend },
   clicks: { kind: 'num', get: (r) => r.clicks },
@@ -210,11 +214,18 @@ export function OverbidView() {
     // nói rõ đang đọc nguồn nào — im lặng đổi nguồn là cách chắc nhất để hai
     // tuần sau không ai giải thích được con số.
     const camps = window30.camps.length > 0 ? window30.camps : data.shopifyCamps ?? [];
-    return assessCamps(camps, data.bidCap ?? [], data.campLinks ?? [], data.pausedKw ?? [], {
-      minClicks: Number(minClicks) || 0,
-      cpcTolerancePct: Number(cpcTol) || 0,
-      cpiTolerancePct: Number(cpiTol) || 0,
-    });
+    return assessCamps(
+      camps,
+      data.bidCap ?? [],
+      data.campLinks ?? [],
+      data.pausedKw ?? [],
+      {
+        minClicks: Number(minClicks) || 0,
+        cpcTolerancePct: Number(cpcTol) || 0,
+        cpiTolerancePct: Number(cpiTol) || 0,
+      },
+      buildCountryNetValue(data, 'paid'),
+    );
   }, [data, window30, minClicks, cpcTol, cpiTol]);
 
   const overbidRows = useMemo(() => assessed.filter((r) => r.verdict === 'overbid'), [assessed]);
@@ -472,6 +483,15 @@ export function OverbidView() {
                 <SortHead label="Category" col="category" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="CPC / cho phép" col="cpc" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="CPC thực tế (Spend/Clicks) / bid cho phép = trung bình Bid Rec ⭐ trên các nước target" />
                 <SortHead label="CPI / cho phép" col="cpi" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="CPI thực tế (Spend/Installs) / CPI cho phép = trung bình cột 'CPI cap' trên các nước target. Mốc là trần đã đặt, không phải CPI đã tiêu." />
+                <SortHead
+                  label="CPI / giá trị install"
+                  col="installValue"
+                  align="right"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={toggleSort}
+                  title={`Một install PAID ở các nước camp này target đáng bao nhiêu (tab Net value per install${data?.netValueScope ? `, ${data.netValueScope}` : ''}; net = doanh thu − phí Shopify, chưa trừ ads). ƯỚC LƯỢNG theo NƯỚC, không theo keyword của camp. Đỏ = CPI đang trả cao hơn giá trị → mỗi install mua về là lỗ. 'mỏng' = dưới 3 shop trả tiền. Sort theo % CPI vượt giá trị.`}
+                />
                 <SortHead label="Clicks" col="clicks" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Inst" col="installs" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortHead label="Spend" col="spend" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -565,6 +585,28 @@ export function OverbidView() {
                       <span className="text-slate-400"> / {money(r.targetCpi)}</span>
                       <DeltaBadge d={deltaPct(r.cpi, r.targetCpi)} />
                     </td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px]">
+                      {r.installValue?.netPerInstall == null ? (
+                        <span className="text-slate-300" title="Chưa có net value paid cho các nước camp này target">—</span>
+                      ) : (
+                        <span
+                          title={
+                            `${r.installValue.installs} install paid · ${r.installValue.payingShops} shop trả tiền · net $${Math.round(r.installValue.netValue)} · ` +
+                            (r.countries.length > 0 ? `${r.countries.length} nước target` : 'các nước camp chạy theo Geo (Camp_Links); không có Geo = mọi nước') +
+                            (r.installValue.thin ? ` — ${r.installValue.thinReason}` : '')
+                          }
+                        >
+                          <span className={cn(r.cpiVsValuePct !== null && r.cpiVsValuePct > 0 ? 'text-rose-600 font-semibold' : 'text-slate-700')}>
+                            {money(r.cpi)}
+                          </span>
+                          <span className={cn('text-slate-400', r.installValue.thin && 'text-amber-700')}>
+                            {' '}/ ${r.installValue.netPerInstall.toFixed(0)}
+                            {r.installValue.thin && <span className="ml-0.5 text-[9px]">mỏng</span>}
+                          </span>
+                          <DeltaBadge d={r.cpiVsValuePct} />
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">{formatNumber(r.clicks, { compact: true })}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">{formatNumber(r.installs, { compact: true })}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] font-semibold text-slate-800">${formatNumber(r.spend, { compact: true })}</td>
@@ -588,6 +630,9 @@ export function OverbidView() {
             <code className="text-[9px]">CPI cap</code>, lấy trên các nước target — mỗi nước tính 1 lần sau khi gộp
             các cluster keyword của nó (sheet đổi grain 8/2026), cluster nào sheet bảo cắt thì không tính vào mốc ·
             🎯 = nước target từ Geo (Camp_Links), <span className="text-amber-600">🌐</span> = general (avg cả category) ·
+            <b> CPI / giá trị install</b> = CPI đang trả so với một install paid ĐÁNG bao nhiêu ở các nước camp target
+            (tab Net value per install, gộp mọi keyword của các nước đó — ước lượng theo nước, không theo keyword camp bid);
+            <span className="text-rose-600"> đỏ = mua đắt hơn giá trị</span>, <span className="text-amber-700">mỏng</span> = dưới 3 shop trả tiền ·
             <b> Impact bid</b> = 14 ngày trước note vs 14 ngày sau (export Shopify theo ngày): đường vẽ là
             <b> impressions/ngày</b>, kèm <b>CPC</b> và <b>CPI</b> dạng số;
             <span className="text-emerald-600"> chi phí giảm + imp giữ = hạ bid thành công</span>,
