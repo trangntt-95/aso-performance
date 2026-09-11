@@ -18,6 +18,12 @@ import { AlertBadge } from '@/components/action-queue/AlertBadge';
 import { formatNumber, formatPercent, formatDeltaPct, deltaTone } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 import type { KeywordRow, SheetPayload } from '@/lib/sheets/types';
+import { normKw } from '@/lib/sheets/kwNorm';
+import {
+  buildCountryNetValue,
+  buildKeywordCountryNetValue,
+  type NetValueAgg,
+} from '@/lib/market/keywordNetValue';
 
 const COUNTRY_TAB: Record<string, keyof SheetPayload> = {
   L3: 'countryL3',
@@ -95,6 +101,11 @@ export function CountryDetailSheet() {
   const { open, country, window: w, close } = useCountryDetailStore();
   const { data } = useSheetData();
 
+  // Giá trị install (tab Net value per install) — YTD, không đổi theo window:
+  // nó nói install ở nước này ĐÁNG bao nhiêu, không phải tuần này kiếm được gì.
+  const kwCountryNv = useMemo(() => buildKeywordCountryNetValue(data), [data]);
+  const countryNv = useMemo(() => buildCountryNetValue(data, 'all'), [data]);
+
   const detail = useMemo(() => {
     if (!data || !country) return null;
     const tabKey = COUNTRY_TAB[w] ?? 'countryL7';
@@ -107,10 +118,16 @@ export function CountryDetailSheet() {
     };
     const top = [...allRows]
       .sort((a, b) => b.usersL - a.usersL)
-      .slice(0, 12);
+      .slice(0, 12)
+      .map((r) => {
+        const cell = kwCountryNv.get(normKw(r.searchTerm))?.get(country);
+        const nv: NetValueAgg | null = cell ? cell[r.surface === 'search_ad' ? 'paid' : 'organic'] : null;
+        return { row: r, nv };
+      });
     const actions = data.actionQueue.filter((r) => r.country === country);
-    return { allRows, organic, paid, totals, top, actions };
-  }, [data, country, w]);
+    const value = countryNv.get(country) ?? null;
+    return { allRows, organic, paid, totals, top, actions, value };
+  }, [data, country, w, kwCountryNv, countryNv]);
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && close()}>
@@ -150,6 +167,21 @@ export function CountryDetailSheet() {
                   {detail.allRows.length} keyword × surface
                 </div>
               </div>
+              {detail.value?.netPerInstall != null && (
+                <div
+                  className="mt-2 flex items-baseline gap-1.5 border-t border-slate-200 pt-2"
+                  title={`Net value (doanh thu − phí Shopify, chưa trừ ads) ÷ installs, gộp mọi keyword và cả hai kênh ở ${country}. Nguồn: tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}; không đổi theo window.${detail.value.thin ? ` ${detail.value.thinReason}.` : ''}`}
+                >
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500">Giá trị 1 install</span>
+                  <span className={cn('font-mono text-base font-semibold tabular-nums', detail.value.thin ? 'text-amber-700' : 'text-indigo-700')}>
+                    ${detail.value.netPerInstall.toFixed(0)}
+                  </span>
+                  {detail.value.thin && <span className="text-[9px] text-amber-700">mỏng</span>}
+                  <span className="text-[10px] text-slate-500">
+                    · {detail.value.installs} install · {detail.value.payingShops} shop trả tiền · YTD
+                  </span>
+                </div>
+              )}
             </section>
 
             <section className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -177,7 +209,7 @@ export function CountryDetailSheet() {
                 <div className="text-sm text-slate-500 py-6 text-center">No keywords in this window.</div>
               ) : (
                 <div className="border rounded-lg divide-y">
-                  {detail.top.map((r, i) => {
+                  {detail.top.map(({ row: r, nv }, i) => {
                     const surface = r.surface === 'search_ad' ? 'paid' : 'organic';
                     const surfaceCls = surface === 'paid' ? 'text-amber-700 bg-amber-50' : 'text-emerald-700 bg-emerald-50';
                     return (
@@ -196,6 +228,15 @@ export function CountryDetailSheet() {
                             <span className="font-mono">U {formatNumber(r.usersL, { compact: true })}</span>
                             <Pill value={r.deltaUsersPct ?? 0} />
                             <span className="font-mono text-slate-500">G {formatNumber(r.getAppL, { compact: true })}</span>
+                            {nv?.netPerInstall != null && (
+                              <span
+                                className={cn('font-mono', nv.thin ? 'text-amber-700' : 'font-semibold text-indigo-700')}
+                                title={`Một install ${surface} của keyword này tại ${country} đáng $${nv.netPerInstall.toFixed(0)} — ${nv.installs} install · ${nv.payingShops} shop trả tiền · net $${Math.round(nv.netValue)}${nv.thin ? ` — ${nv.thinReason}` : ''}`}
+                              >
+                                ${nv.netPerInstall.toFixed(0)}/inst
+                                {nv.thin && <span className="ml-0.5 text-[9px]">mỏng</span>}
+                              </span>
+                            )}
                           </div>
                         </div>
                         {r.alert && r.alert !== 'OK' && <AlertBadge alert={r.alert} compact />}
