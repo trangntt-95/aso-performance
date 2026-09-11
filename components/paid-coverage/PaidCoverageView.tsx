@@ -17,6 +17,7 @@ import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 import { buildCountryBidIndex, bidPressureFor, type BidPressureSummary } from '@/lib/market/countryBid';
 import { normKw } from '@/lib/sheets/kwNorm';
+import { buildKeywordNetValue, type KeywordNetValue } from '@/lib/market/keywordNetValue';
 import {
   buildPaidStatusIndex,
   resolvePaidStatus,
@@ -73,6 +74,13 @@ interface CoverageRow extends PaidStatus {
    * cộng từ cột per-day của History_Daily, và không có dữ liệu theo nước.
    */
   discovered: DiscoveredTerm | null;
+  /**
+   * Một install của keyword này đáng bao nhiêu (tab Net value per install,
+   * gộp mọi nước và cả hai kênh — bảng này cũng gộp organic + paid). Đây là
+   * con số quyết định keyword chưa bid nào đáng mở camp TRƯỚC: nhiều users mà
+   * install rẻ giá trị thì không vội. null = tab chưa có keyword này.
+   */
+  nv: KeywordNetValue | null;
 }
 
 // Statuses this tab can filter by. 'manual' and 'negative' are deliberately
@@ -154,6 +162,7 @@ function buildRows(data: SheetPayload): CoverageRow[] {
   // đuôi organic, tức đúng phần "có người tìm mà mình chưa mua". Không bù vào
   // thì danh sách chưa-bid của trang này chỉ còn 4 term, cả 4 đều là lỗi chính
   // tả, và một danh sách rỗng như vậy đọc thành "hết cơ hội".
+  const netValueBy = buildKeywordNetValue(data);
   const discovery = buildOrganicDiscovery(data);
   const discoveredBy = new Map<string, DiscoveredTerm>();
   for (const t of discovery?.terms ?? []) {
@@ -243,6 +252,7 @@ function buildRows(data: SheetPayload): CoverageRow[] {
       coverage,
       bidPressure,
       discovered: discoveredBy.get(k) ?? null,
+      nv: netValueBy.get(k) ?? null,
       ...status,
     });
   });
@@ -372,6 +382,11 @@ export function PaidCoverageView() {
     return { categories: Array.from(c).sort(), countries: Array.from(k).sort() };
   }, [rows]);
 
+  // Sắp theo users (mặc định) hay theo giá trị install. Users nói "nhiều người
+  // tìm", giá trị nói "đáng tiền" — danh sách chưa-bid cần cả hai, và cái thứ
+  // hai mới là thứ tự nên mở camp.
+  const [sortBy, setSortBy] = useState<'users' | 'value'>('users');
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const minU = minUsers.trim() === '' ? null : Number(minUsers);
@@ -404,8 +419,16 @@ export function PaidCoverageView() {
         }
         return true;
       })
-      .sort((a, b) => (b[win]?.users ?? 0) - (a[win]?.users ?? 0));
-  }, [rows, search, statusFilter, categoryFilter, countryFilter, minUsers, minInstalls, win]);
+      .sort((a, b) => {
+        if (sortBy === 'value') {
+          // Chưa có giá trị → cuối bảng; mỏng vẫn xếp theo số nhưng đã tô vàng.
+          const av = a.nv?.netPerInstall ?? -Infinity;
+          const bv = b.nv?.netPerInstall ?? -Infinity;
+          if (bv !== av) return bv - av;
+        }
+        return (b[win]?.users ?? 0) - (a[win]?.users ?? 0);
+      });
+  }, [rows, search, statusFilter, categoryFilter, countryFilter, minUsers, minInstalls, win, sortBy]);
 
   // "Pure" not-in-paid: loại bỏ ⏸ paused camp — danh sách kw
   // thật sự chưa từng / không nên bid, dùng để copy vào camp mới.
@@ -546,6 +569,15 @@ export function PaidCoverageView() {
               ))}
             </select>
           </div>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'users' | 'value')}
+            className="h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            title="Thứ tự bảng"
+          >
+            <option value="users">Sắp: Users {WIN_LABEL[win]}</option>
+            <option value="value">Sắp: Net/install</option>
+          </select>
           {dirty && (
             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={resetAll}>
               <X className="h-3 w-3" />
@@ -593,6 +625,16 @@ export function PaidCoverageView() {
                 <th className="px-2 py-2 text-left font-medium" title="Users / Install">L30</th>
                 <th className="px-2 py-2 text-left font-medium" title="Users / Install">L90</th>
                 <th className="px-2 py-2 text-left font-medium" title="Users / Install">L365</th>
+                <th
+                  className="px-2 py-2 text-right font-medium"
+                  title={
+                    'Một install của keyword này đáng bao nhiêu: net value (doanh thu − phí Shopify, chưa trừ ads) ÷ installs, ' +
+                    `gộp mọi nước và cả organic + paid. Nguồn: tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}. ` +
+                    "'mỏng' = dưới 3 shop trả tiền, chưa nên bid theo. Keyword chưa bid mà giá trị cao là chỗ mở camp trước."
+                  }
+                >
+                  Net/install
+                </th>
                 <th
                   className="px-2 py-2 text-left font-medium"
                   title={
@@ -658,6 +700,25 @@ export function PaidCoverageView() {
                     <WinCell stat={row.l30} />
                     <WinCell stat={row.l90} />
                     <WinCell stat={row.l365} />
+                    <td className="px-2 py-1.5 align-top text-right font-mono text-[11px] whitespace-nowrap">
+                      {row.nv?.netPerInstall == null ? (
+                        <span className="text-slate-300" title="Tab Net value per install chưa có keyword này">—</span>
+                      ) : (
+                        <span
+                          className={row.nv.thin ? 'text-amber-700' : 'font-semibold text-indigo-700'}
+                          title={
+                            `${row.nv.installs} install · ${row.nv.payingShops} shop trả tiền · net $${Math.round(row.nv.netValue)}` +
+                            (row.nv.topCountry
+                              ? ` · ${row.nv.topCountry} chiếm ${(row.nv.topCountryShare * 100).toFixed(0)}% (${row.nv.countries} nước)`
+                              : '') +
+                            (row.nv.thin ? ` — ${row.nv.thinReason}` : '')
+                          }
+                        >
+                          ${row.nv.netPerInstall.toFixed(0)}
+                          {row.nv.thin && <span className="ml-0.5 text-[9px]">mỏng</span>}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 align-top max-w-[12rem]">
                       {(() => {
                         // Countries of the reporting window (falls back to the
@@ -685,7 +746,9 @@ export function PaidCoverageView() {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            Cột window = Users / Install (gộp organic + paid) · Geo chỉ kết luận được khi camp đã điền cột Geo trong Camp_Links
+            Cột window = Users / Install (gộp organic + paid) · <b>Net/install</b> = một install của keyword đáng bao nhiêu
+            (tab Net value per install, gộp mọi nước + cả hai kênh; <span className="text-amber-700">mỏng</span> = dưới 3 shop trả tiền) ·
+            Geo chỉ kết luận được khi camp đã điền cột Geo trong Camp_Links
           </div>
         </div>
       )}
