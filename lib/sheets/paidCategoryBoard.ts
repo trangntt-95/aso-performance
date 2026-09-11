@@ -92,33 +92,51 @@ function normaliseMetric(raw: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
 }
 
+export interface PartialPeriod {
+  from: string;
+  to: string;
+  /** Số ngày A1 phủ, tính cả hai đầu. */
+  days: number;
+}
+
 /**
  * `count` consecutive month labels ending at the month of `to`, oldest first —
- * 'T8/26' for August 2026.
+ * 'T8/26' for August 2026 — plus whether that last month is still running.
  *
- * Returns [] unless from→to is exactly one calendar month, which is the condition
- * the whole back-count rests on.
+ * The back-count needs A1 to be ONE calendar month: from on the 1st, to in the
+ * same month. A whole month (to = last day) is the ordinary case. A month that
+ * has started but not finished (to = 9th) is the current month: the sheet
+ * already shows it as its newest column, so it is labelled like the others and
+ * flagged `partial` so the screen can say the column is not a full month yet.
+ * Anything else — a rolling 30 days, a range across months, unreadable dates —
+ * returns no labels and the sheet's own t1…tN are shown instead.
  */
-function monthLabelsEndingAt(from: string, to: string, count: number): string[] {
-  if (!from || !to) return [];
+function monthLabelsEndingAt(
+  from: string,
+  to: string,
+  count: number,
+): { labels: string[]; partial: PartialPeriod | null } {
+  const none = { labels: [] as string[], partial: null };
+  if (!from || !to) return none;
   const a = new Date(`${from}T00:00:00Z`);
   const b = new Date(`${to}T00:00:00Z`);
-  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return [];
-  // Same month, starting on the 1st and ending on its last day.
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return none;
   const lastDay = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() + 1, 0)).getUTCDate();
-  const wholeMonth =
+  const oneMonth =
     a.getUTCFullYear() === b.getUTCFullYear() &&
     a.getUTCMonth() === b.getUTCMonth() &&
     a.getUTCDate() === 1 &&
-    b.getUTCDate() === lastDay;
-  if (!wholeMonth) return [];
+    b.getUTCDate() >= 1;
+  if (!oneMonth) return none;
 
-  const out: string[] = [];
+  const labels: string[] = [];
   for (let k = count - 1; k >= 0; k--) {
     const d = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() - k, 1));
-    out.push(`T${d.getUTCMonth() + 1}/${String(d.getUTCFullYear()).slice(-2)}`);
+    labels.push(`T${d.getUTCMonth() + 1}/${String(d.getUTCFullYear()).slice(-2)}`);
   }
-  return out;
+  const partial: PartialPeriod | null =
+    b.getUTCDate() < lastDay ? { from, to, days: b.getUTCDate() - a.getUTCDate() + 1 } : null;
+  return { labels, partial };
 }
 
 /** A number, or null for a blank cell — blank is the sheet declining to divide,
@@ -151,10 +169,30 @@ const LEFT = {
 const RIGHT = {
   label: 11, // L — where a tier announces itself
   category: 10, // K
-  firstPeriod: 11, // L..S
-  periodCount: 8,
-  growth: 19, // T
+  firstPeriod: 11, // L onwards: t1, t2, … as many as the header carries
 };
+
+/**
+ * How many t-columns a tier header carries, and where its '% growth' sits.
+ *
+ * Neither is fixed. The sheet rolls a new month in as a new column (t9 arrived
+ * 9/2026), which pushes '% growth' one column right. Hardcoding 8 and T read
+ * September's projection as a growth rate for three days before anyone saw it.
+ * Growth is located by its own label; failing that, it is the first cell after
+ * the t-columns, which is where it has always been.
+ */
+function readPeriodHeader(hdr: unknown[]): { count: number; growth: number } {
+  let count = 0;
+  while (/^t\d+$/i.test(text(hdr[RIGHT.firstPeriod + count]))) count++;
+  let growth = RIGHT.firstPeriod + count;
+  for (let c = RIGHT.firstPeriod + count; c < hdr.length; c++) {
+    if (/growth|tăng/i.test(text(hdr[c]))) {
+      growth = c;
+      break;
+    }
+  }
+  return { count, growth };
+}
 
 /** Does this row name a category rather than being a header, a total, or blank? */
 const isCategoryRow = (cell: unknown): boolean => {
@@ -235,11 +273,15 @@ export function parsePaidCategoryBoard(
     const next = (rows[i + 1] ?? []).map((c) => text(c).toLowerCase());
     if (next[RIGHT.firstPeriod] !== 't1') continue;
 
+    const hdr = readPeriodHeader(rows[i + 1] ?? []);
     if (periods.length === 0) {
-      periods = Array.from({ length: RIGHT.periodCount }, (_, k) =>
+      periods = Array.from({ length: hdr.count }, (_, k) =>
         text((rows[i + 1] ?? [])[RIGHT.firstPeriod + k]) || `t${k + 1}`,
       );
     }
+    // Every tier is read to the FIRST tier's width, so the cube stays
+    // rectangular even if one tier's header is a column short.
+    const periodCount = periods.length;
 
     const tier: PaidCategorySeries = {
       metric: normaliseMetric(label),
@@ -252,14 +294,14 @@ export function parsePaidCategoryBoard(
     for (; j < rows.length; j++) {
       const row = rows[j] ?? [];
       const name = text(row[RIGHT.category]);
-      const vals = Array.from({ length: RIGHT.periodCount }, (_, k) =>
+      const vals = Array.from({ length: periodCount }, (_, k) =>
         numOrNull(row[RIGHT.firstPeriod + k]),
       );
       if (isCategoryRow(name)) {
         tier.rows.push({
           category: name,
           values: vals,
-          growth: numOrNull(row[RIGHT.growth]),
+          growth: numOrNull(row[hdr.growth]),
         });
         continue;
       }
@@ -276,7 +318,7 @@ export function parsePaidCategoryBoard(
       // tier short.
       if (!name && vals.some((v) => v !== null)) {
         tier.totals = vals;
-        tier.totalsGrowth = numOrNull(row[RIGHT.growth]);
+        tier.totalsGrowth = numOrNull(row[hdr.growth]);
         break;
       }
       // Blank. Allow one, since that is what separates Spend's categories from
@@ -294,16 +336,16 @@ export function parsePaidCategoryBoard(
   }
 
   if (snapshot.length === 0 && series.length === 0) return null;
-  const periodNames = periods.length
-    ? periods
-    : Array.from({ length: RIGHT.periodCount }, (_, k) => `t${k + 1}`);
+  const periodNames = periods.length ? periods : Array.from({ length: 8 }, (_, k) => `t${k + 1}`);
+  const months = monthLabelsEndingAt(from, to, periodNames.length);
   return {
     sourceTab: source.tab ?? '',
     sourceUrl: source.url ?? '',
     from,
     to,
     periods: periodNames,
-    periodMonths: monthLabelsEndingAt(from, to, periodNames.length),
+    periodMonths: months.labels,
+    lastPeriodPartial: months.partial,
     snapshot,
     snapshotTotal,
     series,

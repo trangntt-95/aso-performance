@@ -519,6 +519,15 @@ export function PaidCategoryBoardView() {
           </>
         )}{' '}
         · {cube.periods.length} mốc · {cube.dataPoints} điểm
+        {cube.lastPeriodPartial && (
+          <>
+            {' '}·{' '}
+            <span className="text-amber-700" title="Cột mới nhất của sheet là tháng đang chạy — A1 mới phủ tới ngày này. Số ở mốc đó là số sheet tính cho phần tháng đã có, không phải trọn tháng, nên đừng so thẳng với các tháng trước.">
+              mốc cuối <b>{cube.periods[cube.periods.length - 1]}</b> = tháng đang chạy (
+              {formatDMYRange(cube.lastPeriodPartial.from, cube.lastPeriodPartial.to)}, {cube.lastPeriodPartial.days} ngày), chưa trọn tháng
+            </span>
+          </>
+        )}
       </div>
     </div>
   );

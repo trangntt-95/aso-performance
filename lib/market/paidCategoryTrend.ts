@@ -127,6 +127,8 @@ export interface TrendCube {
   /** Non-null cells, excluding the aggregate — a fast way to spot that something
    *  upstream broke. */
   dataPoints: number;
+  /** The newest period is a month still running — see PaidCategoryBoard. */
+  lastPeriodPartial: PaidCategoryBoard['lastPeriodPartial'];
 }
 
 /**
@@ -225,6 +227,7 @@ export function buildTrendCube(board: PaidCategoryBoard, totalLabel = 'TOTAL'): 
     at: get,
     totalLabel,
     dataPoints: points,
+    lastPeriodPartial: board.lastPeriodPartial ?? null,
   };
 }
 

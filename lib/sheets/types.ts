@@ -712,7 +712,8 @@ export interface PaidCategoryBoard {
   /** The window the snapshot block covers, ISO. Empty when A1 is unreadable. */
   from: string;
   to: string;
-  /** Period labels exactly as the sheet writes them (t1…t8). */
+  /** Period labels exactly as the sheet writes them (t1…tN — 8 in August 2026,
+   *  9 from September; the count is read from the header, never assumed). */
   periods: string[];
   /** The same periods as calendar months ('T8/26'), derived — not read. The sheet
    *  dates only its last period, in A1; Trang confirmed (2026-09-08) the columns
@@ -720,6 +721,10 @@ export interface PaidCategoryBoard {
    *  when A1 is unreadable or is not a whole calendar month, in which case the
    *  premise doesn't hold and `periods` is all there is to show. */
   periodMonths: string[];
+  /** Set when A1 is the CURRENT month, started but not finished: the last
+   *  period is that month, and this says how many days of it the sheet has.
+   *  null for a whole month or when A1 is unreadable. */
+  lastPeriodPartial: { from: string; to: string; days: number } | null;
   snapshot: PaidCategorySnapshot[];
   /** Snapshot totals row ('TOTAL'), as the sheet computes it. */
   snapshotTotal: PaidCategorySnapshot | null;

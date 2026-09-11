@@ -427,8 +427,11 @@ export async function fetchAllTabs(): Promise<Record<string, string[][]>> {
  * would produce a second set of figures that disagrees with her sheet in small
  * ways and leaves nobody sure which is right.
  *
- * Layout (verified live 2026-09-08): data occupies A1:T111 only, though the tab
- * is 64 × 1017.
+ * Layout (verified live 2026-09-08, re-checked 2026-09-11): data occupied
+ * A1:T111 in August; in September the pivot grew a t9 column so '% growth'
+ * moved to U and a free-text note sits in V. Read to AD so the next month's
+ * column lands inside the range instead of being read as '% growth' — which
+ * is exactly what happened to t9 for three days.
  *   A1        'Date range' + two Excel serials — the window the left block covers
  *   A7:J15    left block: one row per category, current-window snapshot
  *   K/L..T    right block: nine metric tiers stacked down the sheet, each with a
@@ -445,7 +448,7 @@ export async function fetchShopifyByCategoryRows(): Promise<unknown[][]> {
     // by position: this is a specific pivot, not "whatever the current year is".
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: id,
-      range: `'By categories'!A1:T120`,
+      range: `'By categories'!A1:AD120`,
       valueRenderOption: 'UNFORMATTED_VALUE',
     });
     return (res.data.values ?? []) as unknown[][];
