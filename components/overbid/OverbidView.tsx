@@ -5,6 +5,7 @@ import { AlertCircle, Search, X, ExternalLink, Flame } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { CampImpactCell } from '@/components/overbid/CampImpactCell';
+import { BrandTopPanel } from '@/components/overbid/BrandTopPanel';
 import { useNotesStore } from '@/lib/store/notesStore';
 import {
   CAMP_NOTE_SCOPE,
@@ -385,6 +386,9 @@ export function OverbidView() {
           ))}
         </div>
       )}
+
+      {/* Brand đã top vị trí — chiều ngược của overbid: rẻ vẫn có thể là lãng phí */}
+      {!isLoading && <BrandTopPanel data={data} />}
 
       {/* Thresholds + filters */}
       {!isLoading && (

@@ -136,20 +136,31 @@ export async function fetchShopifyDailyRows(): Promise<unknown[][]> {
     if (missing.length > 0) {
       throw new Error(`Tab đầu tiên ('${tab}') thiếu cột: ${missing.join(', ')}`);
     }
+    // Vị trí và visibility là tuỳ chọn: export nào cũng có (cột U, V), nhưng
+    // thiếu chúng thì bảng Overbid/Camp Health vẫn phải chạy — chỉ panel
+    // "brand đã top" là tắt.
+    const optional = {
+      position: at('average position', 'avg position', 'position'),
+      visibility: at('visibility'),
+    };
 
     const order = ['date', 'camp', 'impressions', 'clicks', 'installs', 'spend'] as const;
+    const optionalKeys = (Object.keys(optional) as (keyof typeof optional)[]).filter((k) => optional[k] >= 0);
+    const colIdx = [...order.map((k) => idx[k]), ...optionalKeys.map((k) => optional[k])];
     const res = await sheets.spreadsheets.values.batchGet({
       spreadsheetId: id,
-      // Only the six columns needed, so a 100k-row tab stays a small read.
-      ranges: order.map((k) => {
-        const L = colLetter(idx[k]);
+      // Only the columns needed, so a 100k-row tab stays a small read.
+      ranges: colIdx.map((c) => {
+        const L = colLetter(c);
         return `'${tab}'!${L}2:${L}`;
       }),
       valueRenderOption: 'UNFORMATTED_VALUE',
       majorDimension: 'COLUMNS',
     });
     const cols = (res.data.valueRanges ?? []).map((vr) => (vr.values?.[0] ?? []) as unknown[]);
-    if (cols.length !== order.length) throw new Error('batchGet trả thiếu cột');
+    if (cols.length !== colIdx.length) throw new Error('batchGet trả thiếu cột');
+    const posCol = optionalKeys.indexOf('position');
+    const visCol = optionalKeys.indexOf('visibility');
 
     const n = Math.max(...cols.map((c) => c.length));
     const out: unknown[][] = [];
@@ -157,7 +168,16 @@ export async function fetchShopifyDailyRows(): Promise<unknown[][]> {
       const iso = excelDateToIso(cols[0][i]);
       const camp = String(cols[1][i] ?? '').trim();
       if (!iso || !camp) continue;
-      out.push([iso, camp, cols[2][i], cols[3][i], cols[4][i], cols[5][i]]);
+      out.push([
+        iso,
+        camp,
+        cols[2][i],
+        cols[3][i],
+        cols[4][i],
+        cols[5][i],
+        posCol >= 0 ? cols[order.length + posCol][i] : null,
+        visCol >= 0 ? cols[order.length + visCol][i] : null,
+      ]);
     }
     return out;
   } catch (e) {

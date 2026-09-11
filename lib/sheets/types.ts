@@ -519,6 +519,11 @@ export interface ShopifyDailyRow {
   clicks: number;
   installs: number;
   spend: number;
+  /** 'Average Position' của Shopify Ads hôm đó (1 = trên cùng). null khi
+   *  export không có cột này hoặc ô trống — khác 0, vì 0 không phải vị trí. */
+  position: number | null;
+  /** 'Visibility' — tỷ lệ phiên tìm kiếm mà camp có hiển thị, 0–1. */
+  visibility: number | null;
 }
 
 export interface CampLinkRow {

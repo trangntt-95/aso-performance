@@ -27,6 +27,8 @@
     "../../lib/sheets/parsers.ts",
     "../../lib/market/keywordNetValue.ts",
     "../../lib/market/cellNetValue.ts",
+    "../../lib/market/brandTop.ts",
+    "../../lib/market/bidCapAgg.ts",
     "../../lib/market/campHealth.ts",
     "../../lib/market/overbid.ts",
     "../../lib/market/underbid.ts"

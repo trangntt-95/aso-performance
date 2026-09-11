@@ -1340,6 +1340,10 @@ export function parseShopifyDaily(
     // A day the campaign did nothing carries no information for a before/after
     // read, and there are a lot of them.
     if (impressions === 0 && clicks === 0 && installs === 0 && spend === 0) continue;
+    // Cột 7–8 là tuỳ chọn (Average Position, Visibility). 0 ở đây là "không
+    // có" — Shopify không có vị trí 0 — nên đổi thành null.
+    const pos = row.length > 6 ? num(row[6]) : 0;
+    const vis = row.length > 7 ? num(row[7]) : 0;
     out.push({
       date: dateIso,
       camp,
@@ -1347,6 +1351,8 @@ export function parseShopifyDaily(
       clicks,
       installs,
       spend,
+      position: pos > 0 ? pos : null,
+      visibility: row.length > 7 && row[7] !== null && row[7] !== undefined && row[7] !== '' ? vis : null,
     });
   }
   return out;
