@@ -332,7 +332,7 @@ export function UnderbidView() {
   const isL30Window = window === 'L30';
   // Detection thresholds (tunable).
   const [minOrganic, setMinOrganic] = useState('5');
-  const [maxShare, setMaxShare] = useState('30');
+  const [maxShare, setMaxShare] = useState('20');
   const [posTh, setPosTh] = useState('1');
   // Post-filters.
   const [search, setSearch] = useState('');
@@ -488,10 +488,11 @@ export function UnderbidView() {
       <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
         <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
         <div>
-          <b>Keyword bị underbid</b> — có nhu cầu organic thật trong <b>{window}</b>, <b>đã được bid</b> trong 1 camp, nhưng{' '}
-          paid xuất hiện rất ít so với organic <b>(paid share &lt; {maxShare}%)</b> và/hoặc vị trí paid yếu{' '}
-          <b>(&gt; {posTh}</b> hoặc chưa lên paid). → nên cân nhắc <b>tăng bid</b> để hứng thêm install. Cột{' '}
-          <b>Camp</b> cho biết nó đang nằm ở camp nào (kèm link).
+          <b>Keyword bị underbid</b> — có nhu cầu organic thật trong <b>{window}</b> (organic users ≥ {minOrganic}), nhưng{' '}
+          paid xuất hiện rất ít so với organic <b>(paid share &lt; {maxShare}%)</b> và vị trí paid yếu{' '}
+          <b>(&gt; {posTh}</b> hoặc chưa có vị trí paid). → nên <b>tăng bid</b>, hoặc <b>mở bid</b> nếu chưa bid. Không còn đòi keyword
+          phải có trong Master: cột <b>Camp</b> cho biết nó đang nằm ở camp nào (kèm link), trống nghĩa là <b>chưa bid ở đâu</b>.
+          Keyword trong Negative KW list không vào đây.
           {' '}
           <span className="mt-1 block border-t border-amber-200 pt-1">
             <b>Hai cột tiền:</b> <b>$/install</b> là net value một install của keyword

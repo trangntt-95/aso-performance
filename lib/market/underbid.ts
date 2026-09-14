@@ -52,10 +52,14 @@ export function windowSnapshotRows(
   );
 }
 
-// Uncover UNDERBID keywords: terms with real long-term (L365) organic demand
-// that ARE being bid in a paid campaign, yet barely show up in paid (low paid
-// share vs organic) and/or sit at a weak paid position (> threshold). These are
-// candidates to raise the bid on. Each row carries the camp(s) it's bid in + URL.
+// Uncover UNDERBID keywords: terms with real organic demand in the window whose
+// paid side barely shows up (low paid share vs organic) AND sits at a weak paid
+// position (> threshold, or no paid position at all). Candidates to raise the
+// bid on — or to start bidding: since 14/09/2026 (Trang) a keyword no longer
+// has to be in Master / Manual to qualify. A term nobody bids but organic sends
+// users to is the purest underbid there is. Rows still carry the camp(s) the
+// keyword IS bid in, so the ones with no camp read as "chưa bid".
+// Negative keywords stay out: those are excluded on purpose.
 
 export interface UnderbidCamp {
   name: string;
@@ -84,7 +88,8 @@ export interface UnderbidRow {
   paidPos: number | null;
   /** Paid avg position over the recent L30 window (from All_L30). */
   paidPosL30: number | null;
-  inPaidSource: 'master' | 'manual';
+  /** 'none' = keyword chưa được bid ở đâu — camps rỗng, đây là chỗ mở bid mới. */
+  inPaidSource: 'master' | 'manual' | 'none';
   camps: UnderbidCamp[];
   /** Priority = organic demand the paid side is missing. */
   score: number;
@@ -92,7 +97,7 @@ export interface UnderbidRow {
 
 export interface UnderbidParams {
   minOrganicUsers?: number; // default 5
-  maxPaidSharePct?: number; // default 30 (%)
+  maxPaidSharePct?: number; // default 20 (%) — Trang hạ từ 30 ngày 14/09/2026
   posThreshold?: number; // default 1 — paid phải đứng số 1 mới coi là đủ (Trang, 14/09/2026); trên 1 hoặc không có vị trí là underbid
 }
 
@@ -107,7 +112,7 @@ export function findUnderbidKeywords(
   params: UnderbidParams = {},
 ): UnderbidRow[] {
   const minOrganic = params.minOrganicUsers ?? 5;
-  const maxShare = (params.maxPaidSharePct ?? 30) / 100;
+  const maxShare = (params.maxPaidSharePct ?? 20) / 100;
   const posTh = params.posThreshold ?? 1;
 
   const index = buildPaidStatusIndex(masterKwLookup, kwAddedManual, negativeKw, pausedKw);
@@ -160,7 +165,7 @@ export function findUnderbidKeywords(
   const out: UnderbidRow[] = [];
   byKw.forEach((a) => {
     const status = resolvePaidStatus(a.term, index);
-    if (!status.inPaid) return; // must already be bid
+    if (status.negative) return; // loại chủ động — không phải underbid
 
     const organicUsers = a.organic?.users ?? 0;
     const paidUsers = a.paid?.users ?? 0;
@@ -215,7 +220,7 @@ export function findUnderbidKeywords(
       organicCr: a.organic?.cr ?? null,
       paidPos,
       paidPosL30: l30?.paid ?? null,
-      inPaidSource: status.source === 'manual' ? 'manual' : 'master',
+      inPaidSource: !status.inPaid ? 'none' : status.source === 'manual' ? 'manual' : 'master',
       camps,
       score: organicUsers * (1 - paidShare),
     });
