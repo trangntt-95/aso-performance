@@ -33,12 +33,25 @@ export interface ChangeTag {
   value: string;
 }
 
+/** Kênh quảng cáo mà thay đổi thuộc về. '' = không riêng kênh nào. */
+export const CHANNELS = ['Shopify Ads', 'Google Ads', 'Microsoft Ads'] as const;
+export type Channel = (typeof CHANNELS)[number] | '';
+
+/** Chuẩn hoá chuỗi kênh đọc từ id — mã cũ không có kênh thì ra ''. */
+export function normalizeChannel(raw: string | undefined): Channel {
+  const t = (raw ?? '').trim().toLowerCase();
+  for (const c of CHANNELS) if (c.toLowerCase() === t) return c;
+  return '';
+}
+
 export interface ChangeEntry {
   /** Row key inside App_Notes — stable, used for edit/delete. */
   id: string;
   /** ISO date the change actually happened. */
   date: string;
   tag: ChangeTag;
+  /** Kênh (Shopify / Google / Microsoft Ads), '' khi không riêng kênh nào. */
+  channel: Channel;
   /** What was changed / observed. */
   text: string;
   /** When the row was last written, from the sheet. */
@@ -49,20 +62,28 @@ export interface ChangeEntry {
 // scope and key, so the key itself must not contain it.
 const F = '|';
 
-/** `<date>|<kind>|<value>|<nonce>` — event date first so keys sort naturally. */
-export function makeEntryId(date: string, tag: ChangeTag): string {
+/**
+ * `<date>|<kind>|<value>|<nonce>|<channel>` — event date first so keys sort
+ * naturally. Channel sits AFTER the nonce (added 9/2026) so the ~ids written
+ * before it still parse: parseId reads the first four parts as before and
+ * treats a missing fifth as "no channel".
+ */
+export function makeEntryId(date: string, tag: ChangeTag, channel: Channel = ''): string {
   const nonce = Math.random().toString(36).slice(2, 8);
-  return [date, tag.kind, tag.value.replace(/\|/g, '/'), nonce].join(F);
+  // Không kênh → giữ đúng dạng 4 phần như trước, không để lại dấu '|' thừa ở cuối.
+  const parts = [date, tag.kind, tag.value.replace(/\|/g, '/'), nonce];
+  if (channel) parts.push(channel);
+  return parts.join(F);
 }
 
-function parseId(id: string): { date: string; tag: ChangeTag } | null {
+function parseId(id: string): { date: string; tag: ChangeTag; channel: Channel } | null {
   const parts = id.split(F);
   if (parts.length < 3) return null;
   const [date, kind, value] = parts;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
   const kinds: ChangeTagKind[] = ['account', 'category', 'country', 'camp', 'keyword'];
   const k = (kinds as string[]).includes(kind) ? (kind as ChangeTagKind) : 'account';
-  return { date, tag: { kind: k, value: value ?? '' } };
+  return { date, tag: { kind: k, value: value ?? '' }, channel: normalizeChannel(parts[4]) };
 }
 
 /** Read every changelog row out of the generic notes maps. */
@@ -81,6 +102,7 @@ export function readChangelog(
       id,
       date: meta.date,
       tag: meta.tag,
+      channel: meta.channel,
       text: text.trim(),
       writtenAt: updatedAt[composite] ?? null,
     });
