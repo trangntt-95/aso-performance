@@ -59,7 +59,9 @@ export function windowSnapshotRows(
 // has to be in Master / Manual to qualify. A term nobody bids but organic sends
 // users to is the purest underbid there is. Rows still carry the camp(s) the
 // keyword IS bid in, so the ones with no camp read as "chưa bid".
-// Negative keywords stay out: those are excluded on purpose.
+// Negative keywords are NOT filtered either — the list is "where is organic
+// demand that paid isn't catching", and a negative that keeps sending organic
+// users is worth seeing, labelled as negative.
 
 export interface UnderbidCamp {
   name: string;
@@ -88,8 +90,9 @@ export interface UnderbidRow {
   paidPos: number | null;
   /** Paid avg position over the recent L30 window (from All_L30). */
   paidPosL30: number | null;
-  /** 'none' = keyword chưa được bid ở đâu — camps rỗng, đây là chỗ mở bid mới. */
-  inPaidSource: 'master' | 'manual' | 'none';
+  /** 'none' = keyword chưa được bid ở đâu — camps rỗng, đây là chỗ mở bid mới.
+   *  'negative' = đang nằm trong Negative KW list nhưng organic vẫn có nhu cầu. */
+  inPaidSource: 'master' | 'manual' | 'none' | 'negative';
   camps: UnderbidCamp[];
   /** Priority = organic demand the paid side is missing. */
   score: number;
@@ -164,8 +167,10 @@ export function findUnderbidKeywords(
 
   const out: UnderbidRow[] = [];
   byKw.forEach((a) => {
+    // Không lọc theo trạng thái bid nữa (Trang, 14/09/2026): keyword nào thoả
+    // điều kiện organic cũng vào, kể cả đang ở Negative KW list — status chỉ
+    // còn dùng để biết nó nằm ở camp nào và gắn nhãn.
     const status = resolvePaidStatus(a.term, index);
-    if (status.negative) return; // loại chủ động — không phải underbid
 
     const organicUsers = a.organic?.users ?? 0;
     const paidUsers = a.paid?.users ?? 0;
@@ -220,7 +225,7 @@ export function findUnderbidKeywords(
       organicCr: a.organic?.cr ?? null,
       paidPos,
       paidPosL30: l30?.paid ?? null,
-      inPaidSource: !status.inPaid ? 'none' : status.source === 'manual' ? 'manual' : 'master',
+      inPaidSource: status.negative ? 'negative' : !status.inPaid ? 'none' : status.source === 'manual' ? 'manual' : 'master',
       camps,
       score: organicUsers * (1 - paidShare),
     });

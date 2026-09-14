@@ -163,11 +163,14 @@ function CampOne({ camp }: { camp: import('@/lib/market/underbid').UnderbidCamp 
 function CampCell({
   camps,
   manual,
+  negative,
   chosen,
   onToggle,
 }: {
   camps: import('@/lib/market/underbid').UnderbidCamp[];
   manual: boolean;
+  /** Keyword đang nằm trong Negative KW list — vẫn hiện vì organic có nhu cầu. */
+  negative?: boolean;
   /** Camps the user pinned as the ones they actually tune. */
   chosen: string[];
   onToggle: (campName: string) => void;
@@ -177,8 +180,13 @@ function CampCell({
   if (camps.length === 0) {
     return (
       <td className="whitespace-nowrap px-2 py-2">
-        <span className="text-[11px] text-slate-400">—</span>
+        <span className="text-[11px] text-slate-400" title={negative ? undefined : 'Chưa bid ở camp nào'}>—</span>
         {manual && <span className="text-[10px] text-slate-400"> ✍️ added manual</span>}
+        {negative && (
+          <span className="ml-1 rounded bg-rose-100 px-1 text-[9px] font-semibold text-rose-700" title="Keyword đang nằm trong Negative KW list, nhưng organic vẫn có nhu cầu — cân nhắc gỡ negative">
+            ⛔ negative
+          </span>
+        )}
       </td>
     );
   }
@@ -491,8 +499,9 @@ export function UnderbidView() {
           <b>Keyword bị underbid</b> — có nhu cầu organic thật trong <b>{window}</b> (organic users ≥ {minOrganic}), nhưng{' '}
           paid xuất hiện rất ít so với organic <b>(paid share &lt; {maxShare}%)</b> và vị trí paid yếu{' '}
           <b>(&gt; {posTh}</b> hoặc chưa có vị trí paid). → nên <b>tăng bid</b>, hoặc <b>mở bid</b> nếu chưa bid. Không còn đòi keyword
-          phải có trong Master: cột <b>Camp</b> cho biết nó đang nằm ở camp nào (kèm link), trống nghĩa là <b>chưa bid ở đâu</b>.
-          Keyword trong Negative KW list không vào đây.
+          phải có trong Master hay ngoài Negative: <b>bất kỳ keyword nào</b> thoả điều kiện organic đều vào. Cột <b>Camp</b> cho biết
+          nó đang nằm ở camp nào (kèm link), trống nghĩa là <b>chưa bid ở đâu</b>; nhãn <b>negative</b> = đang nằm trong Negative KW list
+          mà organic vẫn có nhu cầu.
           {' '}
           <span className="mt-1 block border-t border-amber-200 pt-1">
             <b>Hai cột tiền:</b> <b>$/install</b> là net value một install của keyword
@@ -782,6 +791,7 @@ export function UnderbidView() {
                     <CampCell
                       camps={r.camps}
                       manual={r.inPaidSource === 'manual'}
+                      negative={r.inPaidSource === 'negative'}
                       chosen={chosenCampsOf(r.term)}
                       onToggle={(name) => toggleCamp(r.term, name)}
                     />
