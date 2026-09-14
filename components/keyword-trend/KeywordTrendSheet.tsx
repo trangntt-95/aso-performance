@@ -575,20 +575,32 @@ export function KeywordTrendSheet() {
                 title={
                   trendData.language.source === 'sheet'
                     ? 'Theo cột lang của tab All_L* / Country_L* (bộ phân loại của sheet)'
-                    : trendData.language.source === 'script'
-                      ? 'Đoán theo bộ chữ của keyword — sheet không gán mã ngôn ngữ'
-                      : trendData.language.source === 'default'
-                        ? 'Sheet không gán mã; chữ Latin không dấu nên coi là tiếng Anh'
-                        : 'Sheet không gán mã và chữ Latin có dấu — không đoán giữa Tây Ban Nha / Bồ Đào Nha / Pháp'
+                    : trendData.language.source === 'corrected'
+                      ? `Sheet ghi '${trendData.language.sheetCode}' nhưng bộ chữ / ký tự đặc trưng của keyword nói khác — dashboard dùng theo keyword. Cột lang trong sheet không đổi.`
+                      : trendData.language.source === 'script'
+                        ? 'Đoán theo bộ chữ hoặc ký tự đặc trưng của keyword — sheet không gán mã ngôn ngữ'
+                        : trendData.language.source === 'words'
+                          ? 'Đoán theo từ nối trong keyword — sheet không gán mã; tín hiệu yếu'
+                          : trendData.language.source === 'default'
+                            ? 'Sheet không gán mã; chữ Latin không dấu nên coi là tiếng Anh'
+                            : 'Sheet không gán mã và chữ Latin có dấu — không đoán giữa Tây Ban Nha / Bồ Đào Nha / Pháp'
                 }
               >
                 <span className="font-semibold">Ngôn ngữ:</span>{' '}
-                <span className={cn(trendData.language.source === 'unknown' && 'text-amber-700')}>
+                <span className={cn(trendData.language.source === 'unknown' && 'text-amber-700', trendData.language.source === 'corrected' && 'font-medium text-indigo-700')}>
                   {languageLabel(trendData.language)}
                 </span>
                 {trendData.language.source !== 'sheet' && (
-                  <span className="ml-1 text-[10px] text-slate-400">
-                    {trendData.language.source === 'script' ? '(theo bộ chữ)' : trendData.language.source === 'default' ? '(mặc định)' : ''}
+                  <span className={cn('ml-1 text-[10px]', trendData.language.source === 'corrected' ? 'text-amber-700' : 'text-slate-400')}>
+                    {trendData.language.source === 'corrected'
+                      ? `(sheet ghi ${trendData.language.sheetCode} — đã sửa theo chữ)`
+                      : trendData.language.source === 'script'
+                        ? '(theo bộ chữ)'
+                        : trendData.language.source === 'words'
+                          ? '(theo từ nối, chưa chắc)'
+                          : trendData.language.source === 'default'
+                            ? '(mặc định)'
+                            : ''}
                   </span>
                 )}
               </span>

@@ -10,7 +10,20 @@ const eq = (name, got, want) => {
 };
 const L = (k, c) => { const l = languageOfKeyword(k, c); return [l.code, l.source, languageLabel(l)]; };
 eq('mã sheet thắng', L('gestão financeira', 'pt'), ['pt', 'sheet', 'Tiếng Bồ Đào Nha (pt)']);
-eq('mã sheet kể cả khi sai bộ chữ', L('ürün analiz', 'de'), ['de', 'sheet', 'Tiếng Đức (de)']);
+// ü dùng chung Đức/Thổ → không đủ chắc để cãi sheet
+eq('ü không đủ chắc → giữ mã sheet', L('ürün analiz', 'de'), ['de', 'sheet', 'Tiếng Đức (de)']);
+// ı không chấm chỉ Thổ có → ghi đè sheet 'de'
+const fixed = languageOfKeyword('kapıda ödeme', 'de');
+eq('ı → Thổ, ghi đè sheet de', [fixed.code, fixed.source, fixed.sheetCode], ['tr', 'corrected', 'de']);
+eq('ß → Đức, ghi đè sheet es', L('straße kosten', 'es'), ['de', 'corrected', 'Tiếng Đức (de)']);
+eq('ñ → Tây Ban Nha, ghi đè sheet pt', L('ganancias del año', 'pt'), ['es', 'corrected', 'Tiếng Tây Ban Nha (es)']);
+eq('ã → Bồ Đào Nha, khớp sheet → sheet', L('gestão', 'pt'), ['pt', 'sheet', 'Tiếng Bồ Đào Nha (pt)']);
+eq('Hán nhưng sheet ghi es → sửa thành zh', L('数据分析', 'es'), ['zh', 'corrected', 'Tiếng Trung (zh)']);
+eq('zh-tw vs zh cùng họ → không sửa', L('數據', 'zh-tw'), ['zh-tw', 'sheet', 'Tiếng Trung (phồn thể) (zh-tw)']);
+eq('từ nối lấp chỗ trống: für → Đức', L('app für gewinn', ''), ['de', 'words', 'Tiếng Đức (de)']);
+eq('từ nối KHÔNG ghi đè sheet', L('app für gewinn', 'es'), ['es', 'sheet', 'Tiếng Tây Ban Nha (es)']);
+eq('từ nối hai ngôn ngữ cùng khớp → không đoán, về mặc định', L('per los', ''), ['en', 'default', 'Tiếng Anh (en)']);
+eq('Latin có dấu, ü mà không mã → chưa xác định', L('steuer zoll gebühre', ''), ['', 'unknown', 'Chưa xác định']);
 eq('mã lạ → hiện mã', L('x', 'xx'), ['xx', 'sheet', 'Mã xx (xx)']);
 eq('Hán → Trung', L('数据分析', ''), ['zh', 'script', 'Tiếng Trung (zh)']);
 eq('Kana → Nhật (dù có Kanji)', L('利益トラッカー', ''), ['ja', 'script', 'Tiếng Nhật (ja)']);
