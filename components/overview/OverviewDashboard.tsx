@@ -43,6 +43,7 @@ import { DailyTrendChart } from './DailyTrendChart';
 import { TopCountriesChart } from './TopCountriesChart';
 import { CategoryShareDonut } from './CategoryShareDonut';
 import { CategoryCpiStrip } from './CategoryCpiStrip';
+import { buildCountryNetValue } from '@/lib/market/keywordNetValue';
 import { DataGapNote } from '@/components/shared/DataGapNote';
 import { DateFieldDMY } from '@/components/shared/DateFieldDMY';
 import { SheetSources } from '@/components/shared/SheetSources';
@@ -282,6 +283,13 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     if (!notesLoaded) void loadNotes();
   }, [notesLoaded, loadNotes]);
   const changeEntries = useMemo(() => readChangelog(notes, noteTimes), [notes, noteTimes]);
+  // Giá trị install theo nước (tab Net value per install), theo bộ lọc kênh:
+  // không lọc → gộp organic + paid, lọc → đúng kênh — cùng luật với bảng chi
+  // phí theo category.
+  const countryNetValue = useMemo(
+    () => buildCountryNetValue(data, surfaceFocus === 'paid' || surfaceFocus === 'organic' ? surfaceFocus : 'all'),
+    [data, surfaceFocus],
+  );
   const changeMarkers = useMemo(
     () => changeEntries.map((e) => ({ date: e.date, label: e.text })),
     [changeEntries],
@@ -1132,7 +1140,12 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                 activeCountry={countryFocus}
                 onCountryClick={(c) => setCountryFocus(countryFocus === c ? null : c)}
                 height={Math.max(280, topCountries.length * 22)}
+                valueByCountry={countryNetValue}
               />
+              <div className="mt-1 text-[10px] text-slate-400">
+                Nhãn <span className="text-indigo-600">$…/inst</span> = một install ở nước đó đáng bao nhiêu (tab Net value per install, YTD,{' '}
+                {surfaceFocus === 'all' ? 'organic + paid' : surfaceFocus === 'paid' ? 'chỉ paid' : 'chỉ organic'}); * = dưới 3 shop trả tiền
+              </div>
             </div>
           )}
         </SectionCard>

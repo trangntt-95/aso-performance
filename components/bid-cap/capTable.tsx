@@ -67,6 +67,12 @@ export const COUNTRY_CAP_COLS: CapCol[] = [
     title: "Trần CPI mà model bid đang chạy theo (cột 'CPI cap' của Max bid cap). Là mức CHO PHÉP, không phải CPI đã tiêu — sheet không còn cột Spend.",
   },
   { key: 'cap', label: 'Trần cấu hình', align: 'right', title: 'Trần CPI đã đặt trong Countries performance' },
+  {
+    key: 'value',
+    label: 'Value/inst',
+    align: 'right',
+    title: 'Một install PAID ở nước này đáng bao nhiêu theo tab Net value per install (net = doanh thu − phí Shopify, chưa trừ ads; YTD), gộp mọi keyword. Khác cột bên trái (Countries performance, doanh thu ÷ install theo quý) về nguồn và kỳ — hai số gần nhau thì đáng tin, lệch xa thì một trong hai đang mỏng.',
+  },
   { key: 'gap', label: 'vs trần', align: 'right', title: 'Trần sheet so với trần cấu hình. Dương = model được phép trả cao hơn mức đã thống nhất.' },
   { key: 'verdict', label: 'Trạng thái', align: 'left' },
 ];

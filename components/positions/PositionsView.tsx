@@ -11,11 +11,15 @@ import { CategoryChip } from '@/components/shared/CategoryChip';
 import { normKw } from '@/lib/sheets/kwNorm';
 import { CATEGORY_ORDER } from '@/lib/utils/colors';
 import type { Category } from '@/lib/sheets/types';
+import { buildCountryNetValue } from '@/lib/market/keywordNetValue';
 import { cn } from '@/lib/utils';
 import {
   POSITION_WINDOWS,
+  TIER1_CORE_KEYWORDS,
   buildPositionRows,
+  cellInstalls,
   cellPos,
+  isTier1,
   isTier23,
   topProfitKeywords,
   type PositionRow,
@@ -69,6 +73,8 @@ export function PositionsView() {
   const [sortWin, setSortWin] = useState<PositionWindow>('L7');
 
   const profitTop = useMemo(() => new Set(topProfitKeywords(rows, Number(topN) || 5)), [rows, topN]);
+  // Giá trị install của nước (tab Net value per install), theo kênh đang chọn.
+  const countryNv = useMemo(() => buildCountryNetValue(data, surface === 'both' ? 'all' : surface), [data, surface]);
 
   const { categories, tiers, countries } = useMemo(() => {
     const c = new Set<string>();
@@ -91,10 +97,12 @@ export function PositionsView() {
     const q = search.trim().toLowerCase();
     const list = rows.filter((r) => {
       if (scope === 'default') {
-        // Brand: mọi keyword. Profit: chỉ top N. Còn lại: ẩn. Nước: chỉ Tier 2–3.
-        const kwOk = r.category === 'Brand' || (r.category === 'Profit' && profitTop.has(normKw(r.keyword)));
-        if (!kwOk) return false;
-        if (!isTier23(r.tier)) return false;
+        // Tier 2–3: Brand (mọi keyword) + top N Profit. Tier 1: chỉ hai keyword
+        // lõi 'trueprofit' và 'profit' (Trang, 14/09). Còn lại: ẩn tới khi lọc.
+        const k = normKw(r.keyword);
+        const tier23Ok = isTier23(r.tier) && (r.category === 'Brand' || (r.category === 'Profit' && profitTop.has(k)));
+        const tier1Ok = isTier1(r.tier) && TIER1_CORE_KEYWORDS.includes(k);
+        if (!tier23Ok && !tier1Ok) return false;
       }
       if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
       if (tierFilter !== 'all' && (r.tier || '(không tier)') !== tierFilter) return false;
@@ -138,8 +146,9 @@ export function PositionsView() {
       <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-900">
         <b>Vị trí keyword theo nước</b> qua 5 cửa sổ L3 → L90, đọc từ các tab{' '}
         <code className="text-[10px]">Country_L*</code> (GA4): vị trí trung bình trong cửa sổ, kèm cửa sổ liền trước để
-        thấy đang lên hay xuống. Mặc định chỉ hiện <b>Brand</b> và <b>top Profit</b> ở thị trường <b>Tier 2–3</b> (tier
-        theo tab <code className="text-[10px]">Max bid cap</code>); các keyword, category và tier khác ẩn — bấm{' '}
+        thấy đang lên hay xuống. Mặc định chỉ hiện <b>Brand</b> và <b>top Profit</b> ở thị trường <b>Tier 2–3</b>, cộng hai keyword lõi{' '}
+        <b>trueprofit</b> và <b>profit</b> ở <b>Tier 1</b> (tier theo tab <code className="text-[10px]">Max bid cap</code>);
+        các keyword, category và tier khác ẩn — bấm{' '}
         <b>Hiện tất cả</b> hoặc lọc để xem. Kênh <b>cả hai</b> = gia quyền organic + paid theo users; chọn riêng để
         xem vị trí organic (ASO) hay paid (ads).
       </div>
@@ -148,7 +157,7 @@ export function PositionsView() {
         <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
           {(
             [
-              { id: 'default' as Scope, label: '🎯 Brand + top Profit · Tier 2–3' },
+              { id: 'default' as Scope, label: '🎯 Mặc định: Brand + top Profit ở Tier 2–3 · trueprofit, profit ở Tier 1' },
               { id: 'all' as Scope, label: 'Hiện tất cả' },
             ] as const
           ).map((t) => (
@@ -224,7 +233,7 @@ export function PositionsView() {
             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Keyword</th>
-                <th className="px-2 py-2 text-left font-medium">Nước · tier</th>
+                <th className="px-2 py-2 text-left font-medium" title="Tier theo Max bid cap · số tím = một install ở nước đó đáng bao nhiêu (tab Net value per install, YTD, theo kênh đang chọn); * = dưới 3 shop trả tiền">Nước · tier · value/inst</th>
                 {POSITION_WINDOWS.map((w) => {
                   const d = windowDates[w];
                   return (
@@ -239,6 +248,9 @@ export function PositionsView() {
                     </th>
                   );
                 })}
+                <th className="px-2 py-2 text-right font-medium" title={`Install ở cửa sổ ${sortWin} (đang sắp theo cửa sổ này), theo kênh đã chọn · trong ngoặc: users cùng cửa sổ`}>
+                  Inst {sortWin}
+                </th>
                 <th className="px-2 py-2 text-right font-medium" title="Tổng users mọi cửa sổ, mọi kênh">Users</th>
               </tr>
             </thead>
@@ -261,10 +273,35 @@ export function PositionsView() {
                     ) : (
                       <span className="ml-1.5 text-[9px] text-slate-300" title="Nước không có trong Max bid cap">—</span>
                     )}
+                    {(() => {
+                      const nv = countryNv.get(r.country.trim().toLowerCase());
+                      if (!nv || nv.netPerInstall === null) return null;
+                      return (
+                        <span
+                          className={cn('ml-1.5 font-mono text-[10px]', nv.thin ? 'text-amber-700' : 'text-indigo-600')}
+                          title={`Value/inst ở ${r.country}: ${nv.installs} install · ${nv.payingShops} shop trả tiền · net $${Math.round(nv.netValue).toLocaleString()}${nv.thin ? ' — mỏng' : ''}`}
+                        >
+                          ${nv.netPerInstall.toFixed(0)}/inst{nv.thin ? '*' : ''}
+                        </span>
+                      );
+                    })()}
                   </td>
                   {POSITION_WINDOWS.map((w) => (
                     <PosCell key={w} row={r} w={w} surface={surface} />
                   ))}
+                  <td className="px-2 py-1.5 text-right font-mono text-[11px] whitespace-nowrap">
+                    {(() => {
+                      const inst = cellInstalls(r, sortWin, surface);
+                      const c = cellPos(r, sortWin, surface);
+                      if (inst === null) return <span className="text-slate-200">—</span>;
+                      return (
+                        <>
+                          <span className={cn(inst > 0 ? 'font-semibold text-emerald-700' : 'text-slate-400')}>{inst}</span>
+                          {c && <span className="ml-1 text-[9px] text-slate-400">({c.users} u)</span>}
+                        </>
+                      );
+                    })()}
+                  </td>
                   <td className="px-2 py-1.5 text-right font-mono text-[11px] text-slate-500">{r.users}</td>
                 </tr>
               ))}

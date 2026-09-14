@@ -62,6 +62,20 @@ export function countryTierIndex(bidCap: BidCapRow[]): Map<string, string> {
 
 /** Tier 2 / Tier 3 theo cách sheet ghi ('Tier 2', 'Tier 3'). */
 export const isTier23 = (tier: string): boolean => /^tier\s*[23]\b/i.test(tier.trim());
+/** Mọi tier 1: 'Tier 1 Premium', 'Tier 1 Strong', 'Tier 1.5'. */
+export const isTier1 = (tier: string): boolean => /^tier\s*1\b/i.test(tier.trim());
+
+/** Hai keyword Trang luôn muốn thấy ở Tier 1, bất kể users. */
+export const TIER1_CORE_KEYWORDS = ['trueprofit', 'profit'];
+
+/** Tổng install của một dòng ở một cửa sổ, theo kênh đã chọn. null = không có dòng. */
+export function cellInstalls(row: PositionRow, w: PositionWindow, surface: SurfaceKey | 'both'): number | null {
+  const c = row.cells[w];
+  if (!c) return null;
+  if (surface !== 'both') return c[surface]?.installs ?? null;
+  const parts = [c.organic, c.paid].filter((x): x is PositionCell => !!x);
+  return parts.length ? parts.reduce((s, x) => s + x.installs, 0) : null;
+}
 
 export function buildPositionRows(data: SheetPayload | null | undefined): PositionRow[] {
   if (!data) return [];

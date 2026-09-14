@@ -3,7 +3,7 @@
 import { buildAndLoad } from './build.mjs';
 
 const load = buildAndLoad();
-const { buildPositionRows, topProfitKeywords, cellPos, isTier23, countryTierIndex } = await load('market/keywordPosition.js');
+const { buildPositionRows, topProfitKeywords, cellPos, cellInstalls, isTier23, isTier1, countryTierIndex } = await load('market/keywordPosition.js');
 
 let pass = 0, fail = 0;
 const eq = (name, got, want) => {
@@ -25,7 +25,7 @@ const data = {
   ],
   countryL14: [],
   countryL30: [
-    kw('Profit', 'profit', 'Brazil', 'search', 20, 4, 5),
+    kw('Profit', 'profit', 'Brazil', 'search', 20, 4, 5, 3),
     kw('Profit', 'profit calculator', 'Brazil', 'search', 6, 7, null),
     kw('Profit', 'profit tracker', 'United States', 'search_ad', 50, 2, null),
     kw('Feature', 'dashboard', 'Brazil', 'search', 9, 6, null),
@@ -53,6 +53,11 @@ eq('cellPos cửa sổ trống → null', cellPos(mx, 'L14', 'both'), null);
 eq('nước không có trong Max bid cap → tier rỗng', rows.find((r) => r.country === 'Nigeria').tier, '');
 eq('isTier23', [isTier23('Tier 2'), isTier23('Tier 3'), isTier23('Tier 1.5'), isTier23('Tier 1 Strong'), isTier23('')], [true, true, false, false, false]);
 eq('countryTierIndex chữ thường', countryTierIndex(data.bidCap).get('brazil'), 'Tier 3');
+eq('isTier1', [isTier1('Tier 1 Premium'), isTier1('Tier 1 Strong'), isTier1('Tier 1.5'), isTier1('Tier 2'), isTier1('Data nhỏ')], [true, true, true, false, false]);
+eq('cellInstalls both = organic + paid (0)', cellInstalls(mx, 'L7', 'both'), 0);
+const br = rows.find((r) => r.keyword === 'profit' && r.country === 'Brazil');
+eq('cellInstalls cửa sổ trống → null', cellInstalls(br, 'L7', 'both'), null);
+eq('cellInstalls organic L30 Brazil profit = 3', cellInstalls(br, 'L30', 'organic'), 3);
 
 eq('top Profit theo users: profit tracker (50) > profit (20) > calculator (6)', topProfitKeywords(rows, 2), ['profit tracker', 'profit']);
 eq('top Profit mặc định 5 → cả 3', topProfitKeywords(rows).length, 3);

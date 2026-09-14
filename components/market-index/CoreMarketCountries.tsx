@@ -8,6 +8,7 @@ import type { CountryWeights, WeightBasis } from '@/lib/market/countryWeighting'
 import { Card, CardContent } from '@/components/ui/card';
 import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
+import { buildCountryNetValue } from '@/lib/market/keywordNetValue';
 
 // Which countries make up the core market.
 //
@@ -97,6 +98,14 @@ export function CoreMarketCountries({ data, limit = 15, weightBasis = 'revenue',
 
   const hasRevenue = !!weights && weights.totalRevenue > 0;
   const revenuePeriod = weights?.period ?? '';
+  // Giá trị install theo tab Net value per install (YTD, cả hai kênh) — nguồn
+  // thứ hai bên cạnh block doanh thu theo quý của Countries performance.
+  const netValueByCountry = useMemo(() => buildCountryNetValue(data, 'all'), [data]);
+  const nvOf = (country: string) => netValueByCountry.get(country.trim().toLowerCase()) ?? null;
+  const nvLabel = (country: string): string | null => {
+    const nv = nvOf(country);
+    return nv?.netPerInstall == null ? null : `$${nv.netPerInstall.toFixed(0)}${nv.thin ? '*' : ''}`;
+  };
 
   const enriched = useMemo<Row[]>(
     () =>
@@ -279,6 +288,14 @@ export function CoreMarketCountries({ data, limit = 15, weightBasis = 'revenue',
                     <span className="ml-1 text-slate-300">·</span>{' '}
                     <span className={cn(deltaCls(delta(r)))}>{fmtDelta(delta(r)) || '—'}</span>
                   </div>
+                  {nvLabel(r.country) && (
+                    <div
+                      className="cursor-help text-[10px] text-indigo-600"
+                      title={`Value/inst theo tab Net value per install (YTD, organic + paid): ${nvOf(r.country)!.installs} install · ${nvOf(r.country)!.payingShops} shop trả tiền${nvOf(r.country)!.thin ? ' — dưới 3 shop, mỏng' : ''}. Dòng trên là doanh thu ÷ install theo quý của Countries performance.`}
+                    >
+                      {nvLabel(r.country)}/inst · net value
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="w-32 shrink-0 text-right font-mono text-[11px] tabular-nums text-slate-500">
@@ -286,6 +303,11 @@ export function CoreMarketCountries({ data, limit = 15, weightBasis = 'revenue',
                   <span className={cn('ml-1', deltaCls(delta(r)))}>{fmtDelta(delta(r))}</span>
                   <div className="text-[10px] text-slate-400">
                     {r.valuePerInstall === null ? 'chưa có doanh thu' : `$${r.valuePerInstall.toFixed(0)}/install`}
+                    {nvLabel(r.country) && (
+                      <span className="ml-1 cursor-help text-indigo-600" title="Value/inst theo tab Net value per install (YTD, organic + paid); * = dưới 3 shop trả tiền">
+                        · {nvLabel(r.country)} nv
+                      </span>
+                    )}
                   </div>
                 </div>
               )}

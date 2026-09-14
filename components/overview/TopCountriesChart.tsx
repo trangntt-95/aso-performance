@@ -15,6 +15,7 @@ import {
 import type { CountryRollup } from './aggregate';
 import { formatNumber, formatPercent } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
+import type { NetValueAgg } from '@/lib/market/keywordNetValue';
 
 const DELTA_KEY: Record<Metric, keyof CountryRollup> = {
   users: 'deltaUsersPct',
@@ -43,6 +44,10 @@ interface Props {
   height?: number;
   onCountryClick?: (country: string) => void;
   activeCountry?: string | null;
+  /** nước (chữ thường) → giá trị install (tab Net value per install), đã theo
+   *  bộ lọc kênh của trang. Vẽ cạnh % thay đổi để mỗi nước đọc được "đáng
+   *  bao nhiêu" ngay trên biểu đồ thay vì phải mở sheet chi tiết. */
+  valueByCountry?: Map<string, NetValueAgg>;
 }
 
 function tickFmt(n: number): string {
@@ -50,7 +55,7 @@ function tickFmt(n: number): string {
   return String(n);
 }
 
-export function TopCountriesChart({ data, height = 280, onCountryClick, activeCountry }: Props) {
+export function TopCountriesChart({ data, height = 280, onCountryClick, activeCountry, valueByCountry }: Props) {
   const [metric, setMetric] = useState<Metric>('users');
   const clickable = Boolean(onCountryClick);
   const isCr = metric === 'cr';
@@ -72,12 +77,23 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
     const i = props.index ?? 0;
     const d = sortedData[i];
     const dv = (d?.[deltaKey] ?? null) as number | null;
-    if (dv === null || !Number.isFinite(dv)) return null;
+    const nv = d ? valueByCountry?.get(d.country.trim().toLowerCase()) ?? null : null;
+    const hasDelta = dv !== null && Number.isFinite(dv);
+    if (!hasDelta && !nv) return null;
     const x = Number(props.x) + Number(props.width) + 6;
     const y = Number(props.y) + Number(props.height) / 2;
     return (
-      <text x={x} y={y} dy={3.5} fontSize={10} fontWeight={600} fill={deltaColor(dv)} textAnchor="start">
-        {fmtDelta(dv)}
+      <text x={x} y={y} dy={3.5} fontSize={10} textAnchor="start">
+        {hasDelta && (
+          <tspan fontWeight={600} fill={deltaColor(dv as number)}>
+            {fmtDelta(dv as number)}
+          </tspan>
+        )}
+        {nv?.netPerInstall != null && (
+          <tspan fill={nv.thin ? '#b45309' : '#4f46e5'} dx={hasDelta ? 5 : 0}>
+            ${nv.netPerInstall.toFixed(0)}/inst{nv.thin ? '*' : ''}
+          </tspan>
+        )}
       </text>
     );
   };
@@ -120,7 +136,7 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
       </div>
       <div className="flex-1 min-h-0">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={sortedData} layout="vertical" margin={{ top: 8, right: 56, bottom: 4, left: 0 }}>
+          <BarChart data={sortedData} layout="vertical" margin={{ top: 8, right: valueByCountry ? 118 : 56, bottom: 4, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
             <XAxis
               type="number"
@@ -148,7 +164,13 @@ export function TopCountriesChart({ data, height = 280, onCountryClick, activeCo
                 const dv = (item?.payload?.[deltaKey] ?? null) as number | null;
                 const base = isCr ? formatPercent(n) : formatNumber(n);
                 const suffix = dv === null || !Number.isFinite(dv) ? '' : ` (${fmtDelta(dv)} vs kỳ trước)`;
-                return [`${base}${suffix}`, METRIC_LABEL[metric]];
+                const country = String(item?.payload?.country ?? '').trim().toLowerCase();
+                const nv = valueByCountry?.get(country) ?? null;
+                const nvTxt =
+                  nv?.netPerInstall != null
+                    ? ` · value/inst $${nv.netPerInstall.toFixed(0)} (${nv.installs} inst, ${nv.payingShops} shop${nv.thin ? ', mỏng' : ''})`
+                    : '';
+                return [`${base}${suffix}${nvTxt}`, METRIC_LABEL[metric]];
               }}
             />
             <Bar

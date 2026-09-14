@@ -15,6 +15,8 @@ import {
   money2,
   type CapTone,
 } from './capTable';
+import { buildCountryNetValue } from '@/lib/market/keywordNetValue';
+import { cn } from '@/lib/utils';
 
 // Is the CPI ceiling we bid to worth paying, per COUNTRY?
 //
@@ -65,6 +67,9 @@ const LENS_LABEL: Record<Lens, string> = {
 export function CpiCapOverview() {
   const { data, isLoading } = useSheetData();
   const overview = useMemo(() => buildCpiCapOverview(data ?? null), [data]);
+  // Giá trị install paid theo nước từ tab Net value per install — nguồn thứ hai
+  // cạnh block doanh thu theo quý của Countries performance.
+  const netValueByCountry = useMemo(() => buildCountryNetValue(data, 'paid'), [data]);
   const [lens, setLens] = useState<Lens>('over');
   const pick = (v: Lens) => setLens((cur) => (cur === v ? 'all' : v));
 
@@ -162,6 +167,7 @@ export function CpiCapOverview() {
             <tbody>
               {rows.map((r) => {
                 const over = r.verdict === 'over';
+                const nv = netValueByCountry.get(r.country.trim().toLowerCase()) ?? null;
                 return (
                   <tr key={r.country} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="whitespace-nowrap px-2 py-1.5">
@@ -225,6 +231,19 @@ export function CpiCapOverview() {
                         >
                           trần đặt {money(r.cap)}
                         </div>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[11px]">
+                      {nv?.netPerInstall == null ? (
+                        <span className="text-slate-300" title="Tab Net value per install chưa có install paid ở nước này">—</span>
+                      ) : (
+                        <span
+                          className={cn(nv.thin ? 'text-amber-700' : 'text-indigo-700')}
+                          title={`${nv.installs} install paid · ${nv.payingShops} shop trả tiền · net $${Math.round(nv.netValue).toLocaleString()}${nv.thin ? ` — ${nv.thinReason}` : ''}`}
+                        >
+                          {money2(nv.netPerInstall)}
+                          {nv.thin && <span className="ml-0.5 text-[9px]">mỏng</span>}
+                        </span>
                       )}
                     </td>
                     <GapCell
