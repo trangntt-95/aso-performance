@@ -40,5 +40,27 @@ eq('khác nước → null', r.resolve('TP - Profit - Exact 01 - Tier 2 - SW'), 
 eq('không tier, không biết → null', r.resolve('TP - CPM - Broad 07 (-IN)'), null);
 eq('không tier, ghi chú → vẫn ghép lớp 2', r.resolve('TP - CPM - Broad 06 (-IN) - CPI 5, good'), 'TP - CPM - Broad 06 (-IN)');
 
+// Khoảng trắng quanh dấu gạch không phải danh tính
+const r2 = buildCampNameResolver(['TP_Languages_German_Broad- rất ít imp', 'TP - Brandname - Exact - US']);
+eq('dash dính chữ vs có space → cùng camp', r2.resolve('TP_Languages_German_Broad - rất ít imp'), 'TP_Languages_German_Broad- rất ít imp');
+eq('nhiều space quanh dash → cùng camp', r2.resolve('TP  -  Brandname -Exact-  US (CPI 9)'), 'TP - Brandname - Exact - US');
+
+// Camp_Links giữ ghi chú, export giữ tên trần → ghép ngược (duy nhất + đuôi giống ghi chú)
+const r3 = buildCampNameResolver([
+  '! TP - Cateogry - Analytics App - Broad 02 - no ins',
+  'TP - Feature - Dashboard (CR thấp)',
+  '[02.03] Test Broad',
+  'TP - Profit - Exact 01 - Tier 2 - HU',
+  'TP - Profit - Exact 01 - Tier 2 - NO',
+  'TP - Others - Low bid 09 - test till Oct',
+  'TP - Others - Low bid 09 - watch',
+]);
+eq('dấu ! đầu tên bị bỏ', r3.resolve('TP - Cateogry - Analytics App - Broad 02 - no ins'), '! TP - Cateogry - Analytics App - Broad 02 - no ins');
+eq('ghép ngược: tên trần → tên có ghi chú "- no ins"', r3.resolve('TP - Cateogry - Analytics App - Broad 02'), '! TP - Cateogry - Analytics App - Broad 02 - no ins');
+eq('ghép ngược: tên trần → tên có "(CR thấp)"', r3.resolve('TP - Feature - Dashboard'), 'TP - Feature - Dashboard (CR thấp)');
+eq('ghép ngược: đuôi geo " - HU" KHÔNG tính', r3.resolve('TP - Profit - Exact 01 - Tier 2'), null);
+eq('ghép ngược: hai ứng viên → null', r3.resolve('TP - Others - Low bid 09'), null);
+eq('tên raw "(CPI 5) maintain" ghép vào "[02.03] Test Broad"', r3.resolve('[02.03] Test Broad (CPI 5) maintain'), '[02.03] Test Broad');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

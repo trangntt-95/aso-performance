@@ -20,7 +20,17 @@
 //      camp onto a shorter sibling (verified: 0 prefix-collisions among live
 //      camp names). This is what recovers free-text notes normalizeCampName
 //      deliberately leaves intact ("- cân nhắc off", "- good CPI 7").
-//   3. Tier-agnostic fallback. Trang re-tiers a camp by editing its name
+//   3. Reverse match: Camp_Links (or Paused_camp) sometimes carries the note and
+//      the export the bare name — "! TP - Cateogry - Analytics App - Broad 02 -
+//      no ins" vs "TP - Cateogry - Analytics App - Broad 02". When exactly ONE
+//      known name extends the observed one at a note boundary AND the extra
+//      part reads like a note (CPI/bid/ins/test/maintain/…, or a parenthesis),
+//      it is the same campaign. A geo suffix (" - HU", " - UK, CA") never
+//      qualifies, so a general camp cannot be pulled onto one of its geo splits.
+//      Also tried on the RAW name before the CPI strip: "[02.03] Test Broad (CPI
+//      5) maintain" extends "[02.03] Test Broad" at "(" only in raw form — after
+//      the strip the leftover " maintain" is glued on without a boundary.
+//   4. Tier-agnostic fallback. Trang re-tiers a camp by editing its name
 //      ("… Tier 1 - ES" → "… Tier 2 - ES") while Camp_Links keeps the old name,
 //      so the same campaign id silently loses its URL and geo. Measured live
 //      11/09/2026: 6 of 54 unresolved names were exactly this. When layers 1–2
@@ -29,7 +39,11 @@
 //      siblings that differ only by tier stay unresolved rather than guessed.
 
 export function normalizeCampName(name: string): string {
-  let x = (name ?? '').trim();
+  // "! TP - …", "!!! TP - …": dấu chấm than đầu tên là mức ưu tiên Trang tự
+  // đánh, không phải tên camp — Camp_Links có "! TP - Cateogry - Analytics App
+  // - Broad 02 - no ins" cho camp export gọi là "TP - Cateogry - Analytics App
+  // - Broad 02" (14/09/2026).
+  let x = (name ?? '').trim().replace(/^[!\s]+/, '');
   // A camp can carry more than one tag; strip repeatedly until stable.
   for (let i = 0; i < 6; i++) {
     const y = x
@@ -47,6 +61,28 @@ export function normalizeCampName(name: string): string {
 // opening paren ("Base - note", "Base (note)"). A letter/digit here means the
 // prefix is a partial word, not a real camp boundary — so it never matches.
 const NOTE_BOUNDARY = /^\s*[-–(]/;
+// What a trailing note looks like, as opposed to a geo split. A parenthesis is
+// always a note (geo parens like "(-IN)" only ever sit INSIDE a base name that
+// Camp_Links already carries), and a dash-suffix must mention something
+// operational. " - HU", " - UK, CA", " - Japan" match none of these.
+const NOTE_LIKE =
+  /^\s*\(|\b(cpi|bid|ins|inst|install|test|maintain|good|ok|watch|pause|paused|off|rev|roas|imp|clean|check|focus|foucs|original|new|till|since|low|high|excl|no|thấp|cao|ít|nhỏ|cân nhắc|chưa|hạ|tăng|theo dõi)\b/i;
+
+/**
+ * Comparison key: lowercased, every dash written as " - ", spaces collapsed.
+ *
+ * Camp_Links has "TP_Languages_German_Broad- rất ít imp" and the export has
+ * "TP_Languages_German_Broad - rất ít imp" — one space of difference kept the
+ * same campaign from resolving (seen 14/09/2026). Spacing around a dash is
+ * never what tells two campaigns apart, so it is not part of identity.
+ */
+export function looseCampKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\s*[-–]\s*/g, ' - ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
 
 // "Tier 1", "Tier 1,5", "Tier 1.5", "Tier 1 Premium" → one placeholder, so a
 // re-tiered name compares equal to its Camp_Links row.
@@ -72,7 +108,7 @@ export function buildCampNameResolver(canonical: readonly string[]): CampNameRes
   for (const c of canonical) {
     const n = normalizeCampName(c);
     if (!n) continue;
-    const lc = n.toLowerCase();
+    const lc = looseCampKey(n);
     if (!byLc.has(lc)) byLc.set(lc, n);
   }
   // Longest first so the first startsWith hit is the most specific base name.
@@ -99,17 +135,34 @@ export function buildCampNameResolver(canonical: readonly string[]): CampNameRes
     }
     return null;
   };
+  // Reverse: exactly one known name extends THIS name with something that reads
+  // like a note. Unique or nothing — two candidates means a real split.
+  const reverseMatch = (lc: string, byLen: string[]): string | null => {
+    let hit: string | null = null;
+    for (const base of byLen) {
+      if (base.length > lc.length && base.startsWith(lc) && NOTE_BOUNDARY.test(base.slice(lc.length))) {
+        const suffix = base.slice(lc.length);
+        if (!NOTE_LIKE.test(suffix)) continue;
+        if (hit !== null) return null;
+        hit = base;
+      }
+    }
+    return hit;
+  };
 
   return {
     resolve(name) {
-      const lc = normalizeCampName(name).toLowerCase();
+      const lc = looseCampKey(normalizeCampName(name));
       const cached = cache.get(lc);
       if (cached !== undefined) return cached;
 
       let out: string | null = null;
-      const direct = matchIn(lc, byLc, lcByLen);
+      const rawLc = looseCampKey((name ?? '').trim().replace(/^[!\s]+/, ''));
+      const direct = matchIn(lc, byLc, lcByLen) ?? (rawLc !== lc ? matchIn(rawLc, byLc, lcByLen) : null);
       if (direct !== null) {
         out = byLc.get(direct)!;
+      } else if (reverseMatch(lc, lcByLen) !== null) {
+        out = byLc.get(reverseMatch(lc, lcByLen)!)!;
       } else {
         const tierless = tierAgnostic(lc);
         if (tierless !== lc) {
