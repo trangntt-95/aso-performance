@@ -19,6 +19,7 @@ import { buildCampDailyIndex, campBidImpact } from '@/lib/market/campBidImpact';
 import { formatNumber, formatPercent, formatPos } from '@/lib/utils/format';
 import { buildKeywordNetValue, breakevenBid, type KeywordNetValue } from '@/lib/market/keywordNetValue';
 import { normKw } from '@/lib/sheets/kwNorm';
+import { buildCampNoteResolver } from '@/lib/store/campNotes';
 import {
   findUnderbidKeywords,
   windowSnapshotRows,
@@ -388,21 +389,50 @@ export function UnderbidView() {
     [rows, netValueBy],
   );
 
+  // Danh tính camp dùng chung với Overbid / Camp Health — để note ghi ở đó cũng
+  // ẩn được keyword ở đây.
+  const campNoteIds = useMemo(
+    () => buildCampNoteResolver(data?.campLinks ?? [], (data?.shopifyDaily ?? []).map((r) => r.camp)),
+    [data?.campLinks, data?.shopifyDaily],
+  );
+
+  /** Vì sao một keyword đang ẩn: note của chính nó, hay note của camp nó chạy. */
+  interface HiddenInfo {
+    until: number;
+    via: 'keyword' | 'camp';
+    camp?: string;
+  }
+
   // Keywords still inside their post-note hide window → term -> reappear time.
+  //
+  // Hai nguồn ẩn (Trang, 14/09/2026): note của keyword trong bảng này, VÀ note
+  // của camp ghim trong Overbid / Camp Health — hạ bid camp xong mà keyword của
+  // camp đó vẫn nằm trong danh sách underbid thì dễ tăng bid ngược lại. Camp
+  // xét theo ghim nếu đã ghim; chưa ghim thì mọi camp keyword đang chạy. Lấy mốc
+  // MỚI NHẤT trong các nguồn để ngày hiện lại là ngày thật.
   const hiddenUntil = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, HiddenInfo>();
     if (!noteSnapshot) return map;
     const now = Date.now();
     for (const r of rows) {
+      let best: HiddenInfo | null = null;
       const ts = noteSnapshot[noteKeyOf('underbid', r.term)];
-      if (!ts) continue;
-      const noted = new Date(ts).getTime();
-      if (!Number.isFinite(noted)) continue;
-      const until = noted + HIDE_DAYS * DAY_MS;
-      if (until > now) map.set(r.term, until);
+      if (ts) {
+        const noted = new Date(ts).getTime();
+        if (Number.isFinite(noted)) best = { until: noted + HIDE_DAYS * DAY_MS, via: 'keyword' };
+      }
+      const pins = chosenCampsOf(r.term);
+      const campNames = pins.length > 0 ? pins : r.camps.map((c) => c.name);
+      for (const name of campNames) {
+        const at = campNoteIds.noteAt(noteSnapshot, name);
+        if (at === null) continue;
+        const until = at + HIDE_DAYS * DAY_MS;
+        if (!best || until > best.until) best = { until, via: 'camp', camp: name };
+      }
+      if (best && best.until > now) map.set(r.term, best);
     }
     return map;
-  }, [rows, noteSnapshot]);
+  }, [rows, noteSnapshot, campNoteIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const categoryOptions = useMemo(() => {
     const set = new Set<string>();
@@ -547,7 +577,7 @@ export function UnderbidView() {
               type="button"
               onClick={() => setShowHidden((v) => !v)}
               className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:border-slate-400 hover:text-slate-900"
-              title={`${hiddenCount} keyword đã ghi note đang tạm ẩn ${HIDE_DAYS} ngày để bạn xử lý; sẽ tự hiện lại để kiểm tra.`}
+              title={`${hiddenCount} keyword đang tạm ẩn ${HIDE_DAYS} ngày vì bạn vừa note chính keyword đó, hoặc note camp nó chạy (Overbid / Camp Health); sẽ tự hiện lại để kiểm tra.`}
             >
               {showHidden
                 ? `Đang hiện ${hiddenCount} keyword đã note — bấm để ẩn`
@@ -623,18 +653,23 @@ export function UnderbidView() {
             <tbody>
               {filtered.map((r) => {
                 const cs = categoryStyle(r.category as Category);
-                const hiddenTs = hiddenUntil.get(r.term);
+                const hiddenInfo = hiddenUntil.get(r.term);
+                const hiddenTs = hiddenInfo?.until;
                 return (
                   <tr key={r.term} className={cn('border-t hover:bg-slate-50 align-top', hiddenTs && 'bg-slate-50/60 text-slate-400')}>
                     <td className="px-3 py-2">
                       <div className="flex items-start gap-1">
                         <KeywordLink keyword={r.term} surface="paid" className="font-medium text-sm" />
-                        {hiddenTs && (
+                        {hiddenInfo && hiddenTs && (
                           <span
-                            title={`Đã ghi note → tạm ẩn để bạn xử lý. Tự hiện lại ngày ${dmy(hiddenTs)} để kiểm tra thay đổi.`}
+                            title={
+                              hiddenInfo.via === 'camp'
+                                ? `Camp "${hiddenInfo.camp}" vừa được note ở Overbid / Camp Health → keyword này tạm ẩn để không hành động trùng. Tự hiện lại ngày ${dmy(hiddenTs)}.`
+                                : `Đã ghi note → tạm ẩn để bạn xử lý. Tự hiện lại ngày ${dmy(hiddenTs)} để kiểm tra thay đổi.`
+                            }
                             className="shrink-0 rounded bg-amber-100 px-1 text-[9px] font-semibold text-amber-700 leading-[1.4] cursor-help"
                           >
-                            ẩn → hiện lại {dmy(hiddenTs)}
+                            {hiddenInfo.via === 'camp' ? 'camp đã note' : 'ẩn'} → hiện lại {dmy(hiddenTs)}
                           </span>
                         )}
                       </div>
