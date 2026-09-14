@@ -20,10 +20,10 @@ import { buildCampUrlIndex } from '@/lib/sheets/campUrl';
 import { resolveCampCategory, CANONICAL_CATEGORIES } from '@/lib/market/categoryTaxonomy';
 import {
   CAMP_NOTE_SCOPE,
+  buildCampNoteResolver,
   buildKeywordNotesByCamp,
   campNoteId,
-  legacyCampNoteKeys,
-  readCampNoteAt,
+  keywordNotesFor,
 } from '@/lib/store/campNotes';
 import { KeywordNotesForCamp } from '@/components/shared/KeywordNotesForCamp';
 import { useNotesStore } from '@/lib/store/notesStore';
@@ -205,6 +205,9 @@ export function CampHealthView() {
     loadNotes();
   }, [loadNotes]);
   const kwNotesByCamp = useMemo(() => buildKeywordNotesByCamp(allNotes), [allNotes]);
+  // Cùng danh tính camp với Overbid (Camp_Links campaign id) — note ghi ở đây
+  // là note Overbid đọc, và ngược lại.
+  const noteIds = useMemo(() => buildCampNoteResolver(data?.campLinks ?? []), [data?.campLinks]);
 
   const notesLoaded = useNotesStore((st) => st.loaded);
   const noteTimes = useNotesStore((st) => st.updatedAt);
@@ -224,7 +227,7 @@ export function CampHealthView() {
     if (!noteSnapshot) return map;
     const now = Date.now();
     for (const r of result.rows) {
-      const at = readCampNoteAt(noteSnapshot, r.camp);
+      const at = noteIds.noteAt(noteSnapshot, r.camp);
       if (at === null) continue;
       const until = at + HIDE_DAYS * DAY_MS;
       if (until > now) map.set(campNoteId(r.camp), until);
@@ -691,12 +694,17 @@ export function CampHealthView() {
                     </td>
                     <td className="px-2 py-2 text-[10px] leading-snug text-slate-600">{r.reason}</td>
                     {/* Same campaign note the Overbid table edits. */}
-                    <NoteCell
-                      scope={CAMP_NOTE_SCOPE}
-                      noteId={campNoteId(r.camp)}
-                      fallbackKeys={legacyCampNoteKeys(r.camp)}
-                      extra={<KeywordNotesForCamp items={kwNotesByCamp.get(campNoteId(r.camp)) ?? []} />}
-                    />
+                    {(() => {
+                      const ident = noteIds.identity(r.camp);
+                      return (
+                        <NoteCell
+                          scope={CAMP_NOTE_SCOPE}
+                          noteId={ident.id}
+                          fallbackKeys={ident.fallbackKeys}
+                          extra={<KeywordNotesForCamp items={keywordNotesFor(kwNotesByCamp, ident.nameIds)} />}
+                        />
+                      );
+                    })()}
                   </tr>
                 );
               })}

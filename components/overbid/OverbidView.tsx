@@ -9,10 +9,9 @@ import { BrandTopPanel } from '@/components/overbid/BrandTopPanel';
 import { useNotesStore } from '@/lib/store/notesStore';
 import {
   CAMP_NOTE_SCOPE,
+  buildCampNoteResolver,
   buildKeywordNotesByCamp,
-  campNoteId,
-  legacyCampNoteKeys,
-  readCampNoteAt,
+  keywordNotesFor,
 } from '@/lib/store/campNotes';
 import { KeywordNotesForCamp } from '@/components/shared/KeywordNotesForCamp';
 import { buildCampDailyIndex, campBidImpact, type CampBidImpact } from '@/lib/market/campBidImpact';
@@ -144,6 +143,9 @@ export function OverbidView() {
   const allNotes = useNotesStore((s) => s.notes);
   // Keyword notes reach a campaign through the camps pinned on Underbid.
   const kwNotesByCamp = useMemo(() => buildKeywordNotesByCamp(allNotes), [allNotes]);
+  // Danh tính camp theo Camp_Links — cùng một resolver với Camp Health và panel
+  // Brand, để note ghi ở bảng nào cũng hiện ở bảng kia.
+  const noteIds = useMemo(() => buildCampNoteResolver(data?.campLinks ?? []), [data?.campLinks]);
   useEffect(() => {
     loadNotes();
   }, [loadNotes]);
@@ -239,10 +241,10 @@ export function OverbidView() {
       // Notes are now stored per CAMPAIGN under one shared key, so a note left
       // on the Camp Health page counts here too. Legacy per-page keys (and the
       // camp's other names) are still consulted so older notes keep working.
-      const at = readCampNoteAt(noteTimes, r.camp, [...r.mergedNames, ...r.pausedNames]);
+      const at = noteIds.noteAt(noteTimes, r.camp, [...r.mergedNames, ...r.pausedNames]);
       return at === null ? null : { name: r.camp, at };
     };
-  }, [noteTimes]);
+  }, [noteTimes, noteIds]);
 
   // Camps you noted that are no longer flagged — newest note first.
   const fixedRows = useMemo(
@@ -259,13 +261,13 @@ export function OverbidView() {
     if (!noteSnapshot) return map;
     const now = Date.now();
     for (const r of overbidRows) {
-      const noted = readCampNoteAt(noteSnapshot, r.camp, [...r.mergedNames, ...r.pausedNames]);
+      const noted = noteIds.noteAt(noteSnapshot, r.camp, [...r.mergedNames, ...r.pausedNames]);
       if (noted === null) continue;
       const until = noted + HIDE_DAYS * DAY_MS;
       if (until > now) map.set(r.camp, until);
     }
     return map;
-  }, [overbidRows, noteSnapshot]);
+  }, [overbidRows, noteSnapshot, noteIds]);
 
   // Bid-impact: after you note a camp and cut its bid in ASA, what actually
   // changed? Read straight from the per-day Shopify export — 14 days before the
@@ -617,12 +619,17 @@ export function OverbidView() {
                     <CampImpactCell impact={imp} />
                     {/* One note per campaign, shared with the Camp Health
                         table; older per-page notes are read as a fallback. */}
-                    <NoteCell
-                      scope={CAMP_NOTE_SCOPE}
-                      noteId={campNoteId(r.camp)}
-                      fallbackKeys={legacyCampNoteKeys(r.camp, [...r.mergedNames, ...r.pausedNames])}
-                      extra={<KeywordNotesForCamp items={kwNotesByCamp.get(campNoteId(r.camp)) ?? []} />}
-                    />
+                    {(() => {
+                      const ident = noteIds.identity(r.camp, [...r.mergedNames, ...r.pausedNames]);
+                      return (
+                        <NoteCell
+                          scope={CAMP_NOTE_SCOPE}
+                          noteId={ident.id}
+                          fallbackKeys={ident.fallbackKeys}
+                          extra={<KeywordNotesForCamp items={keywordNotesFor(kwNotesByCamp, ident.nameIds)} />}
+                        />
+                      );
+                    })()}
                   </tr>
                 );
               })}

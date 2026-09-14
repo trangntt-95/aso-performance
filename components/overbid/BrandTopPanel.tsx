@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { ExternalLink, Trophy } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { NoteCell } from '@/components/shared/NoteCell';
-import { CAMP_NOTE_SCOPE, campNoteId, legacyCampNoteKeys } from '@/lib/store/campNotes';
+import { CAMP_NOTE_SCOPE, buildCampNoteResolver, type CampNoteResolver } from '@/lib/store/campNotes';
 import { findBrandTopCamps, type BrandTopRow, type BrandTopVerdict } from '@/lib/market/brandTop';
 import type { SheetPayload } from '@/lib/sheets/types';
 import { formatNumber } from '@/lib/utils/format';
@@ -32,6 +32,7 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
   const [maxPos, setMaxPos] = useState('1.5');
   const [minImp, setMinImp] = useState('20');
   const [showAll, setShowAll] = useState(false);
+  const noteIds = useMemo(() => buildCampNoteResolver(data?.campLinks ?? []), [data?.campLinks]);
 
   const result = useMemo(() => {
     if (!data) return null;
@@ -120,7 +121,7 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
             </thead>
             <tbody>
               {shown.map((r) => (
-                <BrandRow key={r.camp} r={r} />
+                <BrandRow key={r.camp} r={r} noteIds={noteIds} />
               ))}
             </tbody>
           </table>
@@ -136,8 +137,9 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
   );
 }
 
-function BrandRow({ r }: { r: BrandTopRow }) {
+function BrandRow({ r, noteIds }: { r: BrandTopRow; noteIds: CampNoteResolver }) {
   const v = VERDICT[r.verdict];
+  const ident = noteIds.identity(r.camp);
   const overRec = r.bidNow !== null && r.maxBid !== null && r.bidNow > r.maxBid * 1.15;
   return (
     <tr className={cn('border-t align-top hover:bg-slate-50', r.verdict === 'top' && 'bg-amber-50/40')}>
@@ -208,7 +210,7 @@ function BrandRow({ r }: { r: BrandTopRow }) {
         <span className={cn('inline-flex whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium', v.cls)}>{v.label}</span>
         <div className="mt-0.5 max-w-[16rem] text-[10px] leading-snug text-slate-500">{r.reason}</div>
       </td>
-      <NoteCell scope={CAMP_NOTE_SCOPE} noteId={campNoteId(r.camp)} fallbackKeys={legacyCampNoteKeys(r.camp)} />
+      <NoteCell scope={CAMP_NOTE_SCOPE} noteId={ident.id} fallbackKeys={ident.fallbackKeys} />
     </tr>
   );
 }

@@ -1,7 +1,8 @@
 'use client';
 
-import { normalizeCampName } from '@/lib/sheets/campName';
+import { buildCampNameResolver, normalizeCampName } from '@/lib/sheets/campName';
 import { noteKeyOf } from '@/lib/store/notesStore';
+import type { CampLinkRow } from '@/lib/sheets/types';
 
 // One note per CAMPAIGN, shared by every table that shows campaigns.
 //
@@ -19,6 +20,19 @@ import { noteKeyOf } from '@/lib/store/notesStore';
 // So the key is the note-stripped, lowercased name.
 //
 // Underbid deliberately stays out of this: it notes KEYWORDS, not campaigns.
+//
+// ── 14/09/2026: tên vẫn chưa đủ ──
+// Ba bảng gọi cùng một campaign bằng ba tên: Overbid lấy tên ngắn nhất trong
+// các dòng gộp, Camp Health lấy nhãn của grouper, panel Brand lấy tên trong
+// Camp_Links; camp đổi tier trong tên ("Tier 1 - ES" → "Tier 2 - ES") hay
+// mang ghi chú tự do ("- watch out bid cao") thì normalizeCampName không đưa
+// về cùng một chuỗi. Trang note ở Camp Health, mở Overbid thấy ô trống, và
+// hạ bid cùng một camp hai lần.
+//
+// Nên danh tính chính là CAMPAIGN ID của Camp_Links (qua resolver có lớp bỏ
+// tier), tên chỉ dùng khi camp không có trong Camp_Links. Mọi khoá theo tên
+// từng ghi (raw, tên gốc Camp_Links, các alias, hai scope cũ) được đọc làm
+// đường lùi, và lần sửa kế tiếp ghi về khoá id. Xem buildCampNoteResolver.
 
 export const CAMP_NOTE_SCOPE = 'camp';
 
@@ -135,4 +149,103 @@ export function buildKeywordNotesByCamp(
   }
   out.forEach((list) => list.sort((a, b) => a.keyword.localeCompare(b.keyword)));
   return out;
+}
+
+// ── Danh tính camp qua Camp_Links ─────────────────────────────────────────────
+
+export interface CampNoteIdentity {
+  /** Khoá ghi: 'id:<campaignId>' khi Camp_Links biết camp này, không thì tên chuẩn hoá. */
+  id: string;
+  /** Khoá đọc dự phòng: mọi khoá theo tên từng ghi, mới → cũ. */
+  fallbackKeys: string[];
+  /** Mọi id theo TÊN của camp (raw, tên Camp_Links, alias) — để tra note keyword
+   *  gắn camp (Underbid ghim camp theo tên). */
+  nameIds: string[];
+}
+
+export interface CampNoteResolver {
+  identity(camp: string, aliases?: string[]): CampNoteIdentity;
+  /** Thời điểm note mới nhất trên MỌI khoá của camp, ms. */
+  noteAt(updatedAt: Record<string, string>, camp: string, aliases?: string[]): number | null;
+  /** Nội dung note: khoá id trước, rồi lần lượt các khoá tên. */
+  read(notes: Record<string, string>, camp: string, aliases?: string[]): string;
+}
+
+export function buildCampNoteResolver(campLinks: readonly CampLinkRow[]): CampNoteResolver {
+  const resolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+  const linkByKey = new Map<string, CampLinkRow>();
+  for (const c of campLinks) {
+    const k = normalizeCampName(c.camp).toLowerCase();
+    if (k && !linkByKey.has(k)) linkByKey.set(k, c);
+  }
+  const cache = new Map<string, CampNoteIdentity>();
+
+  const identity = (camp: string, aliases: string[] = []): CampNoteIdentity => {
+    const cacheKey = `${camp}\u0000${aliases.join('\u0000')}`;
+    const hit = cache.get(cacheKey);
+    if (hit) return hit;
+
+    const names = Array.from(new Set([camp, ...aliases].filter(Boolean)));
+    // Tên gốc trong Camp_Links cho từng tên — camp và alias thường cùng về một gốc.
+    const bases = Array.from(new Set(names.map((n) => resolver.resolve(n) ?? normalizeCampName(n)).filter(Boolean)));
+    let link: CampLinkRow | undefined;
+    for (const b of bases) {
+      const l = linkByKey.get(b.toLowerCase());
+      if (l && String(l.campaignId ?? '').trim()) {
+        link = l;
+        break;
+      }
+    }
+    const nameIds = Array.from(new Set([...names, ...bases, ...(link ? [link.camp] : [])].map(campNoteId).filter(Boolean)));
+    const id = link ? `id:${String(link.campaignId).trim()}` : nameIds[0] ?? campNoteId(camp);
+    const fallbackKeys = Array.from(
+      new Set([
+        ...nameIds.map((n) => noteKeyOf(CAMP_NOTE_SCOPE, n)),
+        ...legacyCampNoteKeys(camp, [...aliases, ...bases, ...(link ? [link.camp] : [])]),
+      ]),
+    ).filter((k) => k !== noteKeyOf(CAMP_NOTE_SCOPE, id));
+    const out = { id, fallbackKeys, nameIds };
+    cache.set(cacheKey, out);
+    return out;
+  };
+
+  return {
+    identity,
+    noteAt(updatedAt, camp, aliases = []) {
+      const k = identity(camp, aliases);
+      let best: number | null = null;
+      for (const key of [noteKeyOf(CAMP_NOTE_SCOPE, k.id), ...k.fallbackKeys]) {
+        const ts = updatedAt[key];
+        if (!ts) continue;
+        const at = new Date(ts).getTime();
+        if (!Number.isFinite(at)) continue;
+        if (best === null || at > best) best = at;
+      }
+      return best;
+    },
+    read(notes, camp, aliases = []) {
+      const k = identity(camp, aliases);
+      const primary = notes[noteKeyOf(CAMP_NOTE_SCOPE, k.id)];
+      if (primary) return primary;
+      for (const key of k.fallbackKeys) if (notes[key]) return notes[key];
+      return '';
+    },
+  };
+}
+
+/** Note keyword gắn camp, tra qua mọi id theo tên của camp. */
+export function keywordNotesFor(
+  byCamp: Map<string, KeywordNoteForCamp[]>,
+  nameIds: readonly string[],
+): KeywordNoteForCamp[] {
+  const seen = new Set<string>();
+  const out: KeywordNoteForCamp[] = [];
+  for (const id of nameIds) {
+    for (const n of byCamp.get(id) ?? []) {
+      if (seen.has(n.keyword)) continue;
+      seen.add(n.keyword);
+      out.push(n);
+    }
+  }
+  return out.sort((a, b) => a.keyword.localeCompare(b.keyword));
 }
