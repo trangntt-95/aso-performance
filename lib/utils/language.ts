@@ -124,7 +124,7 @@ export function strongSignal(keyword: string): string {
 
 /** Tín hiệu yếu: từ nối. '' khi không có hoặc hai ngôn ngữ cùng khớp. */
 export function weakSignal(keyword: string): string {
-  const words = (keyword ?? '').toLowerCase().split(/[^\p{L}]+/u).filter(Boolean);
+  const words = (keyword ?? '').toLowerCase().split(/[\s\-_,./|()\[\]"']+/).filter(Boolean);
   const hits = new Set<string>();
   for (const s of STOPWORDS) if (words.some((w) => s.words.includes(w))) hits.add(s.code);
   return hits.size === 1 ? Array.from(hits)[0] : '';
