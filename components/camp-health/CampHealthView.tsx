@@ -263,7 +263,7 @@ export function CampHealthView() {
       if (noteView === 'handled' ? !hidden : hidden) return false;
       if (
         bucketFilter === 'problems' &&
-        (r.bucket === 'ok' || r.bucket === 'scale' || r.bucket === 'rising' || r.bucket === 'paused')
+        (r.bucket === 'ok' || r.bucket === 'scale' || r.bucket === 'rising' || r.bucket === 'paused' || r.bucket === 'silent')
       )
         return false;
       if (bucketFilter !== 'all' && bucketFilter !== 'problems' && r.bucket !== bucketFilter) return false;
@@ -308,7 +308,7 @@ export function CampHealthView() {
     () =>
       result.rows.filter(
         (r) =>
-          !['ok', 'scale', 'rising', 'paused'].includes(r.bucket) &&
+          !['ok', 'scale', 'rising', 'paused', 'silent'].includes(r.bucket) &&
           !hiddenUntil.has(campNoteId(r.camp)),
       ).length,
     [result.rows, hiddenUntil],

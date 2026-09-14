@@ -286,7 +286,9 @@ export function analyseCampHealth(
     if (!key || seenKeys.has(key) || pausedKeys.has(key) || silentKeys.has(key)) continue;
     silentKeys.add(key);
     out.push({
-      camp: grouper.label(key) || name,
+      // Tên gốc từ Camp_Links / Master: grouper không có nhãn quan sát cho camp
+      // chưa từng xuất hiện, và key của nó là chữ thường.
+      camp: name.trim(),
       bucket: 'silent',
       cur: empty(),
       prev: empty(),
