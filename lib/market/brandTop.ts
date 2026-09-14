@@ -62,7 +62,18 @@ export interface BrandTopRow {
   daysActive: number;
   /** Median 'Bid (max)' của các keyword camp này trong Master KW Lookup. */
   bidNow: number | null;
-  /** Trung bình Bid Rec ⭐ của ô Brand × các nước camp target ('Max bid cap'). */
+  /**
+   * Trần CPI của Brand ở các nước camp target: trung bình Bid Rec ⭐ của ô
+   * Brand × nước trong 'Max bid cap'. Là tiền cho MỘT INSTALL, không phải bid
+   * cho một click — Trang xác nhận 14/09/2026: "max cap $40, CR 50% thì max
+   * bid rec phải là $20".
+   */
+  capPerInstall: number | null;
+  /** CR dùng để đổi trần install thành bid click, 0–1. */
+  cr: number | null;
+  /** CR lấy từ đâu — camp có ít click thì CR của chính nó là vài lần may. */
+  crSource: 'camp' | 'brand-countries' | 'brand-all' | null;
+  /** Bid tối đa nên đặt = capPerInstall × cr. null khi thiếu một vế. */
   bidRec: number | null;
   /** Vị trí organic của brand ở các nước đó (Country_L30, gia quyền theo users). */
   organicPos: number | null;
@@ -146,17 +157,33 @@ export function findBrandTopCamps(
   const brandBidByCountry = new Map<string, number>();
   for (const c of brandCells) if (c.bid > 0) brandBidByCountry.set(c.country.toLowerCase(), c.bid);
 
-  // Vị trí organic của brand theo nước.
+  // Vị trí organic của brand theo nước, và CR paid của brand theo nước.
   const organicByCountry = new Map<string, { posUsers: number; users: number }>();
+  const paidCrByCountry = new Map<string, { users: number; installs: number }>();
   for (const r of countryRows) {
-    if (r.surface === 'search_ad' || r.category !== 'Brand' || !r.country) continue;
-    if (r.posL === null || r.posL === undefined || !(r.usersL > 0)) continue;
+    if (r.category !== 'Brand' || !r.country) continue;
     const k = r.country.toLowerCase();
+    if (r.surface === 'search_ad') {
+      const a = paidCrByCountry.get(k) ?? { users: 0, installs: 0 };
+      a.users += r.usersL;
+      a.installs += r.getAppL;
+      paidCrByCountry.set(k, a);
+      continue;
+    }
+    if (r.posL === null || r.posL === undefined || !(r.usersL > 0)) continue;
     const a = organicByCountry.get(k) ?? { posUsers: 0, users: 0 };
     a.posUsers += r.posL * r.usersL;
     a.users += r.usersL;
     organicByCountry.set(k, a);
   }
+  let paidAllUsers = 0;
+  let paidAllInstalls = 0;
+  paidCrByCountry.forEach((a) => {
+    paidAllUsers += a.users;
+    paidAllInstalls += a.installs;
+  });
+  // Dưới ngần này click/users thì CR là một lần tung xúc xắc — lùi về mẫu rộng hơn.
+  const MIN_CR_SAMPLE = 10;
 
   interface Acc {
     camp: string;
@@ -239,7 +266,33 @@ export function findBrandTopCamps(
     brandBidByCountry.forEach((bid, country) => {
       if (wanted.size > 0 ? wanted.has(country) : !excluded.has(country)) recBids.push(bid);
     });
-    const bidRec = recBids.length ? recBids.reduce((s, x) => s + x, 0) / recBids.length : null;
+    const capPerInstall = recBids.length ? recBids.reduce((s, x) => s + x, 0) / recBids.length : null;
+
+    // CR: của chính camp khi đủ click; không thì CR paid của brand ở các nước
+    // camp target; không nữa thì CR paid của brand toàn cục.
+    let cr: number | null = null;
+    let crSource: BrandTopRow['crSource'] = null;
+    if (a.clicks >= MIN_CR_SAMPLE) {
+      cr = a.installs / a.clicks;
+      crSource = 'camp';
+    } else {
+      let u = 0;
+      let g = 0;
+      paidCrByCountry.forEach((p, country) => {
+        if (wanted.size > 0 ? wanted.has(country) : !excluded.has(country)) {
+          u += p.users;
+          g += p.installs;
+        }
+      });
+      if (u >= MIN_CR_SAMPLE) {
+        cr = g / u;
+        crSource = 'brand-countries';
+      } else if (paidAllUsers >= MIN_CR_SAMPLE) {
+        cr = paidAllInstalls / paidAllUsers;
+        crSource = 'brand-all';
+      }
+    }
+    const bidRec = capPerInstall !== null && cr !== null ? capPerInstall * cr : null;
 
     let posUsers = 0;
     let users = 0;
@@ -289,6 +342,9 @@ export function findBrandTopCamps(
       daysWithPosition: a.daysWithPosition,
       daysActive: a.days.size,
       bidNow,
+      capPerInstall,
+      cr,
+      crSource,
       bidRec,
       organicPos,
       organicUsers: users,

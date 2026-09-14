@@ -68,14 +68,35 @@ eq('US: vị trí gia quyền 1.25', Number(us.position.toFixed(3)), 1.25);
 eq('US: visibility gia quyền 0.9', Number(us.visibility.toFixed(3)), 0.9);
 eq('US: đã top', us.verdict, 'top');
 eq('US: nước từ Geo', us.countries, ['United States']);
-eq('US: bid nay = median(2,4,6) = 4, rec = 3', [us.bidNow, us.bidRec], [4, 3]);
+eq('US: bid nay = median(2,4,6) = 4; trần CPI = 3', [us.bidNow, us.capPerInstall], [4, 3]);
+// camp chỉ 0 click → CR mượn của brand paid ở US (Country_L30: 5 users, 0 install → dưới 10 → toàn cục: 5 users, 0 install → dưới 10 → null)
+eq('US: chưa đủ mẫu CR → bidRec null', [us.cr, us.crSource, us.bidRec], [null, null, null]);
 eq('US: organic pos chỉ lấy organic', [us.organicPos, us.organicUsers], [1, 90]);
 eq('US: url', us.url, 'https://x/1');
 
 const mis = res.rows.find((r) => r.camp === 'TP - Brandname - Misspell');
 eq('Misspell: top nhưng vis 50% → watch', mis.verdict, 'watch');
 eq('Misspell: general → organic gộp mọi nước (US 90@1 + DE 10@3)', Number(mis.organicPos.toFixed(2)), 1.2);
-eq('Misspell: bid rec = trung bình mọi ô Brand', mis.bidRec, 2.5);
+eq('Misspell: trần CPI = trung bình mọi ô Brand', mis.capPerInstall, 2.5);
+
+// CR của camp khi đủ click: 20 click, 10 install → 50% → bid rec = trần × 0.5
+const crDaily = [
+  day('2026-09-10', 'TP - Brandname - Exact - US', 100, 30, 1.0, 1.0, 10),
+];
+crDaily[0].clicks = 20;
+const withCr = findBrandTopCamps(crDaily, links, master, paused, bidCap, country, { days: 14 });
+const usCr = withCr.rows[0];
+eq('CR camp 50% → bid rec = $3 × 0.5 = $1.5', [usCr.cr, usCr.crSource, usCr.bidRec], [0.5, 'camp', 1.5]);
+
+// Camp ít click → mượn CR paid brand ở nước target (Country_L30 US: 40 users, 20 install = 50%)
+const country2 = country.concat([
+  { category: 'Brand', searchTerm: 'true profit', country: 'United States', surface: 'search_ad', usersL: 35, usersP: 0, getAppL: 20, getAppP: 0, crL: 0, crP: 0, posL: 1, posP: null, deltaPosPct: null, deltaUsersPct: null, deltaCrPct: null, alert: '', lang: '', english: '' },
+]);
+const borrowed = findBrandTopCamps(daily, links, master, paused, bidCap, country2, { days: 14 });
+const usB = borrowed.rows.find((r) => r.camp === 'TP - Brandname - Exact - US');
+eq('ít click → CR paid brand ở US = 20/40 = 50%', [usB.cr, usB.crSource, usB.bidRec], [0.5, 'brand-countries', 1.5]);
+const misB = borrowed.rows.find((r) => r.camp === 'TP - Brandname - Misspell');
+eq('camp general → CR paid brand toàn cục (cũng 20/40)', [misB.crSource, misB.bidRec], ['brand-countries', 1.25]);
 
 eq('DE: còn xa top', res.rows.find((r) => r.camp === 'TP - Brandname - Exact - DE').verdict, 'ok');
 eq('Tiny: ít impressions', res.rows.find((r) => r.camp === 'TP - Brandname - Tiny').verdict, 'low-data');

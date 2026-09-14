@@ -112,7 +112,7 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
                 <th className="px-2 py-1.5 text-left font-medium" title="Nước camp target theo Geo trong Camp_Links">Nước</th>
                 <th className="px-2 py-1.5 text-right font-medium" title={`Average Position trung bình gia quyền theo impressions, ${days} ngày · Visibility = tỷ lệ phiên tìm kiếm có hiển thị`}>Vị trí · Vis</th>
                 <th className="px-2 py-1.5 text-right font-medium" title="Impressions / Installs / Spend trong cửa sổ">Imp · Inst · Spend</th>
-                <th className="px-2 py-1.5 text-right font-medium" title="Bid hiện tại = median 'Bid (max)' của keyword trong camp (Master KW Lookup) · Bid rec ⭐ = trung bình ô Brand × nước target trong 'Max bid cap'">Bid nay / rec ⭐</th>
+                <th className="px-2 py-1.5 text-right font-medium" title="Bid hiện tại = median 'Bid (max)' của keyword trong camp (Master KW Lookup) · Bid rec = trần CPI × CR: trần CPI là trung bình Bid Rec ⭐ của ô Brand × nước target ('Max bid cap', tiền cho 1 install), CR là của camp khi đủ 10 click, không thì CR paid của brand ở các nước đó (Country_L30), không nữa thì CR paid brand toàn cục. Ví dụ trần $40 × CR 50% = bid $20.">Bid nay / rec</th>
                 <th className="px-2 py-1.5 text-right font-medium" title="Vị trí ORGANIC của brand ở các nước đó (Country_L30). Organic đã #1 mà paid cũng #1 = đang trả tiền cho chỗ mình vốn có.">Organic pos</th>
                 <th className="px-2 py-1.5 text-left font-medium">Kết luận</th>
                 <th className="px-2 py-1.5 text-left font-medium min-w-[9rem]">Note</th>
@@ -127,6 +127,7 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
           <div className="border-t px-3 py-1.5 text-[10px] text-slate-400">
             Vị trí lấy từ cột <b>Average Position</b> của export Shopify Ads theo ngày, {dmy(result.from)}–{dmy(result.to)}, gia quyền theo
             impressions · <b>đã top</b> = vị trí ≤ {maxPos} và visibility ≥ 80% · bid hiện tại theo category-camp (Master không có bid theo nước) ·
+            <b> bid rec</b> = trần CPI (Bid Rec ⭐ Brand × nước, tiền cho 1 install) × CR; * = CR mượn của brand paid (Country_L30) vì camp chưa đủ 10 click ·
             note dùng chung với bảng Overbid và Camp Health
           </div>
         </div>
@@ -170,10 +171,26 @@ function BrandRow({ r }: { r: BrandTopRow }) {
         {r.cpi !== null && <span className="text-slate-400"> (CPI {money(r.cpi)})</span>}
       </td>
       <td className="px-2 py-1.5 text-right whitespace-nowrap font-mono text-[11px]">
-        <span className={cn(overRec ? 'font-semibold text-rose-600' : 'text-slate-800')} title={overRec ? 'Bid hiện tại cao hơn Bid rec ⭐ trên 15%' : undefined}>
+        <span className={cn(overRec ? 'font-semibold text-rose-600' : 'text-slate-800')} title={overRec ? 'Bid hiện tại cao hơn bid rec (trần CPI × CR) trên 15%' : undefined}>
           {money(r.bidNow)}
         </span>
-        <span className="text-slate-400"> / {money(r.bidRec)}</span>
+        <span
+          className="text-slate-400"
+          title={
+            r.bidRec === null
+              ? 'Thiếu trần CPI hoặc CR để tính'
+              : `trần CPI ${money(r.capPerInstall)} × CR ${Math.round((r.cr ?? 0) * 100)}% (${
+                  r.crSource === 'camp' ? `CR của camp, ${r.clicks} click` : r.crSource === 'brand-countries' ? 'CR paid brand ở các nước target' : 'CR paid brand toàn cục'
+                }) = ${money(r.bidRec)}`
+          }
+        >
+          {' '}/ {money(r.bidRec)}
+        </span>
+        {r.bidRec !== null && (
+          <div className="text-[9px] text-slate-400">
+            {money(r.capPerInstall)} × {Math.round((r.cr ?? 0) * 100)}%{r.crSource !== 'camp' ? '*' : ''}
+          </div>
+        )}
       </td>
       <td className="px-2 py-1.5 text-right whitespace-nowrap font-mono text-[11px]">
         {r.organicPos === null ? (
