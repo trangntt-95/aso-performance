@@ -70,7 +70,7 @@ eq('US: đã top', us.verdict, 'top');
 eq('US: nước từ Geo', us.countries, ['United States']);
 eq('US: bid nay = median(2,4,6) = 4; trần CPI = 3', [us.bidNow, us.capPerInstall], [4, 3]);
 // camp chỉ 0 click → CR mượn của brand paid ở US (Country_L30: 5 users, 0 install → dưới 10 → toàn cục: 5 users, 0 install → dưới 10 → null)
-eq('US: chưa đủ mẫu CR → bidRec null', [us.cr, us.crSource, us.bidRec], [null, null, null]);
+eq('US: chưa đủ mẫu CR → maxBid null', [us.cr, us.crSource, us.maxBid], [null, null, null]);
 eq('US: organic pos chỉ lấy organic', [us.organicPos, us.organicUsers], [1, 90]);
 eq('US: url', us.url, 'https://x/1');
 
@@ -86,7 +86,7 @@ const crDaily = [
 crDaily[0].clicks = 20;
 const withCr = findBrandTopCamps(crDaily, links, master, paused, bidCap, country, { days: 14 });
 const usCr = withCr.rows[0];
-eq('CR camp 50% → bid rec = $3 × 0.5 = $1.5', [usCr.cr, usCr.crSource, usCr.bidRec], [0.5, 'camp', 1.5]);
+eq('CR camp 50% → bid rec = $3 × 0.5 = $1.5', [usCr.cr, usCr.crSource, usCr.maxBid], [0.5, 'camp', 1.5]);
 
 // Camp ít click → mượn CR paid brand ở nước target (Country_L30 US: 40 users, 20 install = 50%)
 const country2 = country.concat([
@@ -94,9 +94,9 @@ const country2 = country.concat([
 ]);
 const borrowed = findBrandTopCamps(daily, links, master, paused, bidCap, country2, { days: 14 });
 const usB = borrowed.rows.find((r) => r.camp === 'TP - Brandname - Exact - US');
-eq('ít click → CR paid brand ở US = 20/40 = 50%', [usB.cr, usB.crSource, usB.bidRec], [0.5, 'brand-countries', 1.5]);
+eq('ít click → CR paid brand ở US = 20/40 = 50%', [usB.cr, usB.crSource, usB.maxBid], [0.5, 'brand-countries', 1.5]);
 const misB = borrowed.rows.find((r) => r.camp === 'TP - Brandname - Misspell');
-eq('camp general → CR paid brand toàn cục (cũng 20/40)', [misB.crSource, misB.bidRec], ['brand-countries', 1.25]);
+eq('camp general → CR paid brand toàn cục (cũng 20/40)', [misB.crSource, misB.maxBid], ['brand-countries', 1.25]);
 
 eq('DE: còn xa top', res.rows.find((r) => r.camp === 'TP - Brandname - Exact - DE').verdict, 'ok');
 eq('Tiny: ít impressions', res.rows.find((r) => r.camp === 'TP - Brandname - Tiny').verdict, 'low-data');

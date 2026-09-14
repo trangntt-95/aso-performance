@@ -73,8 +73,8 @@ export interface BrandTopRow {
   cr: number | null;
   /** CR lấy từ đâu — camp có ít click thì CR của chính nó là vài lần may. */
   crSource: 'camp' | 'brand-countries' | 'brand-all' | null;
-  /** Bid tối đa nên đặt = capPerInstall × cr. null khi thiếu một vế. */
-  bidRec: number | null;
+  /** MAX BID = capPerInstall × cr — trần bid cho một click, không phải mức khuyên đặt. null khi thiếu một vế. */
+  maxBid: number | null;
   /** Vị trí organic của brand ở các nước đó (Country_L30, gia quyền theo users). */
   organicPos: number | null;
   organicUsers: number;
@@ -292,7 +292,7 @@ export function findBrandTopCamps(
         crSource = 'brand-all';
       }
     }
-    const bidRec = capPerInstall !== null && cr !== null ? capPerInstall * cr : null;
+    const maxBid = capPerInstall !== null && cr !== null ? capPerInstall * cr : null;
 
     let posUsers = 0;
     let users = 0;
@@ -345,7 +345,7 @@ export function findBrandTopCamps(
       capPerInstall,
       cr,
       crSource,
-      bidRec,
+      maxBid,
       organicPos,
       organicUsers: users,
       verdict,
