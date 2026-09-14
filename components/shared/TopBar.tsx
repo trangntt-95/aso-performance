@@ -7,6 +7,7 @@ const TITLES: Record<string, string> = {
   '/': 'Overview',
   '/market-index': 'Market Health',
   '/categories': 'Search Terms',
+  '/positions': 'Vị trí keyword',
   '/paid-coverage': 'Paid Coverage',
   '/underbid': 'Underbid Keywords',
   '/overbid-camps': 'Overbid Camps',

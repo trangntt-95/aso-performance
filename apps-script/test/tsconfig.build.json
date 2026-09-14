@@ -29,6 +29,7 @@
     "../../lib/market/cellNetValue.ts",
     "../../lib/market/brandTop.ts",
     "../../lib/utils/language.ts",
+    "../../lib/market/keywordPosition.ts",
     "../../lib/market/bidCapAgg.ts",
     "../../lib/market/campHealth.ts",
     "../../lib/market/overbid.ts",
