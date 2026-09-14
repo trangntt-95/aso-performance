@@ -340,7 +340,7 @@ export function UnderbidView() {
   const isL30Window = window === 'L30';
   // Detection thresholds (tunable).
   const [minOrganic, setMinOrganic] = useState('5');
-  const [maxShare, setMaxShare] = useState('20');
+  const [maxShare, setMaxShare] = useState('60');
   const [posTh, setPosTh] = useState('1');
   // Post-filters.
   const [search, setSearch] = useState('');

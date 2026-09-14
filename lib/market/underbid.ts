@@ -100,7 +100,7 @@ export interface UnderbidRow {
 
 export interface UnderbidParams {
   minOrganicUsers?: number; // default 5
-  maxPaidSharePct?: number; // default 20 (%) — Trang hạ từ 30 ngày 14/09/2026
+  maxPaidSharePct?: number; // default 60 (%) — Trang nới từ 20 ngày 14/09/2026: paid dưới 60% traffic vẫn coi là còn chỗ tăng
   posThreshold?: number; // default 1 — paid phải đứng số 1 mới coi là đủ (Trang, 14/09/2026); trên 1 hoặc không có vị trí là underbid
 }
 
@@ -115,7 +115,7 @@ export function findUnderbidKeywords(
   params: UnderbidParams = {},
 ): UnderbidRow[] {
   const minOrganic = params.minOrganicUsers ?? 5;
-  const maxShare = (params.maxPaidSharePct ?? 20) / 100;
+  const maxShare = (params.maxPaidSharePct ?? 60) / 100;
   const posTh = params.posThreshold ?? 1;
 
   const index = buildPaidStatusIndex(masterKwLookup, kwAddedManual, negativeKw, pausedKw);
