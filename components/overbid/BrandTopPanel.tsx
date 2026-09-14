@@ -32,7 +32,10 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
   const [maxPos, setMaxPos] = useState('1.5');
   const [minImp, setMinImp] = useState('20');
   const [showAll, setShowAll] = useState(false);
-  const noteIds = useMemo(() => buildCampNoteResolver(data?.campLinks ?? []), [data?.campLinks]);
+  const noteIds = useMemo(
+    () => buildCampNoteResolver(data?.campLinks ?? [], (data?.shopifyDaily ?? []).map((r) => r.camp)),
+    [data?.campLinks, data?.shopifyDaily],
+  );
 
   const result = useMemo(() => {
     if (!data) return null;

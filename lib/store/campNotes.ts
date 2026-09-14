@@ -1,6 +1,7 @@
 'use client';
 
 import { buildCampNameResolver, normalizeCampName } from '@/lib/sheets/campName';
+import { buildCampGrouper } from '@/lib/sheets/campGroup';
 import { noteKeyOf } from '@/lib/store/notesStore';
 import type { CampLinkRow } from '@/lib/sheets/types';
 
@@ -171,8 +172,18 @@ export interface CampNoteResolver {
   read(notes: Record<string, string>, camp: string, aliases?: string[]): string;
 }
 
-export function buildCampNoteResolver(campLinks: readonly CampLinkRow[]): CampNoteResolver {
+export function buildCampNoteResolver(
+  campLinks: readonly CampLinkRow[],
+  /**
+   * Mọi tên camp đang thấy trong dữ liệu (export theo ngày). Camp không có
+   * trong Camp_Links vẫn gộp được với nhau khi một tên chỉ dài hơn tên kia ở
+   * ranh giới ghi chú — cùng lớp 4 mà Camp Health dùng (buildCampGrouper), để
+   * khoá note và nhãn bảng không tách cùng một camp ra hai.
+   */
+  observedNames: Iterable<string> = [],
+): CampNoteResolver {
   const resolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+  const grouper = buildCampGrouper(observedNames, campLinks.map((c) => c.camp));
   const linkByKey = new Map<string, CampLinkRow>();
   for (const c of campLinks) {
     const k = normalizeCampName(c.camp).toLowerCase();
@@ -186,8 +197,11 @@ export function buildCampNoteResolver(campLinks: readonly CampLinkRow[]): CampNo
     if (hit) return hit;
 
     const names = Array.from(new Set([camp, ...aliases].filter(Boolean)));
-    // Tên gốc trong Camp_Links cho từng tên — camp và alias thường cùng về một gốc.
-    const bases = Array.from(new Set(names.map((n) => resolver.resolve(n) ?? normalizeCampName(n)).filter(Boolean)));
+    // Tên gốc cho từng tên: Camp_Links trước; không có thì gốc theo bộ gộp tên
+    // lạ (lớp 4) — "X - ghi chú" về "X" dù cả hai đều không có trong Camp_Links.
+    const bases = Array.from(
+      new Set(names.map((n) => resolver.resolve(n) ?? grouper.key(n) ?? normalizeCampName(n)).filter(Boolean)),
+    );
     let link: CampLinkRow | undefined;
     for (const b of bases) {
       const l = linkByKey.get(b.toLowerCase());

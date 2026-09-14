@@ -145,7 +145,10 @@ export function OverbidView() {
   const kwNotesByCamp = useMemo(() => buildKeywordNotesByCamp(allNotes), [allNotes]);
   // Danh tính camp theo Camp_Links — cùng một resolver với Camp Health và panel
   // Brand, để note ghi ở bảng nào cũng hiện ở bảng kia.
-  const noteIds = useMemo(() => buildCampNoteResolver(data?.campLinks ?? []), [data?.campLinks]);
+  const noteIds = useMemo(
+    () => buildCampNoteResolver(data?.campLinks ?? [], (data?.shopifyDaily ?? []).map((r) => r.camp)),
+    [data?.campLinks, data?.shopifyDaily],
+  );
   useEffect(() => {
     loadNotes();
   }, [loadNotes]);

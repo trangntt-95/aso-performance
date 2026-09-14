@@ -207,7 +207,10 @@ export function CampHealthView() {
   const kwNotesByCamp = useMemo(() => buildKeywordNotesByCamp(allNotes), [allNotes]);
   // Cùng danh tính camp với Overbid (Camp_Links campaign id) — note ghi ở đây
   // là note Overbid đọc, và ngược lại.
-  const noteIds = useMemo(() => buildCampNoteResolver(data?.campLinks ?? []), [data?.campLinks]);
+  const noteIds = useMemo(
+    () => buildCampNoteResolver(data?.campLinks ?? [], (data?.shopifyDaily ?? []).map((r) => r.camp)),
+    [data?.campLinks, data?.shopifyDaily],
+  );
 
   const notesLoaded = useNotesStore((st) => st.loaded);
   const noteTimes = useNotesStore((st) => st.updatedAt);
