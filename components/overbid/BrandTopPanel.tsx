@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Trophy } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { NoteCell } from '@/components/shared/NoteCell';
+import { useNotesStore } from '@/lib/store/notesStore';
 import { CAMP_NOTE_SCOPE, buildCampNoteResolver, type CampNoteResolver } from '@/lib/store/campNotes';
 import { findBrandTopCamps, type BrandTopRow, type BrandTopVerdict } from '@/lib/market/brandTop';
 import type { SheetPayload } from '@/lib/sheets/types';
@@ -32,6 +33,17 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
   const [maxPos, setMaxPos] = useState('1.5');
   const [minImp, setMinImp] = useState('20');
   const [showAll, setShowAll] = useState(false);
+  // Camp vừa note trong 5 ngày thì ẩn, như bảng Overbid: đã hạ bid rồi thì cờ
+  // "hạ bid" chỉ còn là việc trùng. Mốc lấy từ snapshot lúc tải, để camp đang
+  // gõ note không biến mất giữa tay; ẩn từ lần mở sau.
+  const HIDE_DAYS = 5;
+  const noteTimes = useNotesStore((s) => s.updatedAt);
+  const notesLoaded = useNotesStore((s) => s.loaded);
+  const [noteSnapshot, setNoteSnapshot] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    if (notesLoaded && noteSnapshot === null) setNoteSnapshot(noteTimes);
+  }, [notesLoaded, noteSnapshot, noteTimes]);
+  const [showHidden, setShowHidden] = useState(false);
   const noteIds = useMemo(
     () => buildCampNoteResolver(data?.campLinks ?? [], (data?.shopifyDaily ?? []).map((r) => r.camp)),
     [data?.campLinks, data?.shopifyDaily],
@@ -52,7 +64,19 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
 
   if (!result) return null;
 
-  const flagged = result.rows.filter((r) => r.verdict === 'top' || r.verdict === 'watch');
+  const hiddenUntil = new Map<string, number>();
+  if (noteSnapshot) {
+    const now = Date.now();
+    for (const r of result.rows) {
+      const at = noteIds.noteAt(noteSnapshot, r.camp);
+      if (at === null) continue;
+      const until = at + HIDE_DAYS * 86_400_000;
+      if (until > now) hiddenUntil.set(r.camp, until);
+    }
+  }
+  const flaggedAll = result.rows.filter((r) => r.verdict === 'top' || r.verdict === 'watch');
+  const hiddenCount = flaggedAll.filter((r) => hiddenUntil.has(r.camp)).length;
+  const flagged = showHidden ? flaggedAll : flaggedAll.filter((r) => !hiddenUntil.has(r.camp));
   const shown = showAll ? result.rows : flagged;
   const topSpend = result.rows.filter((r) => r.verdict === 'top').reduce((s, r) => s + r.spend, 0);
   const dmy = (iso: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
@@ -87,6 +111,16 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
           <Input value={maxPos} onChange={(e) => setMaxPos(e.target.value)} className="h-6 w-12 px-1 text-[11px]" title="Vị trí trung bình từ mức này trở xuống coi là đã top" />
           <span className="text-[10px] text-slate-600">Imp ≥</span>
           <Input value={minImp} onChange={(e) => setMinImp(e.target.value)} className="h-6 w-12 px-1 text-[11px]" title="Dưới ngần này impressions thì vị trí chưa đủ tin" />
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHidden((v) => !v)}
+              className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:border-slate-400"
+              title={`${hiddenCount} camp đã note (ở đây, Overbid hoặc Camp Health) đang tạm ẩn ${HIDE_DAYS} ngày; tự hiện lại để kiểm tra.`}
+            >
+              {showHidden ? `Đang hiện ${hiddenCount} camp đã note — ẩn` : `🙈 ${hiddenCount} camp đã note (ẩn ${HIDE_DAYS} ngày) — hiện`}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowAll((v) => !v)}
@@ -124,7 +158,7 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
             </thead>
             <tbody>
               {shown.map((r) => (
-                <BrandRow key={r.camp} r={r} noteIds={noteIds} />
+                <BrandRow key={r.camp} r={r} noteIds={noteIds} hiddenUntil={hiddenUntil.get(r.camp)} />
               ))}
             </tbody>
           </table>
@@ -140,13 +174,19 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
   );
 }
 
-function BrandRow({ r, noteIds }: { r: BrandTopRow; noteIds: CampNoteResolver }) {
+function BrandRow({ r, noteIds, hiddenUntil }: { r: BrandTopRow; noteIds: CampNoteResolver; hiddenUntil?: number }) {
   const v = VERDICT[r.verdict];
   const ident = noteIds.identity(r.camp);
+  const dmy = (ms: number) => { const d = new Date(ms); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`; };
   const overRec = r.bidNow !== null && r.maxBid !== null && r.bidNow > r.maxBid * 1.15;
   return (
-    <tr className={cn('border-t align-top hover:bg-slate-50', r.verdict === 'top' && 'bg-amber-50/40')}>
+    <tr className={cn('border-t align-top hover:bg-slate-50', r.verdict === 'top' && !hiddenUntil && 'bg-amber-50/40', hiddenUntil && 'bg-slate-50/60 text-slate-400')}>
       <td className="px-3 py-1.5 whitespace-nowrap">
+        {hiddenUntil && (
+          <span className="mr-1 rounded bg-amber-100 px-1 text-[9px] font-semibold text-amber-700" title={`Đã note → tạm ẩn; tự hiện lại ngày ${dmy(hiddenUntil)}`}>
+            đã note → {dmy(hiddenUntil)}
+          </span>
+        )}
         {r.url ? (
           <a href={r.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-indigo-600 hover:underline">
             {r.camp}
