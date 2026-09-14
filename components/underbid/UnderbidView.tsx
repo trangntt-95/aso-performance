@@ -333,7 +333,7 @@ export function UnderbidView() {
   // Detection thresholds (tunable).
   const [minOrganic, setMinOrganic] = useState('5');
   const [maxShare, setMaxShare] = useState('30');
-  const [posTh, setPosTh] = useState('2.7');
+  const [posTh, setPosTh] = useState('1');
   // Post-filters.
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
