@@ -18,7 +18,7 @@ import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
 import { useStatusStore } from '@/lib/store/statusStore';
 import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
 import { keywordPaidShare, summarizeImpact, type ImpactPoint } from '@/lib/market/noteImpact';
-import { buildKeywordCountryNetValue, type NetValueAgg } from '@/lib/market/keywordNetValue';
+import { buildKeywordCountryNetValue, sumNetValueAggs, type NetValueAgg } from '@/lib/market/keywordNetValue';
 import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
 import type {
   ActionQueueRow,
@@ -353,6 +353,20 @@ export function KeywordTrendSheet() {
     () => (keyword ? kwCountryNv.get(normKw(keyword)) ?? null : null),
     [kwCountryNv, keyword],
   );
+  // Khối "Giá trị": keyword này đã mang về bao nhiêu tiền, từ nước nào, kênh
+  // nào — cộng từ các ô keyword × nước của tab Net value per install (YTD).
+  const kwValue = useMemo(() => {
+    if (!nvForKeyword || nvForKeyword.size === 0) return null;
+    const cells = Array.from(nvForKeyword.entries());
+    const all = sumNetValueAggs(cells.map(([, c]) => c.all));
+    const organic = sumNetValueAggs(cells.map(([, c]) => c.organic));
+    const paid = sumNetValueAggs(cells.map(([, c]) => c.paid));
+    const countries = cells
+      .map(([country, c]) => ({ country, all: c.all, organic: c.organic, paid: c.paid }))
+      .filter((x) => x.all && x.all.installs > 0)
+      .sort((a, b) => (b.all!.netValue - a.all!.netValue) || (b.all!.installs - a.all!.installs));
+    return all ? { all, organic, paid, countries } : null;
+  }, [nvForKeyword]);
 
   const tableRows = useMemo(() => {
     const projected = countryBreakdown.map((c) => {
@@ -648,6 +662,67 @@ export function KeywordTrendSheet() {
                 </div>
               </section>
             )}
+
+            {/* Giá trị: keyword đã mang về bao nhiêu tiền, từ đâu (tab Net value per install, YTD) */}
+            <section className="space-y-2 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-indigo-800">
+                Giá trị (net value){data?.netValueScope ? <span className="ml-1 font-normal normal-case text-indigo-500">· {data.netValueScope}</span> : null}
+              </h3>
+              {!kwValue ? (
+                <div className="text-[11px] text-slate-500">
+                  Tab Net value per install chưa có install nào của keyword này — chưa đo được giá trị.
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {([
+                      ['Install', formatNumber(kwValue.all.installs), `Organic ${formatNumber(kwValue.organic?.installs ?? 0)} · Paid ${formatNumber(kwValue.paid?.installs ?? 0)}`],
+                      ['Shop trả tiền', formatNumber(kwValue.all.payingShops), `Organic ${formatNumber(kwValue.organic?.payingShops ?? 0)} · Paid ${formatNumber(kwValue.paid?.payingShops ?? 0)}`],
+                      ['Net value', `$${formatNumber(Math.round(kwValue.all.netValue))}`, `Organic $${formatNumber(Math.round(kwValue.organic?.netValue ?? 0))} · Paid $${formatNumber(Math.round(kwValue.paid?.netValue ?? 0))}`],
+                      ['Value/install', kwValue.all.netPerInstall === null ? '—' : `$${kwValue.all.netPerInstall.toFixed(0)}`, `Organic ${kwValue.organic?.netPerInstall != null ? `$${kwValue.organic.netPerInstall.toFixed(0)}` : '—'} · Paid ${kwValue.paid?.netPerInstall != null ? `$${kwValue.paid.netPerInstall.toFixed(0)}` : '—'}`],
+                    ] as const).map(([label, value, hint]) => (
+                      <div key={label} className="rounded border border-indigo-100 bg-white p-2">
+                        <div className="text-[10px] text-slate-500">{label}</div>
+                        <div className={cn('font-mono text-sm font-semibold', kwValue.all.thin ? 'text-amber-700' : 'text-indigo-800')}>{value}</div>
+                        <div className="text-[9px] text-slate-400">{hint}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="overflow-hidden rounded border border-indigo-100 bg-white">
+                    <table className="w-full text-[11px]">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-2 py-1 text-left font-medium">Nước</th>
+                          <th className="px-2 py-1 text-right font-medium">Install</th>
+                          <th className="px-2 py-1 text-right font-medium">Shop</th>
+                          <th className="px-2 py-1 text-right font-medium">Net value</th>
+                          <th className="px-2 py-1 text-right font-medium">$/inst</th>
+                          <th className="px-2 py-1 text-right font-medium" title="Install organic / paid">Org · Paid</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {kwValue.countries.slice(0, 10).map((c) => (
+                          <tr key={c.country} className={cn(c.all!.netValue === 0 && 'text-slate-400')}>
+                            <td className="px-2 py-1 text-slate-800">{c.country}</td>
+                            <td className="px-2 py-1 text-right font-mono">{c.all!.installs}</td>
+                            <td className="px-2 py-1 text-right font-mono">{c.all!.payingShops}</td>
+                            <td className="px-2 py-1 text-right font-mono font-semibold">${Math.round(c.all!.netValue).toLocaleString()}</td>
+                            <td className="px-2 py-1 text-right font-mono">{c.all!.netPerInstall === null ? '—' : `$${c.all!.netPerInstall.toFixed(0)}`}</td>
+                            <td className="px-2 py-1 text-right font-mono text-slate-500">{c.organic?.installs ?? 0} · {c.paid?.installs ?? 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {kwValue.countries.length > 10 && (
+                      <div className="px-2 py-1 text-[10px] text-slate-400">+{kwValue.countries.length - 10} nước nữa, đều có install nhưng net value thấp hơn.</div>
+                    )}
+                  </div>
+                  <div className="text-[10px] leading-snug text-slate-500">
+                    Net value = doanh thu − phí Shopify, chưa trừ ads. {kwValue.all.thin ? `Mới ${kwValue.all.payingShops} shop trả tiền — dưới 3 thì con số này là một lần may, chưa nên bid theo.` : ''} Không đổi theo cửa sổ L7/L30/L90 ở trên.
+                  </div>
+                </>
+              )}
+            </section>
 
             {bidImpact && (
               <section className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3">

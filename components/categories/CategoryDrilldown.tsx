@@ -349,6 +349,7 @@ export function CategoryDrilldown({ category }: { category?: string }) {
   }, [summaries]);
 
   const [sortBy, setSortBy] = useState<'users' | 'value'>('users');
+  const [valueDir, setValueDir] = useState<'desc' | 'asc'>('desc');
 
   const silentCount = useMemo(() => summaries.filter((r) => r.noImpressions).length, [summaries]);
 
@@ -406,14 +407,32 @@ export function CategoryDrilldown({ category }: { category?: string }) {
     if (sortBy === 'value') {
       // buildSummaries đã sắp theo users; chỉ đảo lại khi chọn sắp theo giá
       // trị. Không có giá trị → cuối bảng, giữ thứ tự users giữa chúng.
+      // Không có giá trị → luôn cuối bảng, dù chiều nào.
       list = list.slice().sort((a, b) => {
-        const av = a.nv?.netPerInstall ?? -Infinity;
-        const bv = b.nv?.netPerInstall ?? -Infinity;
-        return bv - av;
+        const av = a.nv?.netPerInstall ?? null;
+        const bv = b.nv?.netPerInstall ?? null;
+        if (av === null && bv === null) return 0;
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        return valueDir === 'desc' ? bv - av : av - bv;
       });
     }
     return list;
-  }, [summaries, shownFilter, search, allMode, categoryFilter, surfaceFilter, paidFilter, countryFilter, metricWindow, minUsers, minInstall, maxPos, sortBy]);
+  }, [summaries, shownFilter, search, allMode, categoryFilter, surfaceFilter, paidFilter, countryFilter, metricWindow, minUsers, minInstall, maxPos, sortBy, valueDir]);
+
+  // Dòng tổng của nhóm đang lọc — gõ "cost" là thấy cả nhóm cộng lại. Mỗi dòng
+  // là keyword × kênh với giá trị của đúng kênh đó, nên cộng thẳng không trùng.
+  const groupValue = useMemo(() => {
+    const withNv = filtered.filter((r) => r.nv);
+    if (withNv.length === 0) return null;
+    return {
+      rows: withNv.length,
+      all: sumNetValueAggs(withNv.map((r) => r.nv)),
+      organic: sumNetValueAggs(withNv.filter((r) => r.surface === 'organic').map((r) => r.nv)),
+      paid: sumNetValueAggs(withNv.filter((r) => r.surface === 'paid').map((r) => r.nv)),
+      keywords: new Set(withNv.map((r) => normKw(r.searchTerm))).size,
+    };
+  }, [filtered]);
 
   const dirty =
     search !== '' ||
@@ -684,6 +703,26 @@ export function CategoryDrilldown({ category }: { category?: string }) {
         </div>
       )}
 
+      {/* Tổng giá trị của nhóm đang lọc — chỉ khi đang tìm / lọc, để không lặp lại dải category ở trên */}
+      {!isLoading && groupValue && groupValue.all && (search.trim() !== '' || paidFilter !== 'all' || surfaceFilter !== 'all' || countryFilter !== 'all') && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2 text-[11px] text-indigo-900">
+          <b>Tổng nhóm đang lọc{search.trim() ? ` “${search.trim()}”` : ''}</b>
+          <span>{groupValue.keywords} keyword · {groupValue.rows} dòng có giá trị</span>
+          <span className="font-mono">{groupValue.all.installs} install</span>
+          <span className="font-mono">{groupValue.all.payingShops} shop trả tiền</span>
+          <span className="font-mono font-semibold">net ${Math.round(groupValue.all.netValue).toLocaleString()}</span>
+          <span className={cn('font-mono font-semibold', groupValue.all.thin ? 'text-amber-700' : 'text-indigo-800')}>
+            {groupValue.all.netPerInstall === null ? '—' : `$${groupValue.all.netPerInstall.toFixed(0)}/install`}
+            {groupValue.all.thin && <span className="ml-0.5 text-[9px]">mỏng</span>}
+          </span>
+          <span className="text-indigo-700/80">
+            organic {groupValue.organic ? `${groupValue.organic.installs} inst · $${Math.round(groupValue.organic.netValue).toLocaleString()}` : '—'}
+            {' '}· paid {groupValue.paid ? `${groupValue.paid.installs} inst · $${Math.round(groupValue.paid.netValue).toLocaleString()}` : '—'}
+          </span>
+          <span className="text-[10px] text-indigo-500">tab Net value per install{data?.netValueScope ? `, ${data.netValueScope}` : ''}</span>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -706,10 +745,19 @@ export function CategoryDrilldown({ category }: { category?: string }) {
                 <th className="px-2 py-2 text-left font-medium">L90</th>
                 <th className="px-2 py-2 text-left font-medium">L365</th>
                 <th
-                  className="px-2 py-2 text-right font-medium"
-                  title={`Một install của keyword này trên kênh của dòng (organic / paid) đáng bao nhiêu: net value ÷ installs, gộp mọi nước. Nguồn: tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}. 'mỏng' = dưới 3 shop trả tiền.`}
+                  onClick={() => {
+                    if (sortBy !== 'value') {
+                      setSortBy('value');
+                      setValueDir('desc');
+                    } else {
+                      setValueDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+                    }
+                  }}
+                  className={cn('cursor-pointer select-none px-2 py-2 text-right font-medium hover:text-slate-900', sortBy === 'value' && 'text-indigo-700')}
+                  title={`Một install của keyword này trên kênh của dòng (organic / paid) đáng bao nhiêu: net value ÷ installs, gộp mọi nước. Nguồn: tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}. 'mỏng' = dưới 3 shop trả tiền. Bấm để sắp, bấm lại để đảo chiều; không có giá trị luôn ở cuối.`}
                 >
                   Value/install
+                  {sortBy === 'value' && <span className="ml-0.5 text-[9px]">{valueDir === 'desc' ? '▼' : '▲'}</span>}
                 </th>
                 <th className="px-2 py-2 text-left font-medium">Status</th>
               </tr>
