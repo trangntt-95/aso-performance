@@ -40,6 +40,8 @@ import {
 
 type SurfacePick = SurfaceKey | 'both';
 type Scope = 'default' | 'all';
+type SortKey = 'keyword' | 'country' | PositionWindow | 'installs' | 'users';
+type SortDir = 'asc' | 'desc';
 
 const selectCls =
   'h-7 rounded border border-slate-200 bg-white px-2 text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500';
@@ -74,7 +76,19 @@ export function PositionsView() {
   const [tierFilter, setTierFilter] = useState<string>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
-  const [sortWin, setSortWin] = useState<PositionWindow>('L7');
+  // Cột đang sắp + chiều. Cửa sổ: asc = vị trí tốt nhất trước (mặc định). Cột
+  // số khác: desc = nhiều nhất trước. Bấm lại cùng cột thì đảo chiều.
+  const [sortKey, setSortKey] = useState<SortKey>('L7');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const sortWin: PositionWindow = (POSITION_WINDOWS as readonly string[]).includes(sortKey) ? (sortKey as PositionWindow) : 'L7';
+  const toggleSort = (k: SortKey) => {
+    if (sortKey === k) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(k);
+    setSortDir(k === 'keyword' || k === 'country' || (POSITION_WINDOWS as readonly string[]).includes(k) ? 'asc' : 'desc');
+  };
 
   const profitTop = useMemo(() => new Set(topProfitKeywords(rows, Number(topN) || 5)), [rows, topN]);
   // Giá trị install của nước (tab Net value per install), theo kênh đang chọn.
@@ -134,15 +148,32 @@ export function PositionsView() {
       if (onlyTop && !brandTopFlag(r, sortWin, brandCamps)) return false;
       return true;
     });
-    // Sắp theo vị trí ở cửa sổ đã chọn (tốt nhất trước); không có vị trí → cuối.
+    // Sắp theo cột đã chọn. Ô trống / không có vị trí luôn xuống cuối, dù chiều nào.
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const num = (r: PositionRow): number | null => {
+      if (sortKey === 'installs') return cellInstalls(r, sortWin, surface);
+      if (sortKey === 'users') return r.users;
+      if ((POSITION_WINDOWS as readonly string[]).includes(sortKey)) return cellPos(r, sortKey as PositionWindow, surface)?.pos ?? null;
+      return null;
+    };
     list.sort((a, b) => {
-      const pa = cellPos(a, sortWin, surface)?.pos ?? Infinity;
-      const pb = cellPos(b, sortWin, surface)?.pos ?? Infinity;
-      if (pa !== pb) return pa - pb;
+      if (sortKey === 'keyword') return dir * a.keyword.localeCompare(b.keyword) || b.users - a.users;
+      if (sortKey === 'country') return dir * a.country.localeCompare(b.country) || b.users - a.users;
+      const va = num(a);
+      const vb = num(b);
+      if (va === null && vb === null) return b.users - a.users;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      if (va !== vb) return dir * (va - vb);
       return b.users - a.users;
     });
     return list;
-  }, [rows, scope, profitTop, categoryFilter, tierFilter, countryFilter, surface, search, sortWin, onlyTop, brandCamps]);
+  }, [rows, scope, profitTop, categoryFilter, tierFilter, countryFilter, surface, search, sortKey, sortDir, sortWin, onlyTop, brandCamps]);
+
+  const Arrow = ({ k }: { k: SortKey }) =>
+    sortKey === k ? <span className="ml-0.5 text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null;
+  const thCls = (k: SortKey, right = true) =>
+    cn('cursor-pointer select-none px-2 py-2 font-medium hover:text-slate-900', right ? 'text-right' : 'text-left', sortKey === k && 'text-indigo-700');
 
   const topCount = useMemo(
     () => rows.filter((r) => brandTopFlag(r, sortWin, brandCamps)).length,
@@ -271,26 +302,32 @@ export function PositionsView() {
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
               <tr>
-                <th className="px-3 py-2 text-left font-medium">Keyword</th>
-                <th className="px-2 py-2 text-left font-medium" title="Tier theo Max bid cap · số tím = một install ở nước đó đáng bao nhiêu (tab Net value per install, YTD, theo kênh đang chọn); * = dưới 3 shop trả tiền">Nước · tier · value/inst</th>
+                <th onClick={() => toggleSort('keyword')} className={cn(thCls('keyword', false), 'px-3')} title="Bấm để sắp theo keyword A→Z / Z→A">
+                  Keyword<Arrow k="keyword" />
+                </th>
+                <th onClick={() => toggleSort('country')} className={thCls('country', false)} title="Tier theo Max bid cap · số tím = một install ở nước đó đáng bao nhiêu (tab Net value per install, YTD, theo kênh đang chọn); * = dưới 3 shop trả tiền · bấm để sắp theo nước">
+                  Nước · tier · value/inst<Arrow k="country" />
+                </th>
                 {POSITION_WINDOWS.map((w) => {
                   const d = windowDates[w];
                   return (
                     <th
                       key={w}
-                      onClick={() => setSortWin(w)}
-                      className={cn('cursor-pointer select-none px-2 py-2 text-right font-medium hover:text-slate-900', sortWin === w && 'text-indigo-700')}
-                      title={`Vị trí trung bình trong ${w}${d ? ` (${dmy(d.from)}–${dmy(d.to)})` : ''} · dòng dưới: cửa sổ liền trước → nay · bấm để sắp theo cửa sổ này`}
+                      onClick={() => toggleSort(w)}
+                      className={thCls(w)}
+                      title={`Vị trí trung bình trong ${w}${d ? ` (${dmy(d.from)}–${dmy(d.to)})` : ''} · dòng dưới: cửa sổ liền trước → nay · bấm để sắp theo cửa sổ này, bấm lại để đảo chiều`}
                     >
                       {w}
-                      {sortWin === w && <span className="ml-0.5 text-[9px]">▲</span>}
+                      <Arrow k={w} />
                     </th>
                   );
                 })}
-                <th className="px-2 py-2 text-right font-medium" title={`Install ở cửa sổ ${sortWin} (đang sắp theo cửa sổ này), theo kênh đã chọn · trong ngoặc: users cùng cửa sổ`}>
-                  Inst {sortWin}
+                <th onClick={() => toggleSort('installs')} className={thCls('installs')} title={`Install ở cửa sổ ${sortWin} (cửa sổ đang chọn ở cột vị trí), theo kênh đã chọn · trong ngoặc: users cùng cửa sổ · bấm để sắp`}>
+                  Inst {sortWin}<Arrow k="installs" />
                 </th>
-                <th className="px-2 py-2 text-right font-medium" title="Tổng users mọi cửa sổ, mọi kênh">Users</th>
+                <th onClick={() => toggleSort('users')} className={thCls('users')} title="Tổng users mọi cửa sổ, mọi kênh · bấm để sắp">
+                  Users<Arrow k="users" />
+                </th>
                 <th className="px-2 py-2 text-left font-medium min-w-[12rem]" title={`Keyword Brand có vị trí PAID ≤ ${BRAND_TOP_POS} ở cửa sổ đang sắp (GA4) → đã top; kèm camp brand đang phủ nước đó (Geo Camp_Links) với spend và vị trí camp 14 ngày từ export Shopify. Không có spend theo keyword nên cờ chỉ ra CAMP để hạ bid.`}>
                   Cảnh báo
                 </th>
