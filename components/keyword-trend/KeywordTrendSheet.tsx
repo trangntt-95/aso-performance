@@ -29,6 +29,7 @@ import type {
 } from '@/lib/sheets/types';
 import { formatDeltaPct, formatNumber, formatPercent, formatPos, deltaTone } from '@/lib/utils/format';
 import { shouldShowTranslation } from '@/lib/utils/translation';
+import { languageOfKeyword, languageLabel } from '@/lib/utils/language';
 import { cn } from '@/lib/utils';
 import { Leaf, DollarSign, ArrowUpDown, ArrowDown, ArrowUp, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -504,6 +505,21 @@ export function KeywordTrendSheet() {
       return true;
     });
 
+    // Mã ngôn ngữ: dòng đầu khớp thường để trống (684/2936 dòng không có lang),
+    // nên quét mọi tab cho keyword này — kể cả L365 và các tab nước — lấy mã
+    // đầu tiên có thật; hết cách mới đoán theo bộ chữ.
+    const langCode =
+      [
+        ...inL7,
+        ...inL30,
+        ...inL90,
+        ...(data.allL365 ?? []).filter(matchKw),
+        ...data.countryL7.filter(matchKw),
+        ...data.countryL30.filter(matchKw),
+        ...(data.countryL90 ?? []).filter(matchKw),
+      ].find((r) => (r.lang ?? '').trim() !== '')?.lang ?? '';
+    const language = languageOfKeyword(keyword, langCode);
+
     return {
       history,
       historyDaily,
@@ -511,6 +527,7 @@ export function KeywordTrendSheet() {
       l30: summarise(inL30),
       l90: summarise(inL90),
       meta: inL7[0] ?? inL30[0] ?? inL90[0] ?? null,
+      language,
       actionRows,
     };
   }, [keyword, country, surface, data]);
@@ -547,19 +564,35 @@ export function KeywordTrendSheet() {
 
         {trendData && (
           <div className="mt-4 space-y-5">
-            {trendData.meta && (
-              <div className="flex flex-wrap gap-3 text-[12px] text-slate-600">
-                {trendData.meta.category && (
-                  <span><span className="font-semibold">Category:</span> {trendData.meta.category}</span>
+            <div className="flex flex-wrap gap-3 text-[12px] text-slate-600">
+              {trendData.meta?.category && (
+                <span><span className="font-semibold">Category:</span> {trendData.meta.category}</span>
+              )}
+              {trendData.meta && shouldShowTranslation(keyword, trendData.meta.english, trendData.meta.category) && (
+                <span><span className="font-semibold">EN:</span> {trendData.meta.english}</span>
+              )}
+              <span
+                title={
+                  trendData.language.source === 'sheet'
+                    ? 'Theo cột lang của tab All_L* / Country_L* (bộ phân loại của sheet)'
+                    : trendData.language.source === 'script'
+                      ? 'Đoán theo bộ chữ của keyword — sheet không gán mã ngôn ngữ'
+                      : trendData.language.source === 'default'
+                        ? 'Sheet không gán mã; chữ Latin không dấu nên coi là tiếng Anh'
+                        : 'Sheet không gán mã và chữ Latin có dấu — không đoán giữa Tây Ban Nha / Bồ Đào Nha / Pháp'
+                }
+              >
+                <span className="font-semibold">Ngôn ngữ:</span>{' '}
+                <span className={cn(trendData.language.source === 'unknown' && 'text-amber-700')}>
+                  {languageLabel(trendData.language)}
+                </span>
+                {trendData.language.source !== 'sheet' && (
+                  <span className="ml-1 text-[10px] text-slate-400">
+                    {trendData.language.source === 'script' ? '(theo bộ chữ)' : trendData.language.source === 'default' ? '(mặc định)' : ''}
+                  </span>
                 )}
-                {shouldShowTranslation(keyword, trendData.meta.english, trendData.meta.category) && (
-                  <span><span className="font-semibold">EN:</span> {trendData.meta.english}</span>
-                )}
-                {trendData.meta.lang && (
-                  <span><span className="font-semibold">Lang:</span> {trendData.meta.lang}</span>
-                )}
-              </div>
-            )}
+              </span>
+            </div>
 
             {allTime && (
               <section className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
