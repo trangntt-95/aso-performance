@@ -3,7 +3,7 @@
 import { buildAndLoad } from './build.mjs';
 
 const load = buildAndLoad();
-const { buildCellNetValue, cellKey, keywordCategoryIndex } = await load('market/cellNetValue.js');
+const { buildCellNetValue, buildCategoryNetValue, cellKey, keywordCategoryIndex } = await load('market/cellNetValue.js');
 
 let pass = 0, fail = 0;
 const eq = (name, got, want) => {
@@ -43,6 +43,15 @@ eq('cellKey không phân biệt hoa/thường', cellKey('United States', 'Brand'
 
 const all = buildCellNetValue(data, 'all');
 eq('pick all: US × Brand gộp hai kênh', all.get(cellKey('United States', 'Brand')).installs, 60);
+
+const byCat = buildCategoryNetValue(data, 'all');
+eq('category all: Brand gộp US paid + organic', [byCat.get('brand').installs, byCat.get('brand').netPerInstall], [60, 10000 / 60]);
+eq('category all: Profit qua cluster fallback (DE)', byCat.get('profit').installs, 3);
+eq('category all: Others = Noise', byCat.get('others').installs, 2);
+const byCatPaid = buildCategoryNetValue(data, 'paid');
+eq('category paid: Brand chỉ 10 install', [byCatPaid.get('brand').installs, byCatPaid.get('brand').netPerInstall], [10, 100]);
+const byCatOrg = buildCategoryNetValue(data, 'organic');
+eq('category organic: Brand 50 install, Feature không có', [byCatOrg.get('brand').installs, byCatOrg.get('feature')], [50, undefined]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

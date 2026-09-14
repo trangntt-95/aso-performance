@@ -1184,6 +1184,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               days={dateRange || data?.windowDates?.[window] ? null : windowDays(window)}
               activeCategory={categoryFocus}
               onCategoryClick={(c) => setCategoryFocus(categoryFocus === c ? null : c)}
+              surface={surfaceFocus}
               unsupportedFilters={[
                 countryFocus ? `nước (${countryFocus})` : null,
                 keywordFocus ? `keyword (${keywordFocus})` : null,

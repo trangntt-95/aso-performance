@@ -104,3 +104,44 @@ export function buildCellNetValue(
   });
   return out;
 }
+
+/**
+ * category (chữ thường) → giá trị install gộp mọi nước, mọi keyword của category.
+ *
+ * Cùng cách phân loại với buildCellNetValue (keyword → category theo All_L*,
+ * cluster là đường lùi) để bảng Country × Category và bảng theo category không
+ * ra hai con số khác nhau cho cùng một category. `pick` theo bộ lọc kênh của
+ * trang: 'all' khi không lọc, 'paid' / 'organic' khi lọc.
+ */
+export function buildCategoryNetValue(
+  data: SheetPayload | null | undefined,
+  pick: NetValuePick = 'all',
+): Map<string, NetValueAgg> {
+  const out = new Map<string, NetValueAgg>();
+  const rows = data?.netValuePerInstall ?? [];
+  if (rows.length === 0) return out;
+  const kwCat = keywordCategoryIndex(data);
+  const groups = new Map<string, NetValueAgg[]>();
+  for (const r of rows as NetValueRow[]) {
+    if (pick !== 'all' && (r.surface === 'search_ad' ? 'paid' : 'organic') !== pick) continue;
+    const cat = bidCapCategoryOf(r, kwCat);
+    if (!cat) continue;
+    const key = cat.trim().toLowerCase();
+    const agg: NetValueAgg = {
+      installs: r.installs ?? 0,
+      payingShops: r.payingShops ?? 0,
+      netValue: r.netValue ?? 0,
+      netPerInstall: null,
+      thin: false,
+      thinReason: '',
+    };
+    const arr = groups.get(key);
+    if (arr) arr.push(agg);
+    else groups.set(key, [agg]);
+  }
+  groups.forEach((items, key) => {
+    const sum = sumNetValueAggs(items);
+    if (sum) out.set(key, sum);
+  });
+  return out;
+}

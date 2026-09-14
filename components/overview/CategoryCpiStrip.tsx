@@ -3,6 +3,8 @@
 import { useMemo } from 'react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { buildCategoryCpi } from '@/lib/market/categoryCpi';
+import { buildCategoryNetValue } from '@/lib/market/cellNetValue';
+import type { NetValuePick } from '@/lib/market/keywordNetValue';
 import { formatNumber, formatPercent } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 
@@ -40,6 +42,7 @@ export function CategoryCpiStrip({
   activeCategory,
   onCategoryClick,
   unsupportedFilters,
+  surface,
 }: {
   /** Page-level date filter, when one is active. */
   range?: { from: string; to: string } | null;
@@ -53,9 +56,19 @@ export function CategoryCpiStrip({
    *  filtered. Campaign spend has no country / keyword / surface breakdown —
    *  money exists per campaign per day and nothing splits it further. */
   unsupportedFilters?: string[];
+  /**
+   * Bộ lọc kênh của trang. Chi phí không tách được theo kênh (chỉ có paid),
+   * nhưng giá trị install thì có: không lọc → gộp cả organic + paid; lọc → đúng
+   * kênh đó. Trang xác nhận 14/09/2026 muốn đúng như vậy.
+   */
+  surface?: 'all' | 'organic' | 'paid';
 }) {
   const { data } = useSheetData();
   const report = useMemo(() => buildCategoryCpi(data, { range, days }), [data, range, days]);
+  const pick: NetValuePick = surface === 'paid' || surface === 'organic' ? surface : 'all';
+  const netValueByCat = useMemo(() => buildCategoryNetValue(data, pick), [data, pick]);
+  const nvScope = data?.netValueScope ?? '';
+  const pickLabel = pick === 'all' ? 'organic + paid' : pick === 'paid' ? 'chỉ paid' : 'chỉ organic';
   if (!report) return null;
 
   // The window is newer than the export. Saying so beats disappearing: an empty
@@ -138,6 +151,12 @@ export function CategoryCpiStrip({
         <span className="w-16 shrink-0 text-right" title="Chi ÷ install. Đỏ = vượt trần CPI của category">
           CPI
         </span>
+        <span
+          className="w-16 shrink-0 text-right"
+          title={`Một install của category này ĐÁNG bao nhiêu: net value (doanh thu − phí Shopify, chưa trừ ads) ÷ installs, gộp mọi nước và mọi keyword của category, ${pickLabel}. Nguồn: tab Net value per install${nvScope ? ` — ${nvScope}` : ''} (không đổi theo khoảng ngày của trang). Đỏ = CPI đang trả cao hơn giá trị. 'mỏng' = dưới 3 shop trả tiền.`}
+        >
+          Net/inst
+        </span>
       </div>
 
       <ul className="mt-1 space-y-1.5">
@@ -213,11 +232,42 @@ export function CategoryCpiStrip({
             >
               {r.cpi === null ? '—' : `$${r.cpi.toFixed(2)}`}
             </span>
+            {(() => {
+              const nv = netValueByCat.get(r.category.trim().toLowerCase()) ?? null;
+              if (!nv || nv.netPerInstall === null) {
+                return (
+                  <span className="w-16 shrink-0 text-right font-mono text-slate-300" title="Tab Net value per install chưa có keyword nào của category này">
+                    —
+                  </span>
+                );
+              }
+              const over = r.cpi !== null && r.cpi > nv.netPerInstall;
+              return (
+                <span
+                  className={cn(
+                    'w-16 shrink-0 text-right font-mono tabular-nums',
+                    over ? 'font-semibold text-rose-600' : nv.thin ? 'text-amber-700' : 'font-medium text-indigo-700',
+                  )}
+                  title={
+                    `${nv.installs} install · ${nv.payingShops} shop trả tiền · net $${Math.round(nv.netValue).toLocaleString()} (${pickLabel})` +
+                    (over ? ` · CPI $${r.cpi!.toFixed(2)} cao hơn giá trị một install — mua đúng giá này vẫn lỗ` : '') +
+                    (nv.thin ? ` — ${nv.thinReason}` : '')
+                  }
+                >
+                  ${nv.netPerInstall.toFixed(0)}
+                  {nv.thin && <span className="ml-0.5 text-[9px]">mỏng</span>}
+                </span>
+              );
+            })()}
           </li>
           );
         })}
       </ul>
-
+      <div className="mt-1.5 text-[9px] leading-snug text-slate-400">
+        <b>Net/inst</b> = một install của category đáng bao nhiêu (tab Net value per install, {pickLabel}
+        {nvScope ? `, ${nvScope}` : ''}); số YTD, không đổi theo khoảng ngày của trang · lọc surface ở trang chỉ tách được cột này, chi phí vẫn là toàn bộ paid ·{' '}
+        <span className="text-rose-600">đỏ</span> = CPI cao hơn giá trị, <span className="text-amber-700">mỏng</span> = dưới 3 shop trả tiền
+      </div>
     </div>
   );
 }
