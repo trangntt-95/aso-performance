@@ -1,5 +1,6 @@
 import type { BidCapRow, KeywordRow, SheetPayload } from '@/lib/sheets/types';
 import { normKw } from '@/lib/sheets/kwNorm';
+import type { BrandTopRow } from '@/lib/market/brandTop';
 
 // Vị trí của keyword theo nước qua các cửa sổ L3 / L7 / L14 / L30 / L90.
 //
@@ -191,4 +192,61 @@ export function cellPos(
         ? withPrev.reduce((s, x) => s + (x.posPrev as number) * x.users, 0) / up
         : withPrev.reduce((s, x) => s + (x.posPrev as number), 0) / withPrev.length;
   return { pos, posPrev, users: parts.reduce((s, x) => s + x.users, 0) };
+}
+
+// ── Cảnh báo lãng phí: keyword brand đã top ở nước này mà vẫn đang được mua ──
+//
+// Hai nguồn ghép lại: vị trí PAID của keyword × nước từ GA4 (Country_L*), và
+// camp brand đang phủ nước đó từ export Shopify Ads theo ngày (vị trí, spend,
+// install của camp, qua findBrandTopCamps). GA4 nói "keyword này ở nước này
+// đã đứng số 1"; Shopify nói "camp này đang trả tiền cho nước đó". Không nguồn
+// nào có spend theo keyword, nên cờ này chỉ ra CAMP để hạ bid, không nói được
+// riêng keyword đó tốn bao nhiêu.
+
+export const BRAND_TOP_POS = 1.5;
+
+export interface BrandTopFlag {
+  /** Vị trí paid ở cửa sổ đang xem. */
+  paidPos: number;
+  paidUsers: number;
+  /** Camp brand đang phủ nước này (Geo include có nước, hoặc camp general /
+   *  exclude không loại nước). Rỗng = không camp nào rõ ràng phủ. */
+  camps: BrandTopRow[];
+  /** Tổng spend của các camp đó trong cửa sổ của Shopify (14 ngày mặc định). */
+  campSpend: number;
+}
+
+/** Camp brand có phủ nước này không, theo Geo của Camp_Links. */
+export function campCoversCountry(camp: BrandTopRow, country: string): boolean {
+  const c = country.trim().toLowerCase();
+  if (camp.geoMode === 'include') return camp.countries.some((x) => x.trim().toLowerCase() === c);
+  if (camp.geoMode === 'exclude') {
+    // countryLabel = "mọi nước trừ A, B" — danh sách loại nằm trong nhãn; camp
+    // exclude không giữ mảng riêng, nên đọc lại từ nhãn.
+    const excluded = camp.countryLabel.replace(/^mọi nước trừ\s*/i, '').split(/,\s*/).map((x) => x.trim().toLowerCase());
+    return !excluded.includes(c);
+  }
+  return camp.geoMode === 'all'; // 'unknown' → không dám nói là phủ
+}
+
+/**
+ * Cờ cho một dòng: chỉ Brand, chỉ khi vị trí PAID ở cửa sổ ≤ BRAND_TOP_POS.
+ * null khi không phải brand, không có vị trí paid, hoặc chưa top.
+ */
+export function brandTopFlag(
+  row: PositionRow,
+  w: PositionWindow,
+  brandCamps: readonly BrandTopRow[],
+  maxPos = BRAND_TOP_POS,
+): BrandTopFlag | null {
+  if (row.category !== 'Brand') return null;
+  const paid = row.cells[w]?.paid;
+  if (!paid || paid.pos === null || paid.pos > maxPos) return null;
+  const camps = brandCamps.filter((c) => campCoversCountry(c, row.country));
+  return {
+    paidPos: paid.pos,
+    paidUsers: paid.users,
+    camps,
+    campSpend: camps.reduce((s, c) => s + c.spend, 0),
+  };
 }

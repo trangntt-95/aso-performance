@@ -12,10 +12,14 @@ import { normKw } from '@/lib/sheets/kwNorm';
 import { CATEGORY_ORDER } from '@/lib/utils/colors';
 import type { Category } from '@/lib/sheets/types';
 import { buildCountryNetValue } from '@/lib/market/keywordNetValue';
+import { findBrandTopCamps } from '@/lib/market/brandTop';
+import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
+  BRAND_TOP_POS,
   POSITION_WINDOWS,
   TIER1_CORE_KEYWORDS,
+  brandTopFlag,
   buildPositionRows,
   cellInstalls,
   cellPos,
@@ -75,6 +79,24 @@ export function PositionsView() {
   const profitTop = useMemo(() => new Set(topProfitKeywords(rows, Number(topN) || 5)), [rows, topN]);
   // Giá trị install của nước (tab Net value per install), theo kênh đang chọn.
   const countryNv = useMemo(() => buildCountryNetValue(data, surface === 'both' ? 'all' : surface), [data, surface]);
+  // Camp brand đang chạy (export Shopify theo ngày, 14 ngày) — để cờ "đã top"
+  // chỉ ra camp nào đang trả tiền cho nước đó.
+  const brandCamps = useMemo(
+    () =>
+      data
+        ? findBrandTopCamps(
+            data.shopifyDaily ?? [],
+            data.campLinks ?? [],
+            data.masterKwLookup ?? [],
+            data.pausedKw ?? [],
+            data.bidCap ?? [],
+            data.countryL30 ?? [],
+            { days: 14 },
+          ).rows
+        : [],
+    [data],
+  );
+  const [onlyTop, setOnlyTop] = useState(false);
 
   const { categories, tiers, countries } = useMemo(() => {
     const c = new Set<string>();
@@ -109,6 +131,7 @@ export function PositionsView() {
       if (countryFilter !== 'all' && r.country !== countryFilter) return false;
       if (surface !== 'both' && !POSITION_WINDOWS.some((w) => r.cells[w]?.[surface])) return false;
       if (q && !`${r.keyword} ${r.english} ${r.country}`.toLowerCase().includes(q)) return false;
+      if (onlyTop && !brandTopFlag(r, sortWin, brandCamps)) return false;
       return true;
     });
     // Sắp theo vị trí ở cửa sổ đã chọn (tốt nhất trước); không có vị trí → cuối.
@@ -119,7 +142,12 @@ export function PositionsView() {
       return b.users - a.users;
     });
     return list;
-  }, [rows, scope, profitTop, categoryFilter, tierFilter, countryFilter, surface, search, sortWin]);
+  }, [rows, scope, profitTop, categoryFilter, tierFilter, countryFilter, surface, search, sortWin, onlyTop, brandCamps]);
+
+  const topCount = useMemo(
+    () => rows.filter((r) => brandTopFlag(r, sortWin, brandCamps)).length,
+    [rows, sortWin, brandCamps],
+  );
 
   const dirty = categoryFilter !== 'all' || tierFilter !== 'all' || countryFilter !== 'all' || search !== '' || surface !== 'both';
   const reset = () => {
@@ -201,6 +229,17 @@ export function PositionsView() {
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
+        <button
+          type="button"
+          onClick={() => setOnlyTop((v) => !v)}
+          className={cn(
+            'rounded-full border px-2 py-0.5 text-[11px] font-medium transition',
+            onlyTop ? 'border-amber-500 bg-amber-100 text-amber-900' : 'border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-400',
+          )}
+          title={`Chỉ hiện keyword Brand có vị trí PAID ≤ ${BRAND_TOP_POS} ở ${sortWin} — đã top mà vẫn đang mua, xem camp nào đang trả tiền cho nước đó để hạ bid`}
+        >
+          🏁 Brand đã top ({topCount})
+        </button>
         <div className="relative min-w-[160px]">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm keyword / nước…" className="h-7 pl-7 text-xs" />
@@ -252,6 +291,9 @@ export function PositionsView() {
                   Inst {sortWin}
                 </th>
                 <th className="px-2 py-2 text-right font-medium" title="Tổng users mọi cửa sổ, mọi kênh">Users</th>
+                <th className="px-2 py-2 text-left font-medium min-w-[12rem]" title={`Keyword Brand có vị trí PAID ≤ ${BRAND_TOP_POS} ở cửa sổ đang sắp (GA4) → đã top; kèm camp brand đang phủ nước đó (Geo Camp_Links) với spend và vị trí camp 14 ngày từ export Shopify. Không có spend theo keyword nên cờ chỉ ra CAMP để hạ bid.`}>
+                  Cảnh báo
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -303,6 +345,43 @@ export function PositionsView() {
                     })()}
                   </td>
                   <td className="px-2 py-1.5 text-right font-mono text-[11px] text-slate-500">{r.users}</td>
+                  <td className="px-2 py-1.5">
+                    {(() => {
+                      const f = brandTopFlag(r, sortWin, brandCamps);
+                      if (!f) return null;
+                      return (
+                        <div className="text-[10px] leading-snug">
+                          <span className="inline-flex whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800" title={`Vị trí paid ${f.paidPos.toFixed(1)} với ${f.paidUsers} users ở ${sortWin} — đã top, bid thêm không mua thêm vị trí`}>
+                            🏁 paid #{f.paidPos.toFixed(1)} — hạ bid
+                          </span>
+                          {f.camps.length === 0 ? (
+                            <div className="mt-0.5 text-slate-400">không thấy camp brand nào phủ {r.country} (Geo Camp_Links)</div>
+                          ) : (
+                            <div className="mt-0.5 space-y-0.5">
+                              {f.camps.slice(0, 3).map((c) => (
+                                <div key={c.camp} className="flex items-center gap-1 text-slate-600">
+                                  {c.url ? (
+                                    <a href={c.url} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-[11rem] items-center gap-0.5 truncate text-indigo-600 hover:underline" title={c.camp}>
+                                      <span className="truncate">{c.camp}</span>
+                                      <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+                                    </a>
+                                  ) : (
+                                    <span className="max-w-[11rem] truncate" title={c.camp}>{c.camp}</span>
+                                  )}
+                                  <span className="whitespace-nowrap font-mono text-slate-500" title="spend 14 ngày · vị trí camp · bid hiện tại (Master)">
+                                    ${c.spend.toFixed(0)}
+                                    {c.position !== null && ` · #${c.position.toFixed(1)}`}
+                                    {c.bidNow !== null && ` · bid $${c.bidNow.toFixed(2)}`}
+                                  </span>
+                                </div>
+                              ))}
+                              {f.camps.length > 3 && <div className="text-slate-400">+{f.camps.length - 3} camp nữa</div>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -313,7 +392,9 @@ export function PositionsView() {
             <span className="text-rose-600">đỏ</span> xuống · kênh &ldquo;cả hai&rdquo; gia quyền theo users · màu vị trí:{' '}
             <span className="text-emerald-700">≤1.5</span> · ≤3 · <span className="text-amber-700">≤5</span> ·{' '}
             <span className="text-rose-600">&gt;5</span> · ô &ldquo;—&rdquo; = có traffic mà GA4 không trả rank; ô trống = không có
-            traffic ở cửa sổ đó · tier nước theo Max bid cap · bấm keyword để mở drill.
+            traffic ở cửa sổ đó · tier nước theo Max bid cap · bấm keyword để mở drill ·{' '}
+            <b>Cảnh báo 🏁</b> = keyword Brand có vị trí paid ≤ {BRAND_TOP_POS} ở cửa sổ đang sắp (GA4), kèm camp brand đang phủ nước đó
+            với spend / vị trí 14 ngày từ export Shopify Ads — hạ bid ở camp đó; spend theo riêng keyword không có trong dữ liệu.
           </div>
         </div>
       )}

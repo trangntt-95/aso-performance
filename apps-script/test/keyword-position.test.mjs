@@ -3,7 +3,7 @@
 import { buildAndLoad } from './build.mjs';
 
 const load = buildAndLoad();
-const { buildPositionRows, topProfitKeywords, cellPos, cellInstalls, isTier23, isTier1, countryTierIndex } = await load('market/keywordPosition.js');
+const { buildPositionRows, topProfitKeywords, cellPos, cellInstalls, isTier23, isTier1, countryTierIndex, brandTopFlag, campCoversCountry } = await load('market/keywordPosition.js');
 
 let pass = 0, fail = 0;
 const eq = (name, got, want) => {
@@ -60,6 +60,23 @@ eq('cellInstalls cửa sổ trống → null', cellInstalls(br, 'L7', 'both'), n
 eq('cellInstalls organic L30 Brazil profit = 3', cellInstalls(br, 'L30', 'organic'), 3);
 
 eq('top Profit theo users: profit tracker (50) > profit (20) > calculator (6)', topProfitKeywords(rows, 2), ['profit tracker', 'profit']);
+
+// ── cờ brand đã top ──
+const camp = (camp, geoMode, countries, countryLabel, spend) =>
+  ({ camp, url: 'https://x/' + camp, countries, geoMode, countryLabel, impressions: 50, clicks: 5, installs: 1, spend, cpi: null, position: 1.2, visibility: 0.9, daysWithPosition: 5, daysActive: 7, bidNow: 3, capPerInstall: null, cr: null, crSource: null, maxBid: null, organicPos: null, organicUsers: 0, verdict: 'top', reason: '' });
+const camps = [
+  camp('MX camp', 'include', ['Mexico'], 'Mexico', 10),
+  camp('General', 'all', [], 'mọi nước', 20),
+  camp('Excl MX', 'exclude', [], 'mọi nước trừ Mexico, Brazil', 30),
+  camp('Unknown geo', 'unknown', [], 'không rõ Geo', 40),
+];
+eq('campCoversCountry include/all/exclude/unknown', camps.map((c) => campCoversCountry(c, 'Mexico')), [true, true, false, false]);
+eq('exclude không loại nước khác → phủ', campCoversCountry(camps[2], 'Spain'), true);
+// mx: L7 paid pos 2 → chưa top; L3 không có paid → null
+eq('brand chưa top (paid 2.0) → null', brandTopFlag(mx, 'L7', camps), null);
+eq('không có paid ở cửa sổ → null', brandTopFlag(mx, 'L3', camps), null);
+eq('ngưỡng nới 2.0 → có cờ, camp MX + General, spend 30', (() => { const f = brandTopFlag(mx, 'L7', camps, 2); return [f.paidPos, f.camps.map((c) => c.camp), f.campSpend]; })(), [2, ['MX camp', 'General'], 30]);
+eq('không phải Brand → null', brandTopFlag(rows.find((r) => r.keyword === 'profit tracker'), 'L30', camps), null);
 eq('top Profit mặc định 5 → cả 3', topProfitKeywords(rows).length, 3);
 
 console.log(`\n${pass} passed, ${fail} failed`);
