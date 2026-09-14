@@ -66,7 +66,7 @@ const NOTE_BOUNDARY = /^\s*[-–(]/;
 // Camp_Links already carries), and a dash-suffix must mention something
 // operational. " - HU", " - UK, CA", " - Japan" match none of these.
 const NOTE_LIKE =
-  /^\s*\(|\b(cpi|bid|ins|inst|install|test|maintain|good|ok|watch|pause|paused|off|rev|roas|imp|clean|check|focus|foucs|original|new|till|since|low|high|excl|no|thấp|cao|ít|nhỏ|cân nhắc|chưa|hạ|tăng|theo dõi)\b/i;
+  /^\s*\(|\b(cpi|bid|ins|inst|install|test|maintain|good|ok|watch|pause|paused|off|rev|roas|imp|clean|check|focus|foucs|original|new|till|since|low|high|excl|no ins|no rev|k có|không|thấp|cao|ít|nhỏ|cân nhắc|chưa|hạ|tăng|theo dõi)\b/i;
 
 /**
  * Comparison key: lowercased, every dash written as " - ", spaces collapsed.

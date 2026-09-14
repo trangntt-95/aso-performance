@@ -55,8 +55,8 @@ const r3 = buildCampNameResolver([
   'TP - Others - Low bid 09 - test till Oct',
   'TP - Others - Low bid 09 - watch',
 ]);
-eq('dấu ! đầu tên bị bỏ', r3.resolve('TP - Cateogry - Analytics App - Broad 02 - no ins'), '! TP - Cateogry - Analytics App - Broad 02 - no ins');
-eq('ghép ngược: tên trần → tên có ghi chú "- no ins"', r3.resolve('TP - Cateogry - Analytics App - Broad 02'), '! TP - Cateogry - Analytics App - Broad 02 - no ins');
+eq('dấu ! đầu tên bị bỏ', r3.resolve('TP - Cateogry - Analytics App - Broad 02 - no ins'), 'TP - Cateogry - Analytics App - Broad 02 - no ins');
+eq('ghép ngược: tên trần → tên có ghi chú "- no ins"', r3.resolve('TP - Cateogry - Analytics App - Broad 02'), 'TP - Cateogry - Analytics App - Broad 02 - no ins');
 eq('ghép ngược: tên trần → tên có "(CR thấp)"', r3.resolve('TP - Feature - Dashboard'), 'TP - Feature - Dashboard (CR thấp)');
 eq('ghép ngược: đuôi geo " - HU" KHÔNG tính', r3.resolve('TP - Profit - Exact 01 - Tier 2'), null);
 eq('ghép ngược: hai ứng viên → null', r3.resolve('TP - Others - Low bid 09'), null);
