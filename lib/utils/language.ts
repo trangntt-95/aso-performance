@@ -132,9 +132,29 @@ export function weakSignal(keyword: string): string {
 
 const sameFamily = (a: string, b: string): boolean => a === b || (a.startsWith('zh') && b.startsWith('zh'));
 
-export function languageOfKeyword(keyword: string, langCode?: string | null): KeywordLanguage {
+/**
+ * Category mà keyword gần như luôn là tên thương hiệu hoặc biến thể gõ sai của
+ * nó ("truprofit", "true proft", "lifetimely"). Bộ phân loại ngôn ngữ của
+ * sheet và Google Translate đều đoán bừa trên chuỗi vô nghĩa — "truprofit" ra
+ * es / "bodybuilding" (14/09/2026) — nên với category này, chữ Latin không dấu
+ * là tiếng Anh, bất kể sheet ghi gì, trừ khi bộ chữ nói khác.
+ */
+const BRANDISH = new Set(['brand', 'profit', 'competitor']);
+
+export function languageOfKeyword(
+  keyword: string,
+  langCode?: string | null,
+  category?: string | null,
+): KeywordLanguage {
   const code = (langCode ?? '').trim().toLowerCase();
   const strong = strongSignal(keyword);
+  // eslint-disable-next-line no-control-regex
+  const ascii = !/[^\x00-\x7F]/.test(keyword ?? '');
+  if (!strong && ascii && category && BRANDISH.has(category.trim().toLowerCase())) {
+    return code && code !== 'en'
+      ? { code: 'en', name: 'Tiếng Anh', source: 'corrected', sheetCode: code }
+      : { code: 'en', name: 'Tiếng Anh', source: code ? 'sheet' : 'default' };
+  }
   if (code) {
     if (strong && !sameFamily(strong, code)) {
       return { code: strong, name: LANG_NAMES[strong] ?? `Mã ${strong}`, source: 'corrected', sheetCode: code };

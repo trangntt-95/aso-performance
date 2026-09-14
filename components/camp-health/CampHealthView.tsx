@@ -79,7 +79,7 @@ function SortHead({
   );
 }
 
-const ORDER: HealthBucket[] = ['burning', 'wasted-imp', 'losing-imp', 'pricey', 'idle', 'paused', 'rising', 'scale', 'ok'];
+const ORDER: HealthBucket[] = ['burning', 'wasted-imp', 'losing-imp', 'pricey', 'idle', 'paused', 'rising', 'scale', 'ok', 'silent'];
 
 // Comparison-window lengths, plus a whole-span option.
 //
@@ -180,6 +180,10 @@ export function CampHealthView() {
         // answer the period-free questions.
         aggregate: data?.shopifyCamps ?? [],
         aggregateRange: data?.shopifyDateRange ?? '',
+        knownCamps: [
+          ...(data?.campLinks ?? []).map((c) => c.camp),
+          ...(data?.masterKwLookup ?? []).map((m) => m.camp),
+        ],
       }),
     [
       data?.shopifyDaily,
@@ -187,6 +191,7 @@ export function CampHealthView() {
       data?.pausedKw,
       data?.shopifyCamps,
       data?.shopifyDateRange,
+      data?.masterKwLookup,
       windowDays,
     ],
   );

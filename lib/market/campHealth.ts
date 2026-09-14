@@ -18,6 +18,7 @@ export type HealthBucket =
   | 'losing-imp' // impressions collapsing vs prior period → losing the auction
   | 'paused' // listed in Paused_camp → genuinely switched off
   | 'idle' // spent last period, nothing now, but NOT in Paused_camp → check
+  | 'silent' // in Camp_Links / Master, not paused, yet NO row in the export window → never shown; forgotten or bid too low
   | 'pricey' // converting, but CPI well above the median
   | 'rising' // impressions AND installs both up vs the prior period → push it
   | 'scale' // cheap CPI with steady installs → room to push
@@ -109,6 +110,15 @@ export interface CampHealthOptions {
   aggregate?: ShopifyCampRow[];
   /** Label of the range the totals cover, e.g. "01/08/2026 → 16/08/2026". */
   aggregateRange?: string;
+  /**
+   * Every campaign the account KNOWS about — Camp_Links names plus the camps
+   * Master KW Lookup bids in. A known camp that is not paused and has no row at
+   * all in the export window was never shown: the export only carries days
+   * with impressions/clicks/spend, so absence is silence, not zero. Those are
+   * the forgotten camps (Trang, 14/09/2026: "TP - Feature - LTV - tier 1,2"
+   * sat in Camp_Links and Master for a month with no trace anywhere).
+   */
+  knownCamps?: string[];
 }
 
 export function analyseCampHealth(
@@ -264,6 +274,30 @@ export function analyseCampHealth(
       camp: a.camp, bucket, cur, prev, impDelta, installDelta, spendDelta, atRisk, reason, reliable,
       lastActive: a.lastActive,
       series: a.series.sort((x, y) => x.t - y.t),
+    });
+  }
+
+  // Camps the account knows about that left no trace in the export at all.
+  const seenKeys = new Set(Array.from(byCamp.keys()));
+  const silentKeys = new Set<string>();
+  for (const name of opts.knownCamps ?? []) {
+    if (!name) continue;
+    const key = grouper.key(name);
+    if (!key || seenKeys.has(key) || pausedKeys.has(key) || silentKeys.has(key)) continue;
+    silentKeys.add(key);
+    out.push({
+      camp: grouper.label(key) || name,
+      bucket: 'silent',
+      cur: empty(),
+      prev: empty(),
+      impDelta: null,
+      installDelta: null,
+      spendDelta: null,
+      atRisk: 0,
+      reason: `Có trong Camp_Links / Master KW Lookup, KHÔNG có trong Paused_camp, nhưng không có dòng nào trong export từ ${from} → ${to}: không một lượt hiển thị. Camp bị quên, bid quá thấp, hoặc đã tắt trên Shopify mà chưa ghi vào Paused_camp.`,
+      reliable: false,
+      lastActive: '',
+      series: [],
     });
   }
 
@@ -436,6 +470,11 @@ export const BUCKET_META: Record<
     label: '⏸ Đã tắt', short: 'Đã tắt',
     tone: 'neutral',
     help: 'Có tên trong tab Paused_camp → camp đã tắt, không cần làm gì. Nhãn này thắng mọi nhãn khác: camp tắt giữa kỳ vẫn còn spend của những ngày trước đó, nhưng đó không phải việc cần sửa.',
+  },
+  silent: {
+    label: '🔇 Không hiển thị', short: 'Không hiển thị',
+    tone: 'warn',
+    help: 'Camp có trong Camp_Links / Master KW Lookup và không nằm trong Paused_camp, nhưng export Shopify không có một dòng nào trong kỳ — tức không có lượt hiển thị nào. Đây là camp bị bỏ quên: hoặc bid quá thấp để lên, hoặc đã tắt trên Shopify mà chưa ghi vào Paused_camp. Không có số để xếp hạng, nên nằm cuối bảng.',
   },
   idle: {
     label: '⏹ Ngừng chi', short: 'Ngừng chi',

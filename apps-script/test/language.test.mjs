@@ -24,6 +24,15 @@ eq('từ nối lấp chỗ trống: für → Đức', L('app für gewinn', ''), 
 eq('từ nối KHÔNG ghi đè sheet', L('app für gewinn', 'es'), ['es', 'sheet', 'Tiếng Tây Ban Nha (es)']);
 eq('từ nối hai ngôn ngữ cùng khớp → không đoán, về mặc định', L('per los', ''), ['en', 'default', 'Tiếng Anh (en)']);
 eq('Latin có dấu, ü mà không mã → chưa xác định', L('steuer zoll gebühre', ''), ['', 'unknown', 'Chưa xác định']);
+
+// Keyword thương hiệu: sheet đoán bừa → tiếng Anh
+const B = (k, c, cat) => { const l = languageOfKeyword(k, c, cat); return [l.code, l.source, l.sheetCode ?? null]; };
+eq('Brand + sheet es → sửa về en, giữ mã sheet', B('truprofit', 'es', 'Brand'), ['en', 'corrected', 'es']);
+eq('Brand + sheet trống → en mặc định', B('truprofit', '', 'Brand'), ['en', 'default', null]);
+eq('Brand + sheet en → sheet', B('trueprofit', 'en', 'Brand'), ['en', 'sheet', null]);
+eq('Brand nhưng bộ chữ Thái → vẫn Thái', B('trueprofit ทรโปรฟต', 'th', 'Brand'), ['th', 'sheet', null]);
+eq('Competitor + từ nối es → vẫn en (không tin từ nối với brand)', B('lifetimely para', 'es', 'Competitor'), ['en', 'corrected', 'es']);
+eq('Feature + sheet es → theo sheet như cũ', B('ganancias', 'es', 'Feature'), ['es', 'sheet', null]);
 eq('mã lạ → hiện mã', L('x', 'xx'), ['xx', 'sheet', 'Mã xx (xx)']);
 eq('Hán → Trung', L('数据分析', ''), ['zh', 'script', 'Tiếng Trung (zh)']);
 eq('Kana → Nhật (dù có Kanji)', L('利益トラッカー', ''), ['ja', 'script', 'Tiếng Nhật (ja)']);

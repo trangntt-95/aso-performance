@@ -518,7 +518,7 @@ export function KeywordTrendSheet() {
         ...data.countryL30.filter(matchKw),
         ...(data.countryL90 ?? []).filter(matchKw),
       ].find((r) => (r.lang ?? '').trim() !== '')?.lang ?? '';
-    const language = languageOfKeyword(keyword, langCode);
+    const language = languageOfKeyword(keyword, langCode, (inL7[0] ?? inL30[0] ?? inL90[0])?.category ?? null);
 
     return {
       history,
@@ -576,7 +576,7 @@ export function KeywordTrendSheet() {
                   trendData.language.source === 'sheet'
                     ? 'Theo cột lang của tab All_L* / Country_L* (bộ phân loại của sheet)'
                     : trendData.language.source === 'corrected'
-                      ? `Sheet ghi '${trendData.language.sheetCode}' nhưng bộ chữ / ký tự đặc trưng của keyword nói khác — dashboard dùng theo keyword. Cột lang trong sheet không đổi.`
+                      ? `Sheet ghi '${trendData.language.sheetCode}' nhưng keyword là tên thương hiệu / chữ Latin có dấu hiệu ngôn ngữ khác — dashboard dùng theo keyword. Cột lang trong sheet không đổi.`
                       : trendData.language.source === 'script'
                         ? 'Đoán theo bộ chữ hoặc ký tự đặc trưng của keyword — sheet không gán mã ngôn ngữ'
                         : trendData.language.source === 'words'

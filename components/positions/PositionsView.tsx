@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { KeywordLink } from '@/components/shared/KeywordLink';
+import { shouldShowTranslation } from '@/lib/utils/translation';
 import { CategoryChip } from '@/components/shared/CategoryChip';
 import { normKw } from '@/lib/sheets/kwNorm';
 import { CATEGORY_ORDER } from '@/lib/utils/colors';
@@ -341,7 +342,7 @@ export function PositionsView() {
                       <CategoryChip category={r.category as Category} compact />
                       <KeywordLink keyword={r.keyword} country={r.country} className="truncate font-medium text-sm" />
                     </div>
-                    {r.english && r.english.toLowerCase() !== r.keyword.toLowerCase() && (
+                    {shouldShowTranslation(r.keyword, r.english, r.category) && (
                       <div className="mt-0.5 truncate text-[10px] italic text-slate-500">→ {r.english}</div>
                     )}
                   </td>
