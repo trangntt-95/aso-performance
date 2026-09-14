@@ -155,7 +155,7 @@ export function CategoryCpiStrip({
           className="w-16 shrink-0 text-right"
           title={`Một install của category này ĐÁNG bao nhiêu: net value (doanh thu − phí Shopify, chưa trừ ads) ÷ installs, gộp mọi nước và mọi keyword của category, ${pickLabel}. Nguồn: tab Net value per install${nvScope ? ` — ${nvScope}` : ''} (không đổi theo khoảng ngày của trang). Đỏ = CPI đang trả cao hơn giá trị. 'mỏng' = dưới 3 shop trả tiền.`}
         >
-          Net/inst
+          Value/inst
         </span>
       </div>
 
@@ -264,7 +264,7 @@ export function CategoryCpiStrip({
         })}
       </ul>
       <div className="mt-1.5 text-[9px] leading-snug text-slate-400">
-        <b>Net/inst</b> = một install của category đáng bao nhiêu (tab Net value per install, {pickLabel}
+        <b>Value/inst</b> = một install của category đáng bao nhiêu (tab Net value per install, {pickLabel}
         {nvScope ? `, ${nvScope}` : ''}); số YTD, không đổi theo khoảng ngày của trang · lọc surface ở trang chỉ tách được cột này, chi phí vẫn là toàn bộ paid ·{' '}
         <span className="text-rose-600">đỏ</span> = CPI cao hơn giá trị, <span className="text-amber-700">mỏng</span> = dưới 3 shop trả tiền
       </div>

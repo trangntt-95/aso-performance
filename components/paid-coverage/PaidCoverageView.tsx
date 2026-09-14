@@ -576,7 +576,7 @@ export function PaidCoverageView() {
             title="Thứ tự bảng"
           >
             <option value="users">Sắp: Users {WIN_LABEL[win]}</option>
-            <option value="value">Sắp: Net/install</option>
+            <option value="value">Sắp: Value/install</option>
           </select>
           {dirty && (
             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={resetAll}>
@@ -633,7 +633,7 @@ export function PaidCoverageView() {
                     "'mỏng' = dưới 3 shop trả tiền, chưa nên bid theo. Keyword chưa bid mà giá trị cao là chỗ mở camp trước."
                   }
                 >
-                  Net/install
+                  Value/install
                 </th>
                 <th
                   className="px-2 py-2 text-left font-medium"
@@ -746,7 +746,7 @@ export function PaidCoverageView() {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            Cột window = Users / Install (gộp organic + paid) · <b>Net/install</b> = một install của keyword đáng bao nhiêu
+            Cột window = Users / Install (gộp organic + paid) · <b>Value/install</b> = một install của keyword đáng bao nhiêu
             (tab Net value per install, gộp mọi nước + cả hai kênh; <span className="text-amber-700">mỏng</span> = dưới 3 shop trả tiền) ·
             Geo chỉ kết luận được khi camp đã điền cột Geo trong Camp_Links
           </div>

@@ -610,7 +610,7 @@ export function CategoryDrilldown({ category }: { category?: string }) {
             title="Thứ tự bảng"
           >
             <option value="users">Sắp: Users</option>
-            <option value="value">Sắp: Net/install</option>
+            <option value="value">Sắp: Value/install</option>
           </select>
           {dirty && (
             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={resetAll}>
@@ -709,7 +709,7 @@ export function CategoryDrilldown({ category }: { category?: string }) {
                   className="px-2 py-2 text-right font-medium"
                   title={`Một install của keyword này trên kênh của dòng (organic / paid) đáng bao nhiêu: net value ÷ installs, gộp mọi nước. Nguồn: tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}. 'mỏng' = dưới 3 shop trả tiền.`}
                 >
-                  Net/install
+                  Value/install
                 </th>
                 <th className="px-2 py-2 text-left font-medium">Status</th>
               </tr>
@@ -802,7 +802,7 @@ export function CategoryDrilldown({ category }: { category?: string }) {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            U = Users · I = Install · CR = conversion · P = avg position · <b>Net/install</b> = một install của keyword trên kênh
+            U = Users · I = Install · CR = conversion · P = avg position · <b>Value/install</b> = một install của keyword trên kênh
             của dòng đáng bao nhiêu (tab Net value per install; <span className="text-amber-700">mỏng</span> = dưới 3 shop trả tiền)
           </div>
         </div>

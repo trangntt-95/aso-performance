@@ -942,7 +942,7 @@ export function KeywordTrendSheet() {
                             title={`Net value mỗi install của keyword này tại nước này (doanh thu − phí Shopify, chưa trừ ads). Nguồn: tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}. Số nhỏ 'mỏng' = dưới 3 shop trả tiền, chưa nên bid theo.`}
                           >
                             <SortHeader
-                              label="Net/install"
+                              label="Value/install"
                               active={sortKey === 'netPerInstall'}
                               dir={sortDir}
                               onClick={() => toggleSort('netPerInstall')}
@@ -1015,7 +1015,7 @@ export function KeywordTrendSheet() {
                     · view: <b>{channelView}</b> · {drillWindow}
                     {nvForKeyword && (
                       <>
-                        {' '}· Net/install: {tableRows.filter((r) => r.nv?.netPerInstall != null).length} nước có giá trị
+                        {' '}· Value/install: {tableRows.filter((r) => r.nv?.netPerInstall != null).length} nước có giá trị
                         {data?.netValueScope ? ` (${data.netValueScope})` : ''}
                       </>
                     )}
