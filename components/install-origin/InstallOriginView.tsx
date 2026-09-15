@@ -1,9 +1,10 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ExternalLink, Search, X } from 'lucide-react';
+import { ExternalLink, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
-import { Input } from '@/components/ui/input';
+import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
+import { matchKeywordQuery, parseKeywordQuery } from '@/lib/utils/keywordQuery';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { buildInstallOrigin, type InstallOriginRow } from '@/lib/market/installOrigin';
@@ -244,17 +245,18 @@ export function InstallOriginView() {
 
   const rows = useMemo(() => {
     if (!report) return [];
-    const q = search.trim().toLowerCase();
+    const query = parseKeywordQuery(search);
     const out = report.rows.filter((r) => {
       if (lens === 'with-installs' && r.installs <= 0) return false;
       if (lens === 'ambiguous' && !r.campAmbiguous) return false;
       if (lens === 'negative' && !r.negative) return false;
       if (countryFilter !== 'all' && r.country !== countryFilter) return false;
-      if (!q) return true;
-      return (
-        r.keyword.toLowerCase().includes(q) ||
-        r.country.toLowerCase().includes(q) ||
-        r.camps.some((c) => c.camp.toLowerCase().includes(q))
+      if (query.empty) return true;
+      // Một chuỗi gộp keyword + nước + camp: điều kiện loại phải soi được cả ba,
+      // chứ 'profit -brand' mà chỉ loại theo keyword thì camp Brand vẫn lọt.
+      return matchKeywordQuery(
+        `${r.keyword} ${r.country} ${r.camps.map((c) => c.camp).join(' ')}`,
+        query,
       );
     });
     const dir = sortDir === 'desc' ? -1 : 1;
@@ -365,15 +367,11 @@ export function InstallOriginView() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2">
-        <div className="relative min-w-[150px] max-w-xs flex-1">
-          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tìm keyword / nước / camp…"
-            className="h-7 pl-7 text-xs"
-          />
-        </div>
+        <KeywordSearchBox
+          value={search}
+          onChange={setSearch}
+          placeholder="Tìm keyword / nước / camp — vd: profit -brand"
+        />
         <select
           value={countryFilter}
           onChange={(e) => setCountryFilter(e.target.value)}

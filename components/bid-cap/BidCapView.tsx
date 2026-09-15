@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, AlertTriangle, ChevronDown, ExternalLink, Search, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ChevronDown, ExternalLink, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
-import { Input } from '@/components/ui/input';
+import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
+import { matchKeywordQuery, parseKeywordQuery } from '@/lib/utils/keywordQuery';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { categoryStyle } from '@/lib/utils/colors';
@@ -258,18 +259,18 @@ export function BidCapView() {
   }, [rows]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const query = parseKeywordQuery(search);
     const out = rows.filter((r) => {
       if (tierFilter !== 'all' && r.tier !== tierFilter) return false;
       if (countryFilter !== 'all' && r.country !== countryFilter) return false;
       if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
       if (actionFilter !== 'all' && r.actionRecommended !== actionFilter) return false;
-      if (q) {
+      if (!query.empty) {
         // Example keywords are in the haystack on purpose: the cluster labels are
         // codes ("C. hyros", "P4. Biên lợi nhuận"), so searching the actual
         // keyword is how you find the row you mean.
-        const hay = `${r.country} ${r.countryCode} ${r.category} ${r.keywordCluster} ${r.exampleKeywords} ${r.actionRecommended}`.toLowerCase();
-        if (!hay.includes(q)) return false;
+        const hay = `${r.country} ${r.countryCode} ${r.category} ${r.keywordCluster} ${r.exampleKeywords} ${r.actionRecommended}`;
+        if (!matchKeywordQuery(hay, query)) return false;
       }
       return true;
     });
@@ -449,15 +450,11 @@ export function BidCapView() {
       {/* Filters */}
       {detailOpen && !isLoading && rows.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
-          <div className="relative flex-1 min-w-[180px] max-w-xs">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm country, category, cluster, keyword…"
-              className="pl-7 h-7 text-xs"
-            />
-          </div>
+          <KeywordSearchBox
+            value={search}
+            onChange={setSearch}
+            placeholder="Tìm nước / category / keyword — vd: profit -brand"
+          />
           {tiers.length > 1 && (
             <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)} className={selectCls} title="Tier">
               <option value="all">Tier: All</option>

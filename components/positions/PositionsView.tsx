@@ -1,9 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { AlertCircle, Search, X } from 'lucide-react';
+import { AlertCircle, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { Input } from '@/components/ui/input';
+import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
+import { matchKeywordQuery, parseKeywordQuery } from '@/lib/utils/keywordQuery';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { KeywordLink } from '@/components/shared/KeywordLink';
@@ -131,7 +133,7 @@ export function PositionsView() {
   }, [rows]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const query = parseKeywordQuery(search);
     const list = rows.filter((r) => {
       if (scope === 'default') {
         // Tier 2–3: Brand (mọi keyword) + top N Profit. Tier 1: chỉ hai keyword
@@ -145,7 +147,7 @@ export function PositionsView() {
       if (tierFilter !== 'all' && (r.tier || '(không tier)') !== tierFilter) return false;
       if (countryFilter !== 'all' && r.country !== countryFilter) return false;
       if (surface !== 'both' && !POSITION_WINDOWS.some((w) => r.cells[w]?.[surface])) return false;
-      if (q && !`${r.keyword} ${r.english} ${r.country}`.toLowerCase().includes(q)) return false;
+      if (!query.empty && !matchKeywordQuery(`${r.keyword} ${r.english} ${r.country}`, query)) return false;
       if (onlyTop && !brandTopFlag(r, sortWin, brandCamps)) return false;
       return true;
     });
@@ -272,10 +274,11 @@ export function PositionsView() {
         >
           🏁 Brand đã top ({topCount})
         </button>
-        <div className="relative min-w-[160px]">
-          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm keyword / nước…" className="h-7 pl-7 text-xs" />
-        </div>
+        <KeywordSearchBox
+          value={search}
+          onChange={setSearch}
+          placeholder="Tìm keyword / nước — vd: profit -calc"
+        />
         {dirty && (
           <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={reset}>
             <X className="h-3 w-3" /> Reset

@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Pin, AlertCircle, Search, X, ExternalLink, AlertTriangle, ChevronDown } from 'lucide-react';
+import { Pin, AlertCircle, X, ExternalLink, AlertTriangle, ChevronDown } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
 import { Input } from '@/components/ui/input';
+import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
+import { matchKeywordQuery, parseKeywordQuery } from '@/lib/utils/keywordQuery';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { categoryStyle, CATEGORY_ORDER } from '@/lib/utils/colors';
@@ -453,11 +455,11 @@ export function UnderbidView() {
   }, [rows]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const query = parseKeywordQuery(search);
     const out = valued.filter((r) => {
       if (!showHidden && hiddenUntil.has(r.term)) return false;
       if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
-      if (q && !r.term.toLowerCase().includes(q)) return false;
+      if (!query.empty && !matchKeywordQuery(r.term, query)) return false;
       return true;
     });
     const { kind, get } = SORT_COLS[sortKey];
@@ -541,15 +543,11 @@ export function UnderbidView() {
               })}
             </div>
           </div>
-          <div className="relative flex-1 min-w-[160px] max-w-xs">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm keyword…"
-              className="pl-7 h-7 text-xs"
-            />
-          </div>
+          <KeywordSearchBox
+            value={search}
+            onChange={setSearch}
+            placeholder="Tìm keyword — vd: profit -calc"
+          />
           <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className={selectCls} title="Category">
             <option value="all">Category: All</option>
             {categoryOptions.map((c) => (

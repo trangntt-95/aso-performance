@@ -9,7 +9,6 @@ import {
   ArrowDown,
   ArrowRight,
   ArrowUpDown,
-  Search,
 } from 'lucide-react';
 import {
   Sheet,
@@ -19,7 +18,8 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
-import { Input } from '@/components/ui/input';
+import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
+import { matchKeywordQuery, parseKeywordQuery } from '@/lib/utils/keywordQuery';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { useCategoryDetailStore } from '@/lib/store/categoryDetailStore';
 import { KeywordLink } from '@/components/shared/KeywordLink';
@@ -267,13 +267,9 @@ export function CategoryDetailSheet() {
     if (channelFilter === 'organic') rows = detail.organic;
     if (channelFilter === 'paid') rows = detail.paid;
 
-    const q = search.trim().toLowerCase();
-    if (q) {
-      rows = rows.filter(
-        (r) =>
-          r.searchTerm.toLowerCase().includes(q) ||
-          (r.english && r.english.toLowerCase().includes(q)),
-      );
+    const query = parseKeywordQuery(search);
+    if (!query.empty) {
+      rows = rows.filter((r) => matchKeywordQuery(`${r.searchTerm} ${r.english ?? ''}`, query));
     }
 
     const cmp = (a: KeywordRow, b: KeywordRow): number => {
@@ -453,15 +449,11 @@ export function CategoryDetailSheet() {
                 </div>
               </div>
 
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400 pointer-events-none" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Filter keyword…"
-                  className="pl-6 h-7 text-[12px]"
-                />
-              </div>
+              <KeywordSearchBox
+                value={search}
+                onChange={setSearch}
+                placeholder="Lọc keyword — vd: profit -calc"
+              />
 
               {tableRows.length === 0 ? (
                 <div className="text-[12px] text-slate-500 italic py-4 text-center border rounded">
