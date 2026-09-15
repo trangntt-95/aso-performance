@@ -12,9 +12,11 @@ const TITLES: Record<string, string> = {
   '/underbid': 'Underbid Keywords',
   '/overbid-camps': 'Overbid Camps',
   '/camp-health': 'Camp Health',
+  '/install-origin': 'Nguồn Install',
   '/google-ads': 'Google Ads',
   '/bid-cap': 'Bid Recommendations',
   '/paid-categories': 'By Category',
+  '/changelog': 'Change log',
   '/trends': 'Trends',
 };
 

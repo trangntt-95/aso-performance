@@ -18,16 +18,24 @@ Dữ liệu nguồn nằm ở Google Sheets. App **chỉ đọc** các tab data 
 
 | Trang | Route | Mục đích |
 |-------|-------|----------|
-| **Overview** | `/` | KPI tổng (Users · GetApp · CR · Ads Target), channel mix Organic/Paid, market performance, daily trend, top country/keyword, volume movers. Lọc đa chiều theo window / surface / country / keyword / category / khoảng ngày. |
-| **Market Health** | `/market-index` | Verdict theo từng window (L3→L90), funnel breakdown, so sánh WoW, narrative + bằng chứng data. |
-| **Dictionary** | `/categories` | Bảng tra cứu mọi keyword: category, trạng thái paid, metric theo L7/L30/L90/L365, bản dịch tiếng Anh. |
-| **Paid Coverage** | `/paid-coverage` | Keyword có traffic nhưng chưa được bid (gồm cả gap theo quốc gia). |
-| **Underbid Keywords** | `/underbid` | Keyword có nhu cầu organic thật nhưng đang bid thiếu → nên tăng bid. |
-| **Bid Recommendations** | `/bid-cap` | Bid khuyến nghị theo Country × Category, bid hiện tại, action (RAISE/HOLD/REDUCE), link camp, cảnh báo conflict bid. |
-| **Overbid Camps** | `/overbid-camps` | Campaign đang trả quá cao (CPC/CPI vượt ngưỡng) → nên giảm bid. |
+| **Overview** | `/` | KPI tổng (Users · Install · CR · Ads Target), channel mix Organic/Paid, App Store Ads vs Google Ads, market performance, daily trend, top country/keyword, volume movers, chi phí paid theo category. Lọc đa chiều theo window / surface / country / keyword / category / khoảng ngày. |
+| **Market Health** | `/market-index` | Verdict theo từng window (L3→L90), funnel breakdown, so sánh WoW, narrative + bằng chứng data; trọng số quốc gia theo doanh thu hoặc user. |
+| **Search Terms** | `/categories` | Bảng tra cứu mọi keyword × kênh: category, trạng thái paid, metric theo L7/L30/L90/L365, value/install, bản dịch; cảnh báo keyword paid đốt tiền không ra install. |
+| **Vị trí keyword** | `/positions` | Vị trí keyword theo nước qua L3→L90, mặc định Brand + top Profit ở Tier 2–3; cờ brand đã top mà vẫn đang mua. |
+| **Paid Coverage** | `/paid-coverage` | Keyword có traffic nhưng chưa được bid (gồm gap theo quốc gia) và câu tìm kiếm paid GA4 chưa có keyword riêng. |
+| **Underbid Keywords** | `/underbid` | Keyword có nhu cầu organic thật nhưng đang bid thiếu → nên tăng bid; đo impact sau khi note. |
+| **Overbid Camps** | `/overbid-camps` | Campaign đang trả quá cao (CPC/CPI vượt ngưỡng, hoặc tiêu mà 0 install) → nên giảm bid; panel brand đã top. |
+| **Camp Health** | `/camp-health` | Tiền đang chảy vào đâu: camp click mà 0 install, CTR thấp, mất hiển thị, có tiềm năng. |
+| **Nguồn Install** | `/install-origin` | Install paid truy về keyword × nước × vị trí × camp × bid. |
+| **Google Ads** | `/google-ads` | Kênh Google Ads (VND): install thật vs conversions, impression share, Quality Score, nước, search term. |
+| **Bid Recommendations** | `/bid-cap` | Bid khuyến nghị theo Country × Category × Keyword cluster, bid hiện tại, trần CPI so giá trị install, cảnh báo camp target nhiều nước lệch bid. |
+| **By Category** | `/paid-categories` | Xu hướng paid theo category qua các tháng, đọc từ tab `By categories` của sheet Shopify Ads. |
+| **Change log** | `/changelog` | Ghi lại đã đổi gì và thấy gì sau đó; mốc hiện trên daily trend. |
+
+Ngoài sidebar còn `/exec` — bản Overview chỉ đọc, nhúng cho stakeholder.
 
 ### AI Chat widget
-Nút chat nổi ở mọi trang, dùng **Vercel AI SDK + Google Gemini**. Có 9 tool đọc lại dữ liệu sheet (overview, top keywords, country breakdown, …) và nhận **context trang đang xem** để trả lời đúng phạm vi (window/country/keyword đang lọc).
+Nút chat nổi ở mọi trang, dùng **Vercel AI SDK + Google Gemini**. Có 13 tool đọc lại dữ liệu sheet (overview, top keywords, country breakdown, …) và nhận **context trang đang xem** để trả lời đúng phạm vi (window/country/keyword đang lọc).
 
 ### Tính năng khác
 - **Filter sâu + deep-link:** trạng thái Overview lưu hết vào URL query params, mỗi card có nút copy link.
@@ -111,9 +119,13 @@ vercel alias set <deployment-url> appstore-performance.vercel.app
 
 ## Apps Script (chạy nền, trong `apps-script/`)
 
-- **`daily-snapshot.gs`** — `runDailySnapshot` chạy 7am (Asia/Ho_Chi_Minh) đọc `All_L7` append vào tab `History_Daily` để dựng daily trend / install history.
+Bản gốc `Code.gs` (tracker, `runDailyFull` 9am) và `history_daily_v2.gs` (tab `History_Daily`, 7:00) nằm trong Apps Script project gắn với sheet, không có trong repo. Repo chỉ giữ các file phụ:
+
 - **`rank-alerts.gs`** — `runRankAlerts` chạy 7am quét `Country_L7` tìm keyword tụt rank paid, ghi `AlertLog` + gửi email digest.
-- **`ga4-install-snapshot.gs`** — pull paid ad-click per keyword từ GA4 (hiện **không dùng**, để dành).
+- **`history-daily-fix.gs`** — patch 2 hàm của `history_daily_v2.gs`: sửa key ngày (Date vs chuỗi) và ghi theo khối để backfill không timeout.
+- **`history-daily-country.gs`** — tab `History_Daily_Country`: số per-day theo nước cho ~11 thị trường Tier 1, chạy 7:15.
+- **`trend-dashboard.gs` + `.html`** — dialog trend trong sheet Shopify Ads, đọc tab `By categories`; trang By Category của dashboard ghép đúng logic này (có test parity).
+- **`test/`** — acceptance test cho các module logic thuần; xem `test/README.md`.
 
 ---
 

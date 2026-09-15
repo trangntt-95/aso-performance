@@ -19,7 +19,7 @@ const ALERT_CONFIG = {
   rankCheckWindow: 'L7',          // Check rank drop trong COUNTRY_L7 (week-over-week)
   emailTo: 'trangnt@firegroup.io',
   emailSubjectPrefix: '⚠️ ASO Rank Alert',
-  dashboardUrl: 'https://aso-performance.vercel.app',
+  dashboardUrl: 'https://appstore-performance.vercel.app',
   alertLogTab: 'AlertLog',
   // Đổi 2 hàm này nếu naming tab khác (vd: 'All_L7' vs 'ALL_L7')
   allTabName: function (w) { return 'ALL_' + w; },

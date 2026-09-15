@@ -1524,16 +1524,3 @@ export function keywordTableForRange(
     }))
     .sort((a, b) => b.users - a.users);
 }
-
-export function topP0Actions(actions: ActionQueueRow[], limit = 50): ActionQueueRow[] {
-  return [...actions]
-    .filter((a) => a.priority === 'P0' || a.priority === 'P1')
-    .filter((a) => !EXCLUDED_COUNTRIES.has(a.country))
-    .sort((a, b) => {
-      const pa = a.priority === 'P0' ? 0 : 1;
-      const pb = b.priority === 'P0' ? 0 : 1;
-      if (pa !== pb) return pa - pb;
-      return (b.score ?? 0) - (a.score ?? 0);
-    })
-    .slice(0, limit);
-}

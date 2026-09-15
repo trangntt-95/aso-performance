@@ -21,6 +21,9 @@ const PAGE_BY_PATH: Record<string, string> = {
   '/camp-health': 'Camp Health',
   '/google-ads': 'Google Ads',
   '/bid-cap': 'Bid Recommendations',
+  '/install-origin': 'Nguồn Install',
+  '/paid-categories': 'By Category',
+  '/changelog': 'Change log',
 };
 
 interface MessagePart {
