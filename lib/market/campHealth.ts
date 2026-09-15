@@ -19,7 +19,7 @@ export type HealthBucket =
   | 'paused' // listed in Paused_camp → genuinely switched off
   | 'idle' // spent last period, nothing now, but NOT in Paused_camp → check
   | 'silent' // in Camp_Links / Master, not paused, yet NO row in the export window → never shown; forgotten or bid too low
-  | 'pricey' // converting, but CPI well above the median
+  | 'pricey' // converting, but CPI above the allowed ceiling (NPI×90%; median when no cap)
   | 'rising' // impressions AND installs both up vs the prior period → push it
   | 'scale' // cheap CPI with steady installs → room to push
   | 'ok';
@@ -119,6 +119,57 @@ export interface CampHealthOptions {
    * sat in Camp_Links and Master for a month with no trace anywhere).
    */
   knownCamps?: string[];
+  /**
+   * Trần CPI cho phép của một camp — NPI × 90% trung bình trên các nước camp
+   * target ('Max bid cap' qua Geo Camp_Links), cùng hàm Overbid dùng
+   * (buildCampBenchmark). Có nó thì 'pricey' nghĩa là "CPI cao hơn giá trị một
+   * install", không phải "cao hơn trung vị tài khoản" — trung vị là thước
+   * tương đối, không nói gì về lời lỗ; và hai bảng phải gọi cùng một camp là
+   * đắt hay rẻ giống nhau. Không có thì lùi về trung vị như cũ.
+   */
+  capOf?: (camp: string) => number | null;
+}
+
+/**
+ * 'pricey': CPI cao hơn trần cho phép. Trần = NPI × 90% trên các nước camp
+ * target khi có (cùng mốc Overbid); không có thì 1,5 lần trung vị tài khoản
+ * như trước, và câu giải thích nói rõ đang so với cái gì.
+ */
+function priceyCheck(
+  cur: HealthWindow,
+  cap: number | null,
+  medianCpi: number | null,
+): { atRisk: number; reason: string } | null {
+  if (cur.cpi === null) return null;
+  if (cap !== null && cap > 0) {
+    if (cur.cpi <= cap) return null;
+    const atRisk = Math.max(0, cur.spend - cur.installs * cap);
+    return {
+      atRisk,
+      reason: `CPI $${cur.cpi.toFixed(2)} cao hơn trần cho phép $${cap.toFixed(2)} (NPI × 90% các nước camp target, +${Math.round((cur.cpi / cap - 1) * 100)}%) — mỗi install đang mua đắt hơn giá trị. Kéo về trần tiết kiệm ~$${Math.round(atRisk)}.`,
+    };
+  }
+  if (medianCpi !== null && cur.cpi > medianCpi * 1.5) {
+    const atRisk = Math.max(0, cur.spend - cur.installs * medianCpi);
+    return {
+      atRisk,
+      reason: `CPI $${cur.cpi.toFixed(2)} — gấp ${(cur.cpi / medianCpi).toFixed(1)}× mức trung vị $${medianCpi.toFixed(2)} (không có trần trong Max bid cap cho camp này). Kéo về trung vị tiết kiệm ~$${Math.round(atRisk)}.`,
+    };
+  }
+  return null;
+}
+
+/** 'scale': CPI dưới nửa trần (hoặc dưới trung vị khi không có trần), từ 2 install. */
+function scaleCheck(cur: HealthWindow, cap: number | null, medianCpi: number | null): string | null {
+  if (cur.cpi === null || cur.installs < 2) return null;
+  if (cap !== null && cap > 0) {
+    if (cur.cpi > cap * 0.5) return null;
+    return `CPI $${cur.cpi.toFixed(2)} dưới nửa trần cho phép $${cap.toFixed(2)}, ${cur.installs} install đều. Còn dư địa tăng bid / nới ngân sách.`;
+  }
+  if (medianCpi !== null && cur.cpi <= medianCpi) {
+    return `CPI $${cur.cpi.toFixed(2)} rẻ hơn trung vị, ${cur.installs} install đều. Còn dư địa tăng bid / nới ngân sách.`;
+  }
+  return null;
 }
 
 export function analyseCampHealth(
@@ -251,19 +302,22 @@ export function analyseCampHealth(
       atRisk = cur.spend;
       const spendUp = prev.spend > 0 && cur.spend > prev.spend;
       reason = `Hiển thị/ngày rơi ${Math.round(impDelta * 100)}% (${Math.round(prev.impPerDay)}→${Math.round(cur.impPerDay)})${spendUp ? ' TRONG KHI tiền tăng — đang bị đẩy giá trong đấu giá' : ''}.`;
+    } else if (priceyCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi)) {
+      // Đứng TRƯỚC 'rising' (15/09/2026): camp đang lên mà mỗi install mua đắt
+      // hơn giá trị thì lời khuyên "nới ngân sách" là sai chiều — Overbid đỏ
+      // camp ES đúng lúc Camp Health bảo nó có tiềm năng.
+      const pc = priceyCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi)!;
+      bucket = 'pricey';
+      atRisk = pc.atRisk;
+      reason = pc.reason + (rising ? ` Hiển thị/ngày +${Math.round((impDelta ?? 0) * 100)}% và install ${prev.installs}→${cur.installs} — đang lên, nhưng siết bid trước khi nới ngân sách.` : '');
     } else if (rising) {
       bucket = 'rising';
       atRisk = 0;
       reason = `Hiển thị/ngày +${Math.round((impDelta ?? 0) * 100)}% và install ${prev.installs}→${cur.installs} so với kỳ trước. Đang lên — đáng nới ngân sách.`;
-    } else if (medianCpi !== null && cur.cpi !== null && cur.cpi > medianCpi * 1.5) {
-      bucket = 'pricey';
-      // Only the excess over the median is really "at risk".
-      atRisk = Math.max(0, cur.spend - cur.installs * medianCpi);
-      reason = `CPI $${cur.cpi.toFixed(2)} — gấp ${(cur.cpi / medianCpi).toFixed(1)}× mức trung vị $${medianCpi.toFixed(2)}. Kéo về trung vị sẽ tiết kiệm ~$${Math.round(atRisk)}.`;
-    } else if (medianCpi !== null && cur.cpi !== null && cur.cpi <= medianCpi && cur.installs >= 2) {
+    } else if (scaleCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi)) {
       bucket = 'scale';
       atRisk = 0;
-      reason = `CPI $${cur.cpi.toFixed(2)} rẻ hơn trung vị, ${cur.installs} install đều. Còn dư địa tăng bid / nới ngân sách.`;
+      reason = scaleCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi)!;
     } else {
       bucket = 'ok';
       atRisk = 0;
@@ -393,13 +447,14 @@ function analyseFromTotals(
       bucket = 'wasted-imp';
       atRisk = cur.spend;
       reason = `${Math.round(cur.impressions).toLocaleString()} lượt hiển thị nhưng chỉ ${cur.clicks} click (CTR ${((cur.ctr ?? 0) * 100).toFixed(2)}%). Keyword/creative lệch nhu cầu.`;
-    } else if (medianCpi !== null && cur.cpi !== null && cur.cpi > medianCpi * 1.5) {
+    } else if (priceyCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi)) {
+      const pc = priceyCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi)!;
       bucket = 'pricey';
-      atRisk = Math.max(0, cur.spend - cur.installs * medianCpi);
-      reason = `CPI $${cur.cpi.toFixed(2)} — gấp ${(cur.cpi / medianCpi).toFixed(1)}× trung vị $${medianCpi.toFixed(2)}. Kéo về trung vị tiết kiệm ~$${Math.round(atRisk)}.`;
-    } else if (medianCpi !== null && cur.cpi !== null && cur.cpi <= medianCpi && cur.installs >= 2) {
+      atRisk = pc.atRisk;
+      reason = pc.reason;
+    } else if (scaleCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi)) {
       bucket = 'scale';
-      reason = `CPI $${cur.cpi.toFixed(2)} rẻ hơn trung vị, ${cur.installs} install. Còn dư địa nới ngân sách.`;
+      reason = scaleCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi)!;
     } else {
       bucket = 'ok';
       reason = `Không thấy vấn đề rõ trong khoảng${range}.`;
@@ -486,7 +541,7 @@ export const BUCKET_META: Record<
   pricey: {
     label: '💸 CPI cao', short: 'CPI cao',
     tone: 'warn',
-    help: 'CPI cao hơn 1,5× mức trung vị. Cảnh báo: camp ở đây thường chỉ có 1–2 install, mà CPI tính từ 1 install là nhiễu — dòng nào có dấu ? thì đọc tham khảo thôi.',
+    help: 'Có install nhưng CPI cao hơn trần cho phép — NPI × 90% trung bình trên các nước camp target trong Max bid cap, cùng mốc Overbid dùng. Mỗi install mua về đắt hơn giá trị của nó. Camp không có trần thì so với 1,5 lần trung vị tài khoản, và lời giải thích ghi rõ.',
   },
   rising: {
     label: '📈 Đang lên', short: 'Đang lên',
@@ -496,7 +551,7 @@ export const BUCKET_META: Record<
   scale: {
     label: '🚀 CPI rẻ', short: 'CPI rẻ',
     tone: 'good',
-    help: 'CPI rẻ hơn trung vị và có ít nhất 2 install. Đây là chỗ đáng đổ thêm tiền.',
+    help: 'CPI dưới nửa trần cho phép (hoặc dưới trung vị khi camp không có trần) và từ 2 install — còn dư địa tăng bid hoặc nới ngân sách.',
   },
   ok: {
     label: '✓ Ổn', short: 'Ổn',

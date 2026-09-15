@@ -39,10 +39,9 @@ const money = (n: number | null): string =>
 const HIDE_DAYS = 5;
 const DAY_MS = 86_400_000;
 
-// Kỳ chấm điểm, chọn được như Camp Health. 30 là mặc định vì hai ngưỡng đốt
-// tiền ($30 và 6 click không install) được đặt cho 30 ngày; đổi kỳ thì ngưỡng
-// vẫn là số tuyệt đối, và bảng nói ra điều đó thay vì để người đọc tưởng nó
-// tự co theo kỳ.
+// Kỳ chấm điểm, chọn được như Camp Health. Mọi luật ở đây là tỷ lệ (CPC, CPI so
+// mức cho phép) nên đổi kỳ không đổi nghĩa ngưỡng; chỉ ngưỡng click tối thiểu
+// (minClicks) là số tuyệt đối, và kỳ ngắn thì nhiều camp rơi vào low-clicks hơn.
 const WINDOWS = [7, 14, 30, 60, 90] as const;
 const DEFAULT_WINDOW = 30;
 
@@ -354,15 +353,13 @@ export function OverbidView() {
         <Flame className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
         <div>
           <span className="mb-1 block">
-            <b>Hai loại cảnh báo.</b> (1) <b>Vượt mốc</b>: CPC vượt bid cho phép, hoặc CPI vượt CPI
-            cho phép. (2) <b>Đốt tiền không ra install</b>: tiêu từ <b>$30</b> trở lên <b>hoặc</b> từ <b>6 click</b>
-            trở lên mà chưa có
-            install nào — luật tuyệt đối, không cần đủ click, vì camp 0 install thì CPI không tồn
-            tại (chia cho 0) nên nó lọt qua mọi luật so tỷ lệ và trước đây hiện “ok”. 6 click
-            không install nghĩa là CR đang dưới 1/6 ≈ 16,7%. Bắt bằng click chứ không đợi đủ tiền:
-            camp bid thấp ăn được hàng chục click mà chưa tới $30, và vẫn là camp đang hỏng.
-            Tất cả tính trên kỳ đang chọn (mặc định <b>30 ngày gần nhất</b>, neo vào ngày mới nhất
-            của export), cộng từ export theo ngày.
+            <b>Một câu hỏi duy nhất:</b> camp có đang <b>trả đắt hơn mức cho phép</b> không — CPC vượt
+            bid cho phép, hoặc CPI vượt trần CPI. Camp <b>tiêu tiền mà 0 install</b> không còn nằm ở
+            đây (từ 15/09/2026): đó là bucket <b>Đốt tiền</b> của <b>Camp Health</b>, bắt sớm hơn (từ 2
+            click) và không cần mốc bid. Hai trang từng chồng nhau: 20/21 camp overbid cũ đều là camp
+            0 install mà Camp Health đã cờ. Cùng một mốc &quot;cho phép&quot; giờ dùng chung cho Overbid,
+            bucket CPI đắt của Camp Health và trần bid ở Underbid. Tất cả tính trên kỳ đang chọn (mặc
+            định <b>30 ngày gần nhất</b>, neo vào ngày mới nhất của export), cộng từ export theo ngày.
           </span>
           <b>Camp bị overbid</b> — camp trong <code className="text-[10px]">Shopify_daily</code> có{' '}
           <b>CPC thực tế (Spend/Clicks)</b> vượt <b>bid cho phép</b> (<code className="text-[10px]">Bid Rec ⭐</code>)
@@ -426,14 +423,6 @@ export function OverbidView() {
                 </option>
               ))}
             </select>
-          )}
-          {fromDaily && windowDays !== DEFAULT_WINDOW && (
-            <span
-              className="text-[11px] text-amber-700"
-              title="Luật đốt tiền dùng số tuyệt đối: tiêu từ $30 hoặc từ 6 click mà 0 install. Hai ngưỡng này được đặt cho 30 ngày và không co theo kỳ — kỳ 7 ngày sẽ bắt ít camp hơn, kỳ 90 ngày bắt nhiều hơn, cùng một camp."
-            >
-              ⚠ ngưỡng $30 / 6 click là số tuyệt đối, đặt cho 30 ngày
-            </span>
           )}
         </div>
       )}

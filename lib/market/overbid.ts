@@ -87,29 +87,15 @@ export interface OverbidRow {
 }
 
 export interface OverbidParams {
-  /** Ignore camps with fewer clicks (CPC from 1–2 clicks is noise). Default 5. */
+  /** Ignore camps with fewer clicks (CPC from 1–2 clicks is noise). Default 5.
+   *  Camp 0 install không còn được chấm ở đây (15/09/2026): đó là việc của
+   *  Camp Health (bucket đốt tiền, bắt từ 2 click). Bảng này chỉ còn một câu
+   *  hỏi — trả đắt hơn mức cho phép hay không. */
   minClicks?: number;
   /** Flag only when CPC exceeds the allowed bid by > this %. Default 0. */
   cpcTolerancePct?: number;
   /** Flag only when CPI exceeds the allowed CPI by > this %. Default 0. */
   cpiTolerancePct?: number;
-  /**
-   * Tiêu từ ngần này trở lên mà KHÔNG ra install nào thì báo, bất kể mốc bid.
-   *
-   * Luật tuyệt đối, không phải luật tỷ lệ: camp 0 install không có CPI để so
-   * (chia cho 0), nên nó lọt qua cả hai chiều cũ và hiện 'ok' — đúng camp tệ
-   * nhất lại là camp bảng báo bình thường. Mặc định $30.
-   */
-  noInstallSpend?: number;
-  /**
-   * Từng này click mà KHÔNG ra install nào thì báo. Mặc định 6.
-   *
-   * 6 click không install nghĩa là CR đang dưới 1/6 ≈ 16,7% — dưới mức đó thì
-   * traffic đang vào nhưng không đổi thành gì. Bắt bằng click chứ không đợi đủ
-   * tiền: camp bid thấp có thể ăn hàng chục click mà chưa tới $30, và vẫn là
-   * camp đang hỏng.
-   */
-  noInstallClicks?: number;
 }
 
 // Camp-name category token → 'Max bid cap' category taxonomy.
@@ -155,6 +141,139 @@ function avg(cells: Cell[], pick: (c: Cell) => number): number {
   return vals.reduce((s, v) => s + v, 0) / vals.length;
 }
 
+export interface CampBenchmark {
+  /** 'Max bid cap' category the camp name maps to; null when it can't be read. */
+  category: string | null;
+  /** Geo of the camp per Camp_Links, resolved through the name resolver. */
+  geo: CampGeo | undefined;
+  /** Allowed bid — mean Bid Rec ⭐ over the camp's target cells. */
+  targetBid: number | null;
+  /** Allowed CPI — mean NPI×90% (trần sheet) over the same cells. */
+  targetCpi: number | null;
+  countries: string[];
+  matchLevel: 'country' | 'category';
+  countryLabel: string;
+}
+
+/**
+ * Mốc "cho phép" của một camp: bid và CPI trần, lấy trên đúng các nước camp
+ * target theo Geo trong Camp_Links, từ các ô Country × Category của 'Max bid
+ * cap'.
+ *
+ * Tách ra làm hàm dùng chung (15/09/2026) vì Camp Health cần cùng một mốc:
+ * trước đó nó gọi camp là "đắt" khi CPI trên 1,5 lần trung vị tài khoản, còn
+ * Overbid so với trần theo giá trị install — cùng một camp CPI $31 ở Mỹ bị một
+ * bảng cờ và bảng kia bảo ổn. Một thước cho cả hai.
+ */
+export function buildCampBenchmark(
+  bidCap: BidCapRow[],
+  campLinks: CampLinkRow[],
+): (camp: string) => CampBenchmark {
+  const linkResolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+
+  // Bid-cap cells grouped by category, ONE entry per country: cluster rows are
+  // collapsed first so a country counts once no matter how many clusters it has.
+  // A country whose every cluster is marked "Cắt / Pause" carries no bid and no
+  // cap; it stays in the list but contributes nothing, because avg() skips
+  // non-positive values — that keeps a market we've stopped buying from dragging
+  // the allowed bid down and flagging live camps against a bar nobody bids into.
+  const cellsByCat = new Map<string, Cell[]>();
+  bidCapCellsByCategory(aggregateBidCapCells(bidCap)).forEach((cells, cat) => {
+    cellsByCat.set(
+      cat,
+      cells.map((c) => ({ country: c.country, bid: c.bid, cpi: c.cpiCap })),
+    );
+  });
+  // Same cells minus the markets the account never advertises in. This is the
+  // benchmark for camps that DON'T name their countries (blank Geo, "all", or
+  // an exclude list): they run everywhere except the account-level negative geo,
+  // so the never-targeted markets must not sit in their average. They're the
+  // cheap ones, so leaving them in dragged the allowed bid down and flagged
+  // camps as overbid against a bar they were never bidding into.
+  // A camp that DOES name its countries keeps the full list — an explicit Geo
+  // wins over the account default (Trang's rule: "nói rõ geo thì target đúng
+  // các nước đó").
+  const targetableByCat = new Map<string, Cell[]>();
+  cellsByCat.forEach((cells, cat) => {
+    targetableByCat.set(cat, cells.filter((c) => !isNeverTargeted(c.country)));
+  });
+
+  // Camp_Links keeps un-annotated names, so key the geo lookup by the
+  // note-stripped name and query with the same. Re-key the geo index (first
+  // non-unknown geo wins, mirroring buildCampGeoIndex).
+  const geoIndexRaw = buildCampGeoIndex(campLinks);
+  const geoIndex = new Map<string, CampGeo>();
+  geoIndexRaw.forEach((geo, name) => {
+    const key = normalizeCampName(name);
+    const existing = geoIndex.get(key);
+    if (!existing || (existing.mode === 'unknown' && geo.mode !== 'unknown')) {
+      geoIndex.set(key, geo);
+    }
+  });
+
+  return (camp: string): CampBenchmark => {
+    const campKey = linkResolver.resolve(camp) ?? normalizeCampName(camp);
+    const geo = geoIndex.get(campKey);
+    const category = campCategory(camp);
+    const none: CampBenchmark = {
+      category,
+      geo,
+      targetBid: null,
+      targetCpi: null,
+      countries: [],
+      matchLevel: 'category',
+      countryLabel: category ? `general · avg ${category}` : 'không rõ category',
+    };
+    if (!category) return none;
+    const catCells = cellsByCat.get(category);
+    if (!catCells || catCells.length === 0) return none;
+
+    // Resolve target cells from Camp_Links Geo; blank/missing geo = general.
+    // General = every country in the category EXCEPT the account-level negative
+    // geo, which is what a blank Geo cell actually means.
+    const generalCells = targetableByCat.get(category) ?? catCells;
+    let targetCells: Cell[] = generalCells;
+    let matchLevel: 'country' | 'category' = 'category';
+    let countryLabel = `general · avg ${category} (trừ nước không target)`;
+    let countries: string[] = [];
+
+    if (geo && geo.mode === 'include' && geo.countries.length > 0) {
+      // Explicit Geo wins over the account default — compare against exactly
+      // the countries named, even if one of them is normally excluded.
+      const set = new Set(geo.countries);
+      const picked = catCells.filter((x) => set.has(x.country));
+      if (picked.length > 0) {
+        targetCells = picked;
+        matchLevel = 'country';
+        countries = picked.map((x) => x.country);
+        countryLabel = countries.join(', ');
+      }
+    } else if (geo && geo.mode === 'exclude' && geo.countries.length > 0) {
+      // The camp's own exclusions stack ON TOP of the account-level ones.
+      const set = new Set(geo.countries);
+      const picked = generalCells.filter((x) => !set.has(x.country));
+      if (picked.length > 0) {
+        targetCells = picked;
+        matchLevel = 'country';
+        countries = picked.map((x) => x.country);
+        countryLabel = `trừ ${geo.countries.join(', ')}`;
+      }
+    }
+    // mode 'all' / 'unknown' / not-in-Camp_Links → general (category avg minus
+    // the never-targeted markets).
+
+    return {
+      category,
+      geo,
+      targetBid: avg(targetCells, (x) => x.bid) || null,
+      targetCpi: avg(targetCells, (x) => x.cpi) || null,
+      countries,
+      matchLevel,
+      countryLabel,
+    };
+  };
+}
+
 /**
  * Assess EVERY campaign in Shopify_daily and label it with a verdict — the
  * overbid ones plus the camps that don't (or no longer) trip the rule. The
@@ -173,8 +292,6 @@ export function assessCamps(
   netValueByCountry: Map<string, NetValueAgg> = new Map(),
 ): OverbidRow[] {
   const minClicks = params.minClicks ?? 5;
-  const noInstallSpend = params.noInstallSpend ?? 30;
-  const noInstallClicks = params.noInstallClicks ?? 6;
   // Camps in the 'Paused_camp' tab are no longer running — drop them so the
   // table only lists live camps whose bid you can still act on. Resolve on the
   // base name so a paused camp renamed with a "(CPI …)" tag or a free-text note
@@ -221,45 +338,8 @@ export function assessCamps(
   const cpcTol = (params.cpcTolerancePct ?? 0) / 100;
   const cpiTol = (params.cpiTolerancePct ?? 0) / 100;
 
-  // Bid-cap cells grouped by category, ONE entry per country: cluster rows are
-  // collapsed first so a country counts once no matter how many clusters it has.
-  // A country whose every cluster is marked "Cắt / Pause" carries no bid and no
-  // cap; it stays in the list but contributes nothing, because avg() skips
-  // non-positive values — that keeps a market we've stopped buying from dragging
-  // the allowed bid down and flagging live camps against a bar nobody bids into.
-  const cellsByCat = new Map<string, Cell[]>();
-  bidCapCellsByCategory(aggregateBidCapCells(bidCap)).forEach((cells, cat) => {
-    cellsByCat.set(
-      cat,
-      cells.map((c) => ({ country: c.country, bid: c.bid, cpi: c.cpiCap })),
-    );
-  });
-  // Same cells minus the markets the account never advertises in. This is the
-  // benchmark for camps that DON'T name their countries (blank Geo, "all", or
-  // an exclude list): they run everywhere except the account-level negative geo,
-  // so the never-targeted markets must not sit in their average. They're the
-  // cheap ones, so leaving them in dragged the allowed bid down and flagged
-  // camps as overbid against a bar they were never bidding into.
-  // A camp that DOES name its countries keeps the full list — an explicit Geo
-  // wins over the account default (Trang's rule: "nói rõ geo thì target đúng
-  // các nước đó").
-  const targetableByCat = new Map<string, Cell[]>();
-  cellsByCat.forEach((cells, cat) => {
-    targetableByCat.set(cat, cells.filter((c) => !isNeverTargeted(c.country)));
-  });
-
-  // Camp_Links keeps un-annotated names, so key both the geo and URL lookups by
-  // the note-stripped name and query with the same. Re-key the geo index
-  // (first non-unknown geo wins, mirroring buildCampGeoIndex).
-  const geoIndexRaw = buildCampGeoIndex(campLinks);
-  const geoIndex = new Map<string, CampGeo>();
-  geoIndexRaw.forEach((geo, name) => {
-    const key = normalizeCampName(name);
-    const existing = geoIndex.get(key);
-    if (!existing || (existing.mode === 'unknown' && geo.mode !== 'unknown')) {
-      geoIndex.set(key, geo);
-    }
-  });
+  // Mốc cho phép theo camp — cùng hàm Camp Health dùng.
+  const benchmarkOf = buildCampBenchmark(bidCap, campLinks);
   const campUrl = new Map<string, string>();
   for (const c of campLinks) {
     if (!c.camp || !c.url) continue;
@@ -324,7 +404,8 @@ export function assessCamps(
     // Geo của camp (Camp_Links) — dùng cho cả mốc bid (dưới) và giá trị install
     // (ở đây), kể cả với camp bị chấm sớm (0 install / paused) để cột giá trị
     // vẫn nói đúng thị trường của camp thay vì "mọi nước".
-    const geo = geoIndex.get(campKey);
+    const bm = benchmarkOf(c.name);
+    const geo = bm.geo;
     const geoValue =
       geo && geo.mode === 'include' && geo.countries.length > 0
         ? sumCountryNetValue(netValueByCountry, geo.countries, 'include')
@@ -373,90 +454,24 @@ export function assessCamps(
       continue;
     }
 
-    // Tiêu đủ nhiều mà không ra install nào.
-    //
-    // Đứng TRƯỚC cửa low-clicks là chủ đích: camp 0 install thường cũng ít
-    // click, để sau thì nó thoát ra bằng cửa đó và không ai thấy. Ngưỡng ở đây
-    // là TIỀN — tiền đã tiêu thì không cần đủ click mới đáng tin.
-    const burntMoney = c.installs === 0 && c.spend >= noInstallSpend;
-    const burntClicks = c.installs === 0 && c.clicks >= noInstallClicks;
-    if (burntMoney || burntClicks) {
-      const row = stub('overbid', campCategory(c.name) ?? 'Unknown');
-      const reasons: string[] = [];
-      if (burntMoney) reasons.push(`Tiêu $${c.spend.toFixed(2)}, chưa ra install nào`);
-      if (burntClicks) {
-        // Nói luôn CR trần: 6 click 0 install thì CR chắc chắn dưới 1/6.
-        const ceiling = (100 / c.clicks).toFixed(1);
-        reasons.push(`${c.clicks} click, chưa ra install nào (CR < ${ceiling}%)`);
-      }
-      row.reasons = reasons;
-      // Xếp hạng theo tiền đã đốt: không có % vượt để so, mà tiền thì so được
-      // trực tiếp với các camp vượt mốc khác. Camp bị bắt vì click mà tiêu ít
-      // thì tự nhiên nằm dưới — đúng thứ tự đáng xử lý.
-      row.score = c.spend;
-      out.push(row);
-      continue;
-    }
-
     if (c.clicks < minClicks) {
       out.push(stub('low-clicks', campCategory(c.name) ?? 'Unknown')); // too little data to trust CPC
       continue;
     }
 
-    const category = campCategory(c.name);
+    const category = bm.category;
     if (!category) {
       out.push(stub('no-benchmark', 'Unknown')); // can't map to a bid-cap category
       continue;
     }
-    const catCells = cellsByCat.get(category);
-    if (!catCells || catCells.length === 0) {
+    const { targetBid, targetCpi, countries, matchLevel, countryLabel } = bm;
+    if (targetBid === null && targetCpi === null) {
       out.push(stub('no-benchmark', category)); // no recommendation to compare
       continue;
     }
 
     const cpc = c.clicks > 0 ? c.spend / c.clicks : null;
     const cpi = c.installs > 0 ? c.spend / c.installs : null;
-
-    // Resolve target cells from Camp_Links Geo; blank/missing geo = general.
-    // General = every country in the category EXCEPT the account-level negative
-    // geo, which is what a blank Geo cell actually means.
-    const generalCells = targetableByCat.get(category) ?? catCells;
-    let targetCells: Cell[] = generalCells;
-    let matchLevel: 'country' | 'category' = 'category';
-    let countryLabel = `general · avg ${category} (trừ nước không target)`;
-    let countries: string[] = [];
-
-    if (geo && geo.mode === 'include' && geo.countries.length > 0) {
-      // Explicit Geo wins over the account default — compare against exactly
-      // the countries named, even if one of them is normally excluded.
-      const set = new Set(geo.countries);
-      const picked = catCells.filter((x) => set.has(x.country));
-      if (picked.length > 0) {
-        targetCells = picked;
-        matchLevel = 'country';
-        countries = picked.map((x) => x.country);
-        countryLabel = countries.join(', ');
-      }
-    } else if (geo && geo.mode === 'exclude' && geo.countries.length > 0) {
-      // The camp's own exclusions stack ON TOP of the account-level ones.
-      const set = new Set(geo.countries);
-      const picked = generalCells.filter((x) => !set.has(x.country));
-      if (picked.length > 0) {
-        targetCells = picked;
-        matchLevel = 'country';
-        countries = picked.map((x) => x.country);
-        countryLabel = `trừ ${geo.countries.join(', ')}`;
-      }
-    }
-    // mode 'all' / 'unknown' / not-in-Camp_Links → general (category avg minus
-    // the never-targeted markets).
-
-    const targetBid = avg(targetCells, (x) => x.bid) || null;
-    const targetCpi = avg(targetCells, (x) => x.cpi) || null;
-    if (targetBid === null && targetCpi === null) {
-      out.push(stub('no-benchmark', category));
-      continue;
-    }
 
     const cpcOver = cpc !== null && targetBid !== null && cpc > targetBid * (1 + cpcTol);
     const cpiOver = cpi !== null && targetCpi !== null && cpi > targetCpi * (1 + cpiTol);

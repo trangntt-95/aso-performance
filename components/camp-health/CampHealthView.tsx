@@ -17,6 +17,7 @@ import {
   type HealthBucket,
 } from '@/lib/market/campHealth';
 import { buildCampUrlIndex } from '@/lib/sheets/campUrl';
+import { buildCampBenchmark } from '@/lib/market/overbid';
 import { resolveCampCategory, CANONICAL_CATEGORIES } from '@/lib/market/categoryTaxonomy';
 import {
   CAMP_NOTE_SCOPE,
@@ -170,10 +171,17 @@ export function CampHealthView() {
     return { get: (camp: string) => resolveCampCategory(raw.get(strip(camp)) ?? '', camp) };
   }, [data?.campLinks, data?.masterKwLookup]);
 
+  // Trần CPI cho phép theo camp — cùng hàm Overbid dùng, để "CPI đắt" ở đây và
+  // "vượt CPI cho phép" ở Overbid là một thước (15/09/2026).
+  const benchmarkOf = useMemo(
+    () => buildCampBenchmark(data?.bidCap ?? [], data?.campLinks ?? []),
+    [data?.bidCap, data?.campLinks],
+  );
   const result = useMemo(
     () =>
       analyseCampHealth(data?.shopifyDaily ?? [], {
         windowDays,
+        capOf: (camp) => benchmarkOf(camp).targetCpi,
         canonicalNames: (data?.campLinks ?? []).map((c) => c.camp),
         pausedCamps: (data?.pausedKw ?? []).map((r) => r.camp),
         // Fallback when the export has no date column: campaign totals still
@@ -193,6 +201,7 @@ export function CampHealthView() {
       data?.shopifyDateRange,
       data?.masterKwLookup,
       windowDays,
+      benchmarkOf,
     ],
   );
   const campUrl = useMemo(() => buildCampUrlIndex(data?.campLinks ?? []), [data?.campLinks]);
@@ -362,7 +371,9 @@ export function CampHealthView() {
               có cột ngày.
             </>
           )}{' '}
-          Bảng sắp theo <b>số tiền đang gặp vấn đề</b>, không phải theo tổng chi.
+          Bảng sắp theo <b>số tiền đang gặp vấn đề</b>, không phải theo tổng chi. Nhóm <b>CPI đắt</b>{' '}
+          so với <b>trần cho phép của từng camp</b> (NPI × 90% trên các nước camp target, tab Max bid cap) —
+          cùng mốc Overbid dùng; camp không có trần thì so 1,5 lần trung vị.
           <div className="mt-1">
             Tổng chi kỳ này <b>${formatNumber(Math.round(result.totalSpend))}</b> · CPI trung vị{' '}
             <b>{money(result.medianCpi)}</b> ·{' '}
@@ -720,7 +731,7 @@ export function CampHealthView() {
           </table>
           <div className="border-t px-3 py-2 text-[10px] text-slate-400">
             Mỗi camp chỉ vào <b>một nhóm</b> — vấn đề tốn tiền nhất thắng. Cột <b>$ có vấn đề</b>: nhóm đốt tiền / hiển
-            thị phí / mất hiển thị tính bằng toàn bộ chi kỳ này; nhóm CPI cao chỉ tính phần vượt so với CPI trung vị.
+            thị phí / mất hiển thị tính bằng toàn bộ chi kỳ này; nhóm CPI đắt chỉ tính phần vượt so với trần cho phép của camp (NPI × 90%; trung vị khi camp không có trần). Camp đang lên mà CPI vượt trần vẫn xếp vào CPI đắt, không vào Có tiềm năng.
             Camp đã ghi note tạm chuyển sang <b>✅ Đã xử lý</b> trong {HIDE_DAYS} ngày, sau đó tự quay lại{' '}
             <b>🔧 Cần xử lý</b> để bạn kiểm tra kết quả. Dấu <b>?</b> = dưới 3 install nên CPI chưa đáng tin. <b>Click tiêu đề cột để sắp xếp</b> — bấm lần nữa
             để đảo chiều; ô trống luôn nằm cuối. Tên camp bấm được để mở thẳng Shopify Ads.
