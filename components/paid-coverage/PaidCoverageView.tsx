@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { AlertCircle, Search, X } from 'lucide-react';
+import { AlertCircle, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { categoryStyle } from '@/lib/utils/colors';
 import { shouldShowTranslation } from '@/lib/utils/translation';
 import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
+import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
+import { matchKeywordQuery, parseKeywordQuery } from '@/lib/utils/keywordQuery';
 import { KeywordLink } from '@/components/shared/KeywordLink';
 import { buildOrganicDiscovery, type DiscoveredTerm } from '@/lib/market/organicDiscovery';
 import { PaidStatusBadge } from '@/components/shared/PaidStatusBadge';
@@ -388,7 +390,8 @@ export function PaidCoverageView() {
   const [sortBy, setSortBy] = useState<'users' | 'value'>('users');
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    // 'profit -calc' = chứa profit, KHÔNG chứa calc. Xem lib/utils/keywordQuery.ts.
+    const query = parseKeywordQuery(search);
     const minU = minUsers.trim() === '' ? null : Number(minUsers);
     const minI = minInstalls.trim() === '' ? null : Number(minInstalls);
     return rows
@@ -413,9 +416,8 @@ export function PaidCoverageView() {
         if (minI !== null && Number.isFinite(minI)) {
           if ((r[win]?.installs ?? 0) < minI) return false;
         }
-        if (q) {
-          const hay = `${r.keyword} ${r.english}`.toLowerCase();
-          if (!hay.includes(q)) return false;
+        if (!query.empty) {
+          if (!matchKeywordQuery(`${r.keyword} ${r.english}`, query)) return false;
         }
         return true;
       })
@@ -487,15 +489,11 @@ export function PaidCoverageView() {
       {/* Filters */}
       {!isLoading && rows.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
-          <div className="relative flex-1 min-w-[180px] max-w-xs">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm keyword hoặc bản dịch English…"
-              className="pl-7 h-7 text-xs"
-            />
-          </div>
+          <KeywordSearchBox
+            value={search}
+            onChange={setSearch}
+            placeholder="Tìm keyword / English — vd: profit -calc"
+          />
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}

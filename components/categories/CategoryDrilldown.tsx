@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, AlertCircle, Search, X } from 'lucide-react';
+import { ArrowLeft, AlertCircle, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { categoryStyle, CATEGORY_ORDER } from '@/lib/utils/colors';
 import { shouldShowTranslation, pickEnglish } from '@/lib/utils/translation';
 import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
+import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
+import { matchKeywordQuery, parseKeywordQuery } from '@/lib/utils/keywordQuery';
 import { KeywordLink } from '@/components/shared/KeywordLink';
 import { PaidStatusBadge } from '@/components/shared/PaidStatusBadge';
 import { SurfaceIcon } from '@/components/shared/SurfaceIcon';
@@ -370,7 +372,8 @@ export function CategoryDrilldown({ category }: { category?: string }) {
   }, [summaries]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    // 'profit -calc' = chứa profit, KHÔNG chứa calc. Xem lib/utils/keywordQuery.ts.
+    const query = parseKeywordQuery(search);
     const minU = minUsers.trim() === '' ? null : Number(minUsers);
     const minG = minInstall.trim() === '' ? null : Number(minInstall);
     const maxP = maxPos.trim() === '' ? null : Number(maxPos);
@@ -385,9 +388,9 @@ export function CategoryDrilldown({ category }: { category?: string }) {
       // not_in_paid INCLUDES paused (camp tắt = đang không bid) but excludes negatives.
       if (paidFilter === 'not_in_paid' && (r.inPaid || r.negative)) return false;
       if (countryFilter !== 'all' && !r.countries.includes(countryFilter)) return false;
-      if (q) {
-        const hay = `${r.searchTerm} ${(r.l7?.english ?? r.l30?.english ?? r.l90?.english ?? r.l365?.english ?? '')}`.toLowerCase();
-        if (!hay.includes(q)) return false;
+      if (!query.empty) {
+        const hay = `${r.searchTerm} ${(r.l7?.english ?? r.l30?.english ?? r.l90?.english ?? r.l365?.english ?? '')}`;
+        if (!matchKeywordQuery(hay, query)) return false;
       }
       // Numeric thresholds — pulled from the chosen metric window (L7/L30/L90/L365).
       // Row without that window is filtered out only when a numeric filter is set
@@ -499,15 +502,11 @@ export function CategoryDrilldown({ category }: { category?: string }) {
       {/* Filters */}
       {!isLoading && summaries.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
-          <div className="relative flex-1 min-w-[180px] max-w-xs">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm keyword hoặc bản dịch English…"
-              className="pl-7 h-7 text-xs"
-            />
-          </div>
+          <KeywordSearchBox
+            value={search}
+            onChange={setSearch}
+            placeholder="Tìm keyword / English — vd: profit -calc"
+          />
           {allMode && (
             <select
               value={categoryFilter}

@@ -1,12 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Users, Target, Search, Download } from 'lucide-react';
-import {
-  describeKeywordQuery,
-  matchKeywordQuery,
-  parseKeywordQuery,
-} from '@/lib/utils/keywordQuery';
+import { Users, Target, Download } from 'lucide-react';
+import { matchKeywordQuery, parseKeywordQuery } from '@/lib/utils/keywordQuery';
+import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
 import type { ContributorRow } from './aggregate';
 import { KeywordLink } from '@/components/shared/KeywordLink';
 import { formatDeltaPct, formatNumber, deltaTone } from '@/lib/utils/format';
@@ -243,7 +240,6 @@ export function TopContributors({
   // See lib/utils/keywordQuery.ts for why it is a syntax rather than a row of
   // condition builders.
   const query = useMemo(() => parseKeywordQuery(q), [q]);
-  const conditions = useMemo(() => describeKeywordQuery(query), [query]);
   const matchRows = (rows: ContributorRow[]) =>
     query.empty ? rows : rows.filter((r) => matchKeywordQuery(r.keyword, query));
   const fUsers = matchRows(users);
@@ -265,52 +261,7 @@ export function TopContributors({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-          <input
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Tìm: profit -test  ·  cách = VÀ, dấu − = loại"
-            title={
-              'Nhiều điều kiện cùng lúc:\n' +
-              '  profit calculator   → chứa CẢ HAI từ\n' +
-              '  profit -test        → chứa "profit", KHÔNG chứa "test"\n' +
-              '  "true profit"       → đúng cụm, có dấu cách\n' +
-              '  -"low bid"          → loại cả cụm\n' +
-              'Dấu ! dùng thay được cho −.'
-            }
-            className="w-full rounded-md border border-slate-200 pl-7 pr-7 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-          />
-          {q && (
-            <button
-              type="button"
-              onClick={() => setQ('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
-              title="Xóa tìm kiếm"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-        {conditions.length > 1 && (
-          <div className="flex flex-wrap items-center gap-1">
-            {conditions.map((c) => (
-              <span
-                key={(c.negated ? '-' : '+') + c.label}
-                className={
-                  c.negated
-                    ? 'rounded bg-rose-50 px-1.5 py-0.5 text-[10px] text-rose-700 ring-1 ring-rose-200'
-                    : 'rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-700'
-                }
-                title={c.negated ? 'không chứa' : 'có chứa'}
-              >
-                {c.negated ? '−' : ''}
-                {c.label}
-              </span>
-            ))}
-          </div>
-        )}
+        <KeywordSearchBox value={q} onChange={setQ} />
         <button
           type="button"
           onClick={exportCsv}

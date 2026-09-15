@@ -5,8 +5,9 @@ import { ChevronDown, Search } from 'lucide-react';
 import type { SearchTermRow } from '@/lib/sheets/types';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { formatNumber, formatDMYRange } from '@/lib/utils/format';
-import { Input } from '@/components/ui/input';
 import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
+import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
+import { matchKeywordQuery, parseKeywordQuery } from '@/lib/utils/keywordQuery';
 import { cn } from '@/lib/utils';
 
 // Query mà broad match đã bắt được nhưng chưa được bid thành keyword riêng.
@@ -59,14 +60,11 @@ export function UnbiddedSearchTerms() {
   // 50 dòng đang hiện — gõ "profit" rồi copy là phải ra đủ mọi câu chứa
   // profit, không phải 50 câu đầu.
   const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    const list = needle
-      ? rows.filter(
-          (r) =>
-            r.searchTerm.toLowerCase().includes(needle) ||
-            r.matchedKeyword.toLowerCase().includes(needle),
-        )
-      : rows;
+    // 'profit -whale' = chứa profit, KHÔNG chứa whale. Xem lib/utils/keywordQuery.ts.
+    const query = parseKeywordQuery(q);
+    const list = query.empty
+      ? rows
+      : rows.filter((r) => matchKeywordQuery(`${r.searchTerm} ${r.matchedKeyword}`, query));
     return [...list].sort((a, b) => b[sort] - a[sort]);
   }, [rows, q, sort]);
   const shown = useMemo(() => filtered.slice(0, limit), [filtered, limit]);
@@ -108,15 +106,11 @@ export function UnbiddedSearchTerms() {
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[180px] max-w-xs flex-1">
-              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Tìm câu hoặc keyword bắt được…"
-                className="h-7 pl-7 text-xs"
-              />
-            </div>
+            <KeywordSearchBox
+              value={q}
+              onChange={setQ}
+              placeholder="Tìm câu / keyword bắt được — vd: profit -whale"
+            />
             <div className="inline-flex overflow-hidden rounded-md border border-slate-200 text-[11px]">
               {SORTS.map((s, i) => (
                 <button
