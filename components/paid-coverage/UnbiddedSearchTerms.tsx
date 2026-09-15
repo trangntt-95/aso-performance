@@ -2,59 +2,66 @@
 
 import { useMemo, useState } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
-import type { SearchTermRow } from '@/lib/sheets/types';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { formatNumber, formatDMYRange } from '@/lib/utils/format';
 import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
 import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
+import { KeywordLink } from '@/components/shared/KeywordLink';
 import { matchKeywordQuery, parseKeywordQuery } from '@/lib/utils/keywordQuery';
+import {
+  buildPaidSearchTerms,
+  paidTermStat,
+  PAID_TERM_WINS,
+  PAID_TERM_WIN_LABEL,
+  type PaidSearchTerm,
+  type PaidTermWin,
+} from '@/lib/market/paidSearchTerms';
 import { cn } from '@/lib/utils';
 
-// Query mà broad match đã bắt được nhưng chưa được bid thành keyword riêng.
+// Câu người dùng gõ trên kênh paid mà mình chưa bid — nguồn GA4, tự cập nhật
+// mỗi ngày. Vì sao GA4 chứ không phải export Shopify: xem lib/market/
+// paidSearchTerms.ts. Export Shopify chỉ còn là lớp bổ sung ghép vào từng dòng
+// (impression, chi phí, keyword đã bắt được), cập nhật theo quý là đủ.
 //
 // Đứng riêng chứ không trộn vào bảng chính, vì grain khác hẳn: đây là CÂU
-// NGƯỜI TA GÕ, còn bảng trên là keyword. Cả tab lại dùng chung một khoảng
-// ngày, không có cửa sổ L7/L30/L90 nào — nhét vào bốn cột window của bảng
-// chính thì bốn cột đó thành số bịa.
-//
-// Mặc định thu lại: 2.201 dòng mở sẵn sẽ đẩy bảng chính ra khỏi màn hình, mà
-// bảng chính mới là thứ trang này tồn tại để trả lời.
+// NGƯỜI TA GÕ lọt qua broad match, còn bảng trên là keyword.
 
-type Sort = 'installs' | 'revenue' | 'impressions' | 'spend';
+type Sort = 'installs' | 'users' | 'impressions' | 'spend';
 
 const SORTS: { id: Sort; label: string; hint: string }[] = [
-  { id: 'installs', label: 'Install', hint: 'Câu đã ra install thật — bằng chứng mạnh nhất' },
-  { id: 'revenue', label: 'Doanh thu', hint: 'Câu đã ra tiền' },
-  { id: 'impressions', label: 'Hiển thị', hint: 'Nhu cầu lớn nhưng chưa chắc ra install' },
-  { id: 'spend', label: 'Chi phí', hint: 'Câu đang tiêu tiền qua broad match' },
+  { id: 'installs', label: 'Install', hint: 'Câu đã ra install thật (GA4) — bằng chứng mạnh nhất' },
+  { id: 'users', label: 'Users', hint: 'Câu có nhiều người bấm vào (GA4)' },
+  { id: 'impressions', label: 'Hiển thị', hint: 'Nhu cầu lớn nhưng chưa chắc ra install — chỉ có khi export Shopify có câu này' },
+  { id: 'spend', label: 'Chi phí', hint: 'Câu đang tiêu tiền qua broad match — chỉ có khi export Shopify có câu này' },
 ];
+
+const money = (n: number | null | undefined) => (n && n > 0 ? `$${n.toFixed(2)}` : '—');
 
 export function UnbiddedSearchTerms() {
   const { data } = useSheetData();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
+  const [win, setWin] = useState<PaidTermWin>('l30');
   const [sort, setSort] = useState<Sort>('installs');
+  const [hidePaused, setHidePaused] = useState(false);
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(50);
 
-  // Giữ tham chiếu ổn định: `?? []` tạo mảng mới mỗi lần render, nên hai
-  // useMemo bên dưới sẽ tính lại cả 2.201 dòng ở mỗi lần gõ phím.
-  const source = data?.searchTermUnbidded;
-  const rows = useMemo(() => source ?? [], [source]);
-  const range = data?.searchTermRange;
+  const report = useMemo(() => buildPaidSearchTerms(data), [data]);
+  const terms = report.terms;
+  const winRange = data?.windowDates?.[PAID_TERM_WIN_LABEL[win]];
 
   const totals = useMemo(() => {
+    let withInstall = 0;
+    let withExport = 0;
     let installs = 0;
-    let spend = 0;
-    let revenue = 0;
-    let impressions = 0;
-    for (const r of rows) {
-      installs += r.installs;
-      spend += r.spend;
-      revenue += r.revenue;
-      impressions += r.impressions;
+    for (const t of terms) {
+      const s = paidTermStat(t, win);
+      if (s.installs > 0) withInstall++;
+      installs += s.installs;
+      if (t.export) withExport++;
     }
-    return { installs, spend, revenue, impressions };
-  }, [rows]);
+    return { withInstall, withExport, installs };
+  }, [terms, win]);
 
   // Tách `filtered` khỏi `shown`: nút copy lấy CẢ nhóm đang lọc, không chỉ
   // 50 dòng đang hiện — gõ "profit" rồi copy là phải ra đủ mọi câu chứa
@@ -62,14 +69,37 @@ export function UnbiddedSearchTerms() {
   const filtered = useMemo(() => {
     // 'profit -whale' = chứa profit, KHÔNG chứa whale. Xem lib/utils/keywordQuery.ts.
     const query = parseKeywordQuery(q);
-    const list = query.empty
-      ? rows
-      : rows.filter((r) => matchKeywordQuery(`${r.searchTerm} ${r.matchedKeyword}`, query));
-    return [...list].sort((a, b) => b[sort] - a[sort]);
-  }, [rows, q, sort]);
+    const list = terms.filter((t) => {
+      if (hidePaused && t.paused) return false;
+      if (query.empty) return true;
+      const hay = `${t.term} ${t.english} ${t.export?.matchedKeywords.join(' ') ?? ''}`;
+      return matchKeywordQuery(hay, query);
+    });
+    const key = (t: PaidSearchTerm): number => {
+      const s = paidTermStat(t, win);
+      switch (sort) {
+        case 'installs':
+          return s.installs;
+        case 'users':
+          return s.users;
+        case 'impressions':
+          return t.export?.impressions ?? 0;
+        case 'spend':
+          return t.export?.spend ?? 0;
+      }
+    };
+    return [...list].sort((a, b) => {
+      const d = key(b) - key(a);
+      if (d !== 0) return d;
+      const sa = paidTermStat(a, win);
+      const sb = paidTermStat(b, win);
+      return sb.installs - sa.installs || sb.users - sa.users || a.term.localeCompare(b.term);
+    });
+  }, [terms, q, sort, win, hidePaused]);
   const shown = useMemo(() => filtered.slice(0, limit), [filtered, limit]);
 
-  if (rows.length === 0) return null;
+  if (!data || report.paidTermsTotal === 0) return null;
+  const allHandled = terms.length === 0;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
@@ -81,11 +111,11 @@ export function UnbiddedSearchTerms() {
         <Search className="h-4 w-4 shrink-0 text-indigo-600" />
         <span className="min-w-0 flex-1">
           <span className="text-sm font-semibold text-slate-900">
-            Search term chưa bid — {formatNumber(rows.length)} câu
+            Search term paid chưa bid — {formatNumber(terms.length)} câu
           </span>
           <span className="ml-2 text-[11px] text-slate-500">
-            {formatNumber(totals.installs)} install · ${formatNumber(Math.round(totals.spend))} đã
-            tiêu · ${formatNumber(Math.round(totals.revenue))} doanh thu
+            nguồn GA4 · {formatNumber(totals.withInstall)} câu có install {PAID_TERM_WIN_LABEL[win]} (
+            {formatNumber(totals.installs)} install) · {formatNumber(totals.withExport)} câu có trong export Shopify
           </span>
         </span>
         <ChevronDown
@@ -95,14 +125,21 @@ export function UnbiddedSearchTerms() {
 
       {open && (
         <div className="space-y-2 border-t border-slate-200 px-3 py-2">
+          {allHandled && (
+            <p className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] text-emerald-800">
+              Mọi câu paid GA4 ghi nhận đều đã được xử lý: {formatNumber(report.droppedInPaid)} câu đang là
+              keyword, {formatNumber(report.droppedNegative)} câu trong Negative. Bảng sẽ tự đầy lên khi có câu
+              mới lọt vào qua broad match.
+            </p>
+          )}
           <p className="text-[11px] leading-relaxed text-slate-600">
-            <b>Đây là gì:</b> câu người dùng thật sự gõ, mà camp broad match đã bắt được — nhưng
-            chưa có keyword riêng nào bid vào nó. Khác bảng trên: bảng trên là <b>keyword</b>, đây
-            là <b>câu tìm kiếm</b>.{' '}
-            <b>Dùng thế nào:</b> xếp theo <b>Install</b> để lấy câu đã chứng minh ra install rồi
-            tách thành keyword exact — đó là cách rẻ nhất để giành lại lượt hiển thị đang phải mua
-            qua broad. Xếp theo <b>Hiển thị</b> để thấy nhu cầu lớn chưa khai thác. Cột{' '}
-            <b>Keyword bắt được</b> cho biết nên tách ra khỏi camp nào.
+            <b>Đây là gì:</b> câu người dùng thật sự gõ trên App Store, quảng cáo của mình hiện ra qua
+            broad match và họ đã bấm vào — nhưng chưa có keyword riêng nào bid vào câu đó (không có
+            trong Master KW Lookup, không trong Negative). Lấy thẳng từ GA4 nên tự cập nhật mỗi ngày
+            cùng tracker. Khác bảng trên: bảng trên là <b>keyword</b>, đây là <b>câu tìm kiếm</b>.{' '}
+            <b>Dùng thế nào:</b> xếp theo <b>Install</b> để lấy câu đã chứng minh ra install rồi tách
+            thành keyword exact — cách rẻ nhất để giành lại lượt hiển thị đang phải mua qua broad.
+            Cột <b>Keyword bắt được</b> (từ export Shopify, khi có) cho biết nên tách ra khỏi camp nào.
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -111,6 +148,23 @@ export function UnbiddedSearchTerms() {
               onChange={setQ}
               placeholder="Tìm câu / keyword bắt được — vd: profit -whale"
             />
+            <div className="inline-flex overflow-hidden rounded-md border border-slate-200 text-[11px]">
+              {PAID_TERM_WINS.map((w, i) => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => setWin(w)}
+                  title={`Cửa sổ ${PAID_TERM_WIN_LABEL[w]} — số users/install/CR/vị trí lấy từ tab All_${PAID_TERM_WIN_LABEL[w]}`}
+                  className={cn(
+                    'px-2 py-0.5 font-medium transition',
+                    i > 0 && 'border-l border-slate-200',
+                    win === w ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
+                  )}
+                >
+                  {PAID_TERM_WIN_LABEL[w]}
+                </button>
+              ))}
+            </div>
             <div className="inline-flex overflow-hidden rounded-md border border-slate-200 text-[11px]">
               {SORTS.map((s, i) => (
                 <button
@@ -128,14 +182,23 @@ export function UnbiddedSearchTerms() {
                 </button>
               ))}
             </div>
+            <label className="inline-flex items-center gap-1 text-[11px] text-slate-600" title="Câu chỉ từng được bid ở camp đã tắt (Paused_camp). Ẩn đi nếu chỉ muốn câu chưa bao giờ bid.">
+              <input
+                type="checkbox"
+                checked={hidePaused}
+                onChange={(e) => setHidePaused(e.target.checked)}
+                className="h-3 w-3"
+              />
+              ẩn ⏸ từng bid
+            </label>
             <CopyKeywordsButton
-              keywords={filtered.map((r) => r.searchTerm)}
+              keywords={filtered.map((t) => t.term)}
               label="Copy câu tìm kiếm"
               className="ml-auto"
             />
             <CopyKeywordsButton
-              keywords={filtered.filter((r) => r.installs > 0).map((r) => r.searchTerm)}
-              label="Copy câu có install"
+              keywords={filtered.filter((t) => paidTermStat(t, win).installs > 0).map((t) => t.term)}
+              label={`Copy câu có install ${PAID_TERM_WIN_LABEL[win]}`}
             />
           </div>
 
@@ -144,55 +207,124 @@ export function UnbiddedSearchTerms() {
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-2 py-1 text-left font-medium">Câu tìm kiếm</th>
-                  <th className="px-2 py-1 text-left font-medium">Keyword bắt được</th>
-                  <th className="px-2 py-1 text-right font-medium">Hiển thị</th>
-                  <th className="px-2 py-1 text-right font-medium">Click</th>
-                  <th className="px-2 py-1 text-right font-medium">Install</th>
-                  <th className="px-2 py-1 text-right font-medium">Chi</th>
-                  <th className="px-2 py-1 text-right font-medium" title="Doanh thu sheet ghi cho câu này">
-                    Doanh thu
+                  <th className="px-2 py-1 text-left font-medium" title="Nước có phiên paid cho câu này trong cửa sổ, xếp theo install rồi users">
+                    Nước
                   </th>
-                  <th className="px-2 py-1 text-right font-medium" title="Vị trí trung bình">
+                  <th className="px-2 py-1 text-right font-medium" title={`Người bấm vào quảng cáo (GA4, ${PAID_TERM_WIN_LABEL[win]})`}>
+                    Users
+                  </th>
+                  <th className="px-2 py-1 text-right font-medium" title={`Install (GA4 GetApp, ${PAID_TERM_WIN_LABEL[win]})`}>
+                    Install
+                  </th>
+                  <th className="px-2 py-1 text-right font-medium" title="Install ÷ users">
+                    CR
+                  </th>
+                  <th className="px-2 py-1 text-right font-medium" title="Vị trí tốt nhất ghi nhận (1 = trên cùng)">
                     Pos
+                  </th>
+                  <th
+                    className="border-l border-slate-200 px-2 py-1 text-left font-medium text-slate-500"
+                    title="Từ export Shopify Ads: keyword broad/phrase đã bắt được câu này, kèm camp. Trống khi export không có câu này."
+                  >
+                    Keyword bắt được
+                  </th>
+                  <th className="px-2 py-1 text-right font-medium text-slate-500" title="Impression từ export Shopify Ads (cả kỳ export)">
+                    Hiển thị
+                  </th>
+                  <th className="px-2 py-1 text-right font-medium text-slate-500" title="Chi phí từ export Shopify Ads (cả kỳ export)">
+                    Chi
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {shown.map((r: SearchTermRow, i) => (
-                  <tr key={`${r.searchTerm}-${r.matchedKeyword}-${i}`} className="border-t hover:bg-slate-50">
-                    <td className="px-2 py-1 font-medium text-slate-800">{r.searchTerm}</td>
-                    <td className="px-2 py-1 text-slate-500" title={`${r.matchType} · camp ${r.camp}`}>
-                      {r.matchedKeyword || '—'}
-                      <span className="ml-1 text-[9px] text-slate-400">{r.matchType}</span>
-                    </td>
-                    <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-600">
-                      {formatNumber(r.impressions, { compact: true })}
-                    </td>
-                    <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-600">
-                      {formatNumber(r.clicks, { compact: true })}
-                    </td>
-                    <td
-                      className={cn(
-                        'px-2 py-1 text-right font-mono tabular-nums',
-                        r.installs > 0 ? 'font-semibold text-emerald-700' : 'text-slate-400',
-                      )}
-                    >
-                      {r.installs}
-                    </td>
-                    <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-600">
-                      {r.spend > 0 ? `$${r.spend.toFixed(2)}` : '—'}
-                    </td>
-                    <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-700">
-                      {r.revenue > 0 ? `$${formatNumber(Math.round(r.revenue))}` : '—'}
-                    </td>
-                    <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-500">
-                      {r.position === null || r.position === 0 ? '—' : r.position.toFixed(1)}
-                    </td>
-                  </tr>
-                ))}
+                {shown.map((t) => {
+                  const s = paidTermStat(t, win);
+                  const countries = t.countriesByWin[win] ?? [];
+                  const top = countries.slice(0, 2);
+                  const more = countries.length - top.length;
+                  return (
+                    <tr key={t.term} className="border-t hover:bg-slate-50">
+                      <td className="px-2 py-1">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap">
+                          <KeywordLink
+                            keyword={t.term}
+                            surface="paid"
+                            className="font-medium text-slate-800"
+                          />
+                          {t.category !== 'Unknown' && (
+                            <span className="rounded bg-slate-100 px-1 text-[9px] text-slate-500">{t.category}</span>
+                          )}
+                          {t.countryOnly && (
+                            <span
+                              className="rounded bg-sky-50 px-1 text-[9px] text-sky-700 ring-1 ring-sky-200"
+                              title="Câu này không có trong All_L* (tab bị cắt top 500), chỉ có ở Country_L* — số là tổng các nước."
+                            >
+                              tab nước
+                            </span>
+                          )}
+                          {t.paused && (
+                            <span
+                              className="rounded bg-amber-50 px-1 text-[9px] font-medium text-amber-700 ring-1 ring-amber-200"
+                              title={`Từng bid ở camp đã tắt: ${t.pausedCamps.join(', ')}`}
+                            >
+                              ⏸ từng bid
+                            </span>
+                          )}
+                        </div>
+                        {t.english && t.english.toLowerCase() !== t.term.toLowerCase() && (
+                          <div className="text-[10px] italic text-slate-400">{t.english}</div>
+                        )}
+                      </td>
+                      <td className="px-2 py-1 text-[11px] text-slate-600">
+                        {top.length === 0 ? (
+                          <span className="text-slate-300">—</span>
+                        ) : (
+                          <span title={countries.map((c) => `${c.name}: ${c.installs} install / ${c.users} users`).join('\n')}>
+                            {top.map((c) => c.name).join(', ')}
+                            {more > 0 && <span className="text-slate-400"> +{more}</span>}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-600">{s.users}</td>
+                      <td
+                        className={cn(
+                          'px-2 py-1 text-right font-mono tabular-nums',
+                          s.installs > 0 ? 'font-semibold text-emerald-700' : 'text-slate-400',
+                        )}
+                      >
+                        {s.installs}
+                      </td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-600">
+                        {s.cr === null ? '—' : `${Math.round(s.cr * 100)}%`}
+                      </td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-500">
+                        {s.pos === null ? '—' : s.pos.toFixed(1)}
+                      </td>
+                      <td className="border-l border-slate-100 px-2 py-1 text-slate-500">
+                        {t.export && t.export.matchedKeywords.length > 0 ? (
+                          <span title={`camp: ${t.export.camps.join(', ')}`}>
+                            {t.export.matchedKeywords.join(', ')}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300" title="Export Shopify không có câu này">—</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-500">
+                        {t.export ? formatNumber(t.export.impressions, { compact: true }) : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-500">
+                        {t.export ? money(t.export.spend) : <span className="text-slate-300">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+
+          {shown.length === 0 && (
+            <p className="py-3 text-center text-[11px] italic text-slate-500">Không có câu nào khớp filter.</p>
+          )}
 
           {shown.length < filtered.length && (
             <button
@@ -205,13 +337,29 @@ export function UnbiddedSearchTerms() {
           )}
 
           <p className="border-t pt-2 text-[10px] leading-relaxed text-slate-400">
-            Nguồn: tab <code className="text-[9px]">Search_Term_Unbidded</code> trong sheet ASO —
-            báo cáo search term của Apple Search Ads, đã lọc sẵn theo cột <b>Bid Status</b> ={' '}
-            <b>⚠️ Chưa bid</b>
-            {range?.from && <> · khoảng {formatDMYRange(range.from, range.to)}</>}. Cả tab dùng
-            chung một khoảng ngày nên không có cửa sổ L7/L30/L90 — số ở đây là tổng của cả khoảng,
-            không so được trực tiếp với bốn cột window ở bảng trên. <b>Bid</b> trong tab là bid của
-            keyword đã bắt được câu, không phải giá trả cho chính câu đó.
+            <b>Nguồn chính:</b> dòng surface <code className="text-[9px]">search_ad</code> trong tab{' '}
+            <code className="text-[9px]">All_L*</code> / <code className="text-[9px]">Country_L*</code> (GA4, tracker
+            ghi mỗi sáng
+            {winRange?.from && <>; {PAID_TERM_WIN_LABEL[win]} = {formatDMYRange(winRange.from, winRange.to)}</>}
+            ). Shopify chuyển nguyên câu người dùng gõ sang GA4, nên dòng paid ở đó là câu tìm kiếm thật, kể cả
+            khi lọt vào qua broad match. Đã bỏ {formatNumber(report.droppedInPaid)} câu đang bid (Master KW
+            Lookup / KW_Added_Manual), {formatNumber(report.droppedNegative)} câu trong Negative KW list
+            {report.droppedNoTraffic > 0 && (
+              <> và {formatNumber(report.droppedNoTraffic)} câu của kỳ trước không còn users ở cửa sổ nào</>
+            )}
+            . GA4 chỉ thấy câu khi có người bấm — câu chỉ hiển thị mà không ai bấm không có ở đây.{' '}
+            <b>Lớp bổ sung:</b> tab <code className="text-[9px]">Search_Term_Unbidded</code> (export search term
+            của Shopify Ads
+            {report.exportRange && <>, kỳ {formatDMYRange(report.exportRange.from, report.exportRange.to)}</>})
+            cho impression, chi phí và keyword đã bắt được; cập nhật theo quý là đủ vì bảng không phụ thuộc
+            vào nó.
+            {report.exportOnlyWithSignal > 0 && (
+              <>
+                {' '}
+                Export có {formatNumber(report.exportOnlyWithSignal)} câu có click mà GA4 không thấy — ít, nhưng
+                là phần GA4 bỏ lỡ.
+              </>
+            )}
           </p>
         </div>
       )}

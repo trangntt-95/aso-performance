@@ -29,8 +29,8 @@ export default function PaidCoveragePage() {
         quyết định đã ra rồi, không phải việc cần làm.
       </PageIntro>
       <PaidCoverageView />
-      {/* Grain khác — câu tìm kiếm, không phải keyword — nên đứng riêng dưới
-          bảng chính thay vì trộn vào bốn cột window của nó. */}
+      {/* Grain khác — câu tìm kiếm (search_ad trong GA4), không phải keyword —
+          nên đứng riêng dưới bảng chính thay vì trộn vào bốn cột window của nó. */}
       <UnbiddedSearchTerms />
       <DataGapNote sources={SOURCES} />
       <SheetSources sources={SOURCES} />
