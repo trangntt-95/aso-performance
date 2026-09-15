@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sparkline } from '@/components/shared/Sparkline';
+import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
 import { formatDMYRange, formatNumber, formatPercent } from '@/lib/utils/format';
 import {
   buildGoogleAdsReport,
@@ -475,8 +476,19 @@ export function GoogleAdsView() {
 
       {/* Search terms */}
       <div className="rounded-lg border border-slate-200 bg-white p-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-          Cụm tìm kiếm đã kích hoạt quảng cáo
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+            Cụm tìm kiếm đã kích hoạt quảng cáo
+          </div>
+          <CopyKeywordsButton
+            keywords={report.searchTerms.map((s) => s.term)}
+            label="Copy tất cả"
+            className="ml-auto"
+          />
+          <CopyKeywordsButton
+            keywords={report.searchTerms.filter((s) => s.notAdded).map((s) => s.term)}
+            label="Copy chưa thêm"
+          />
         </div>
         <div className="mt-1 text-[11px] leading-snug text-slate-600">
           Cụm người dùng thật sự gõ trên Google, kèm trạng thái: <b>đã thêm</b> làm keyword, <b>chưa thêm</b>, hay{' '}

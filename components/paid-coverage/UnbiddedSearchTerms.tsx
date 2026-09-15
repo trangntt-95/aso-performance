@@ -6,6 +6,7 @@ import type { SearchTermRow } from '@/lib/sheets/types';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { formatNumber, formatDMYRange } from '@/lib/utils/format';
 import { Input } from '@/components/ui/input';
+import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
 import { cn } from '@/lib/utils';
 
 // Query mà broad match đã bắt được nhưng chưa được bid thành keyword riêng.
@@ -54,17 +55,21 @@ export function UnbiddedSearchTerms() {
     return { installs, spend, revenue, impressions };
   }, [rows]);
 
-  const shown = useMemo(() => {
+  // Tách `filtered` khỏi `shown`: nút copy lấy CẢ nhóm đang lọc, không chỉ
+  // 50 dòng đang hiện — gõ "profit" rồi copy là phải ra đủ mọi câu chứa
+  // profit, không phải 50 câu đầu.
+  const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const filtered = needle
+    const list = needle
       ? rows.filter(
           (r) =>
             r.searchTerm.toLowerCase().includes(needle) ||
             r.matchedKeyword.toLowerCase().includes(needle),
         )
       : rows;
-    return [...filtered].sort((a, b) => b[sort] - a[sort]).slice(0, limit);
-  }, [rows, q, sort, limit]);
+    return [...list].sort((a, b) => b[sort] - a[sort]);
+  }, [rows, q, sort]);
+  const shown = useMemo(() => filtered.slice(0, limit), [filtered, limit]);
 
   if (rows.length === 0) return null;
 
@@ -129,6 +134,15 @@ export function UnbiddedSearchTerms() {
                 </button>
               ))}
             </div>
+            <CopyKeywordsButton
+              keywords={filtered.map((r) => r.searchTerm)}
+              label="Copy câu tìm kiếm"
+              className="ml-auto"
+            />
+            <CopyKeywordsButton
+              keywords={filtered.filter((r) => r.installs > 0).map((r) => r.searchTerm)}
+              label="Copy câu có install"
+            />
           </div>
 
           <div className="overflow-x-auto">
@@ -186,13 +200,13 @@ export function UnbiddedSearchTerms() {
             </table>
           </div>
 
-          {shown.length < rows.length && (
+          {shown.length < filtered.length && (
             <button
               type="button"
               onClick={() => setLimit((l) => l + 100)}
               className="text-[11px] text-indigo-600 hover:underline"
             >
-              Hiện thêm 100 câu ({formatNumber(rows.length - shown.length)} còn lại)
+              Hiện thêm 100 câu ({formatNumber(filtered.length - shown.length)} còn lại)
             </button>
           )}
 
