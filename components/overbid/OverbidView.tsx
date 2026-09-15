@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { categoryStyle, CATEGORY_ORDER } from '@/lib/utils/colors';
-import { formatNumber } from '@/lib/utils/format';
+import { formatDMYRange, formatNumber } from '@/lib/utils/format';
 import { assessCamps, type CampVerdict, type OverbidRow } from '@/lib/market/overbid';
 import { buildCountryNetValue } from '@/lib/market/keywordNetValue';
 import { campTotalsFromDaily } from '@/lib/sheets/parsers';
@@ -38,6 +38,13 @@ const money = (n: number | null): string =>
 // mid-edit; the hide kicks in from the next visit.
 const HIDE_DAYS = 5;
 const DAY_MS = 86_400_000;
+
+// Kỳ chấm điểm, chọn được như Camp Health. 30 là mặc định vì hai ngưỡng đốt
+// tiền ($30 và 6 click không install) được đặt cho 30 ngày; đổi kỳ thì ngưỡng
+// vẫn là số tuyệt đối, và bảng nói ra điều đó thay vì để người đọc tưởng nó
+// tự co theo kỳ.
+const WINDOWS = [7, 14, 30, 60, 90] as const;
+const DEFAULT_WINDOW = 30;
 
 const dmy = (ms: number): string => {
   const d = new Date(ms);
@@ -209,10 +216,19 @@ export function OverbidView() {
    * Cửa sổ neo vào ngày mới nhất CÓ TRONG data, không phải hôm nay: export trễ
    * một hai ngày, neo vào hôm nay thì cửa sổ tự ngắn dần mỗi sáng.
    */
+  const [windowDays, setWindowDays] = useState<number>(DEFAULT_WINDOW);
   const window30 = useMemo(
-    () => campTotalsFromDaily(data?.shopifyDaily ?? [], 30),
-    [data?.shopifyDaily],
+    () => campTotalsFromDaily(data?.shopifyDaily ?? [], windowDays),
+    [data?.shopifyDaily, windowDays],
   );
+  // Kỳ thật bảng đang cộng — in ra chip, không đọc từ tab tổng. Hai nguồn hôm
+  // nay trùng nhau là trùng hợp, không phải bảo đảm.
+  const fromDaily = window30.camps.length > 0;
+  const periodLabel = fromDaily
+    ? `${formatDMYRange(window30.from, window30.to)} (${windowDays} ngày)`
+    : data?.shopifyDateRange
+      ? `${data.shopifyDateRange} (tab tổng, không có export theo ngày)`
+      : 'không rõ';
 
   const assessed = useMemo(() => {
     if (!data) return [];
@@ -345,7 +361,8 @@ export function OverbidView() {
             tại (chia cho 0) nên nó lọt qua mọi luật so tỷ lệ và trước đây hiện “ok”. 6 click
             không install nghĩa là CR đang dưới 1/6 ≈ 16,7%. Bắt bằng click chứ không đợi đủ tiền:
             camp bid thấp ăn được hàng chục click mà chưa tới $30, và vẫn là camp đang hỏng.
-            Tất cả tính trên <b>30 ngày gần nhất</b>, cộng từ export theo ngày.
+            Tất cả tính trên kỳ đang chọn (mặc định <b>30 ngày gần nhất</b>, neo vào ngày mới nhất
+            của export), cộng từ export theo ngày.
           </span>
           <b>Camp bị overbid</b> — camp trong <code className="text-[10px]">Shopify_daily</code> có{' '}
           <b>CPC thực tế (Spend/Clicks)</b> vượt <b>bid cho phép</b> (<code className="text-[10px]">Bid Rec ⭐</code>)
@@ -360,16 +377,12 @@ export function OverbidView() {
           <span className="rounded bg-indigo-100 px-1 text-[9px] font-semibold text-indigo-700">gộp N</span>. Camp đã
           hạ bid xong sẽ <b>rời list này</b> → tìm lại ở tab{' '}
           <b>✅ Đã xử lý</b> cùng cột <b>Impact bid</b>.
-          {data?.shopifyDateRange && (
-            <span className="mt-1 block font-medium text-rose-800">
-              📅 Dữ liệu áp dụng: {data.shopifyDateRange}
-            </span>
-          )}
         </div>
       </div>
 
-      {/* Active vs already-handled */}
+      {/* Active vs already-handled · kỳ đang chấm */}
       {!isLoading && (
+        <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
           {([
             { id: 'active' as ViewMode, label: `🔥 Đang overbid`, n: overbidRows.length, title: 'Camp có CPC/CPI vượt mức cho phép — cần hạ bid.' },
@@ -389,6 +402,39 @@ export function OverbidView() {
               <span className={cn('ml-1 text-[10px]', view === t.id ? 'text-slate-300' : 'text-slate-400')}>{t.n}</span>
             </button>
           ))}
+        </div>
+          <span
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 text-[11px] font-medium text-rose-900"
+            title={
+              fromDaily
+                ? `Bảng cộng export Shopify theo ngày từ ${window30.from} tới ${window30.to} — ${windowDays} ngày neo vào ngày mới nhất có trong export, không phải hôm nay. Panel Brand đã top có nút kỳ riêng; cột Impact bid so 14 ngày trước / sau ngày note.`
+                : 'Không có export theo ngày nên bảng đọc tab tổng Shopify_daily; khoảng là của tab đó.'
+            }
+          >
+            📅 Kỳ: {periodLabel}
+          </span>
+          {fromDaily && (
+            <select
+              value={windowDays}
+              onChange={(e) => setWindowDays(Number(e.target.value))}
+              className={selectCls}
+              title="Độ dài kỳ chấm điểm, neo vào ngày mới nhất của export"
+            >
+              {WINDOWS.map((w) => (
+                <option key={w} value={w}>
+                  Kỳ: {w} ngày
+                </option>
+              ))}
+            </select>
+          )}
+          {fromDaily && windowDays !== DEFAULT_WINDOW && (
+            <span
+              className="text-[11px] text-amber-700"
+              title="Luật đốt tiền dùng số tuyệt đối: tiêu từ $30 hoặc từ 6 click mà 0 install. Hai ngưỡng này được đặt cho 30 ngày và không co theo kỳ — kỳ 7 ngày sẽ bắt ít camp hơn, kỳ 90 ngày bắt nhiều hơn, cùng một camp."
+            >
+              ⚠ ngưỡng $30 / 6 click là số tuyệt đối, đặt cho 30 ngày
+            </span>
+          )}
         </div>
       )}
 
@@ -639,7 +685,7 @@ export function OverbidView() {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            CPC = Spend/Clicks (proxy cho bid đang trả) · CPI = Spend/Installs · bid cho phép = trung bình{' '}
+            Kỳ {periodLabel} · CPC = Spend/Clicks (proxy cho bid đang trả) · CPI = Spend/Installs · bid cho phép = trung bình{' '}
             <code className="text-[9px]">Bid Rec ⭐</code>, CPI cho phép = trung bình{' '}
             <code className="text-[9px]">CPI cap</code>, lấy trên các nước target — mỗi nước tính 1 lần sau khi gộp
             các cluster keyword của nó (sheet đổi grain 8/2026), cluster nào sheet bảo cắt thì không tính vào mốc ·

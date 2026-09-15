@@ -19,7 +19,13 @@ import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
 import { buildPaidShareIndex, summarizeImpact, type NoteImpact } from '@/lib/market/noteImpact';
 import { buildCampDailyIndex, campBidImpact } from '@/lib/market/campBidImpact';
 import { formatNumber, formatPercent, formatPos } from '@/lib/utils/format';
-import { buildKeywordNetValue, breakevenBid, type KeywordNetValue } from '@/lib/market/keywordNetValue';
+import { buildKeywordNetValue, type KeywordNetValue } from '@/lib/market/keywordNetValue';
+import {
+  buildUnderbidCeilingIndex,
+  type CampCeiling,
+  type CeilingVerdict,
+  type KeywordCeiling,
+} from '@/lib/market/underbidCeiling';
 import { normKw } from '@/lib/sheets/kwNorm';
 import { buildCampNoteResolver } from '@/lib/store/campNotes';
 import {
@@ -57,8 +63,32 @@ type NetValueMap = Map<string, KeywordNetValue>;
  */
 type RowWithValue = import('@/lib/market/underbid').UnderbidRow & {
   nv: KeywordNetValue | null;
-  /** Trần bid hoà vốn: net/install × 90% × CR organic. */
-  breakeven: number | null;
+  /** Trần bid theo từng nước camp target, cùng công thức với Bid Rec của sheet
+   *  và cùng mốc Overbid dùng — xem lib/market/underbidCeiling.ts. */
+  ceil: KeywordCeiling;
+};
+
+const VERDICT_TAG: Record<CeilingVerdict, { label: string; cls: string; title: string }> = {
+  room: {
+    label: 'còn chỗ nâng',
+    cls: 'bg-emerald-100 text-emerald-800',
+    title: 'Bid đang set thấp hơn trần trên 10% — tăng bid vẫn trong vùng hoà vốn.',
+  },
+  'at-ceiling': {
+    label: 'đã tới trần',
+    cls: 'bg-amber-100 text-amber-800',
+    title: 'Bid đang set nằm trong ±10% trần. Tăng nữa là mua đắt hơn giá trị một install; độ phủ thấp ở đây là do thị trường đắt, không phải do bid thấp.',
+  },
+  over: {
+    label: 'đã vượt trần',
+    cls: 'bg-rose-100 text-rose-800',
+    title: 'Bid đang set cao hơn trần trên 10% — đây là cặp keyword Underbid nhưng camp sẽ hiện ở Overbid. Không tăng; xem lại geo hoặc hạ.',
+  },
+  unknown: {
+    label: '',
+    cls: '',
+    title: '',
+  },
 };
 
 type SortKey =
@@ -76,6 +106,7 @@ type SortKey =
   | 'paidShare'
   | 'netPerInstall'
   | 'breakeven'
+  | 'bidNow'
   | 'score';
 type SortDir = 'asc' | 'desc';
 
@@ -97,7 +128,9 @@ const SORT_COLS: Record<
   paidPosL30: { kind: 'num', get: (r) => r.paidPosL30 },
   paidShare: { kind: 'num', get: (r) => r.paidShare },
   netPerInstall: { kind: 'num', get: (r) => r.nv?.netPerInstall ?? null },
-  breakeven: { kind: 'num', get: (r) => r.breakeven },
+  // Sắp theo trần THẤP nhất trong các camp — camp chật chỗ nhất là camp cần đọc.
+  breakeven: { kind: 'num', get: (r) => r.ceil.ceilingMin },
+  bidNow: { kind: 'num', get: (r) => r.ceil.bidNow },
   score: { kind: 'num', get: (r) => r.score },
 };
 
@@ -138,6 +171,107 @@ function SortHead({
         <span className="text-[9px] w-2 text-indigo-600">{active ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
       </span>
     </th>
+  );
+}
+
+const MAX_CAMP_LINES = 3;
+
+/** Một dòng camp trong tooltip trần: từng nước, nguồn giá trị, CR, chặn tier. */
+function campCeilingTitle(c: CampCeiling): string {
+  const head = `${c.camp}\n${c.countries.length} nước${c.scope === 'geo' ? ' theo Geo camp' : ' (mọi nước của category trừ nước không target)'}${
+    c.ceiling === null ? ' — không nước nào đủ dữ liệu' : `, trung bình $${c.ceiling.toFixed(2)}`
+  }`;
+  const body = c.countries
+    .map(
+      (x) =>
+        `  ${x.country}: $${x.value.toFixed(0)}${x.valueSource === 'keyword' ? ' (keyword)' : ' (NPI sheet)'} × 90% × CR ${Math.round(x.cr * 100)}%${
+          x.crSource === 'organic' ? ' (organic)' : ''
+        } = $${x.raw.toFixed(2)}${x.capped ? ` → chặn tier $${x.tierCeiling}` : ''}`,
+    )
+    .join('\n');
+  const skipped = c.skipped.length > 0 ? `\n  Bỏ qua (thiếu NPI/CR sheet, keyword chưa đủ 3 shop): ${c.skipped.join(', ')}` : '';
+  return `${head}\n${body}${skipped}`;
+}
+
+/**
+ * Hai ô "Trần bid" và "Bid đang set", cùng thứ tự camp để đọc ngang được.
+ *
+ * Mỗi camp một dòng, vì bid được set theo keyword × camp và trần phụ thuộc geo
+ * của camp — gộp về một số cho cả keyword là chỗ bản thử đầu sai (mọi keyword
+ * ra cùng một trần ~$19). Camp vượt trần xếp trước; quá 3 camp thì gấp lại.
+ */
+function CeilingCells({ ceil }: { ceil: KeywordCeiling }) {
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? ceil.camps : ceil.camps.slice(0, MAX_CAMP_LINES);
+  const hidden = ceil.camps.length - shown.length;
+  const shortName = (camp: string) => camp.replace(/^TP\s*[-_]\s*/i, '').replace(/\s*\((?:CPI|cpi)[^)]*\)/g, '');
+  const toggle =
+    ceil.camps.length > MAX_CAMP_LINES ? (
+      <button
+        type="button"
+        onClick={() => setShowAll((v) => !v)}
+        className="text-[9px] text-slate-500 hover:text-slate-700"
+      >
+        {showAll ? 'gấp lại' : `+${hidden} camp`}
+      </button>
+    ) : null;
+  return (
+    <>
+      <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] align-top">
+        <div className="flex flex-col items-end gap-0.5">
+          {shown.map((c) => (
+            <span key={c.camp} className="cursor-help leading-[1.4]" title={campCeilingTitle(c)}>
+              {c.ceiling === null ? (
+                <span className="text-slate-300">—</span>
+              ) : (
+                <span className="font-semibold text-indigo-700">${c.ceiling.toFixed(2)}</span>
+              )}
+              {c.countries.some((x) => x.capped) && (
+                <span className="ml-0.5 text-[9px] text-amber-700" title="Có nước bị trần tier chặn">⛔</span>
+              )}
+            </span>
+          ))}
+          {toggle}
+        </div>
+      </td>
+      <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px] align-top">
+        <div className="flex flex-col items-end gap-0.5">
+          {shown.map((c) => {
+            const tag = VERDICT_TAG[c.verdict];
+            return (
+              <span
+                key={c.camp}
+                className="inline-flex items-center gap-1 leading-[1.4]"
+                title={`${c.camp}${c.bidNow === null ? ' — Master KW Lookup không có bid' : `: bid $${c.bidNow.toFixed(2)}`}${
+                  c.ceiling !== null ? ` / trần $${c.ceiling.toFixed(2)}` : ''
+                }${c.verdict !== 'unknown' ? `\n${tag.title}` : ''}`}
+              >
+                <span className="max-w-[9rem] truncate font-sans text-[9px] text-slate-400" title={c.camp}>
+                  {shortName(c.camp)}
+                </span>
+                {c.bidNow === null ? (
+                  <span className="text-slate-300">—</span>
+                ) : (
+                  <span className="text-slate-800">${c.bidNow.toFixed(2)}</span>
+                )}
+                {c.verdict !== 'unknown' && (
+                  <span className={cn('rounded px-1 text-[9px] font-sans font-medium', tag.cls)}>{tag.label}</span>
+                )}
+              </span>
+            );
+          })}
+          {ceil.camps.length > 1 && (
+            <span className="text-[9px] font-sans text-slate-400">
+              {ceil.counts.over > 0 && <span className="text-rose-700">{ceil.counts.over} vượt</span>}
+              {ceil.counts.over > 0 && (ceil.counts['at-ceiling'] > 0 || ceil.counts.room > 0) && ' · '}
+              {ceil.counts['at-ceiling'] > 0 && <span className="text-amber-700">{ceil.counts['at-ceiling']} tới trần</span>}
+              {ceil.counts['at-ceiling'] > 0 && ceil.counts.room > 0 && ' · '}
+              {ceil.counts.room > 0 && <span className="text-emerald-700">{ceil.counts.room} còn chỗ</span>}
+            </span>
+          )}
+        </div>
+      </td>
+    </>
   );
 }
 
@@ -380,23 +514,23 @@ export function UnderbidView() {
   // Giá trị thật của keyword, từ tab 'Net value per install'.
   const netValueBy: NetValueMap = useMemo(() => buildKeywordNetValue(data), [data]);
 
-  // organicCr là phân số (0.35), còn breakevenBid nhận phần trăm — nhân 100 ở
-  // đúng một chỗ, chứ trộn hai đơn vị là lỗi đã làm màn CPI cap báo 37/40 nước
-  // vượt trần hồi tháng 8.
+  // Trần bid theo từng nước camp target — cùng mốc với Overbid. Bản cũ nhân
+  // net value gộp mọi nước với CR organic và không chặn tier, lệch 2–4 lần so
+  // Bid Rec của sheet cho cùng một keyword (15/09/2026).
+  const ceilingIndex = useMemo(() => buildUnderbidCeilingIndex(data), [data]);
   const valued: RowWithValue[] = useMemo(
     () =>
-      rows.map((r) => {
-        const nv = netValueBy.get(normKw(r.term)) ?? null;
-        return {
-          ...r,
-          nv,
-          breakeven: breakevenBid(
-            nv?.netPerInstall ?? null,
-            r.organicCr === null ? null : r.organicCr * 100,
-          ),
-        };
-      }),
-    [rows, netValueBy],
+      rows.map((r) => ({
+        ...r,
+        nv: netValueBy.get(normKw(r.term)) ?? null,
+        ceil: ceilingIndex.compute({
+          term: r.term,
+          category: r.category,
+          camps: r.camps.map((c) => c.name),
+          organicCr: r.organicCr,
+        }),
+      })),
+    [rows, netValueBy, ceilingIndex],
   );
 
   // Danh tính camp dùng chung với Overbid / Camp Health — để note ghi ở đó cũng
@@ -506,14 +640,20 @@ export function UnderbidView() {
           mà organic vẫn có nhu cầu.
           {' '}
           <span className="mt-1 block border-t border-amber-200 pt-1">
-            <b>Hai cột tiền:</b> <b>$/install</b> là net value một install của keyword
-            ((doanh thu − phí Shopify) ÷ install, gộp mọi nước), <b>Trần bid</b> là bid tối đa còn
-            hoà vốn = $/install × 90% × CR organic — cùng công thức sheet dùng ở{' '}
-            <code className="text-[10px]">Max bid cap</code>. Xếp giảm dần theo <b>$/install</b> để
-            thấy keyword <b>volume thấp mà đáng tiền</b>; so <b>Trần bid</b> với bid đang set để biết
-            còn dư chỗ nâng hay đã vượt. Nhãn <b>mỏng</b> nghĩa là dưới 3 shop trả tiền — con số đó
-            là một lần tung xúc xắc, đừng đổi bid theo nó. Nguồn:{' '}
-            <code className="text-[10px]">Net value per install</code>.
+            <b>Ba cột tiền:</b> <b>$/install</b> là net value một install của keyword
+            ((doanh thu − phí Shopify) ÷ install, gộp mọi nước, cả hai kênh — chỉ để xem keyword
+            đáng tiền tới đâu). <b>Trần bid</b> tính <b>theo từng camp</b>, trên các nước camp đó
+            target, cùng công thức và cùng mốc với &quot;bid cho phép&quot; ở Overbid: mỗi nước lấy giá
+            trị install <b>paid</b> của keyword ở nước đó khi đủ 3 shop trả tiền, không thì lấy NPI
+            Country × Category của <code className="text-[10px]">Max bid cap</code>; nhân 90% và CR
+            used của ô; chặn bởi Tier ceil; rồi trung bình các nước của camp. <b>Bid đang set</b> là
+            bid của keyword trong từng camp (Master KW Lookup), kèm nhãn so trần của chính camp đó:{' '}
+            <span className="rounded bg-emerald-100 px-1 text-emerald-800">còn chỗ nâng</span>{' '}
+            <span className="rounded bg-amber-100 px-1 text-amber-800">đã tới trần</span>{' '}
+            <span className="rounded bg-rose-100 px-1 text-rose-800">đã vượt trần</span>. Keyword
+            underbid mà bid đã tới trần nghĩa là <b>độ phủ thấp vì thị trường đắt</b>, không phải vì
+            bid thấp — tăng nữa là mua đắt hơn giá trị. Nhãn <b>mỏng</b> nghĩa là dưới 3 shop trả
+            tiền.
           </span>
         </div>
       </div>
@@ -646,7 +786,16 @@ export function UnderbidView() {
                   sortKey={sortKey}
                   sortDir={sortDir}
                   onSort={toggleSort}
-                  title="Bid tối đa còn hoà vốn = $/install × 90% × CR organic. Cùng công thức sheet dùng ở tab 'Max bid cap'. Bid trả cho CLICK còn giá trị tính trên INSTALL, nên phải nhân CR — thiếu bước đó là so hai đơn vị khác nhau."
+                  title="Mỗi camp một trần: trung bình theo các nước camp đó target của min(giá trị install paid × 90% × CR used, Tier ceil). Giá trị lấy của keyword × nước khi đủ 3 shop trả tiền, không thì NPI Country × Category của 'Max bid cap'. Cùng mốc 'bid cho phép' của Overbid. Hover từng dòng để xem từng nước. Sort theo trần thấp nhất."
+                />
+                <SortHead
+                  label="Bid đang set"
+                  col="bidNow"
+                  align="right"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={toggleSort}
+                  title="Bid (max) của keyword trong từng camp đang chạy, theo Master KW Lookup, cùng thứ tự với cột Trần bid. Nhãn so với trần của chính camp đó: dưới 90% = còn chỗ nâng, trong ±10% = đã tới trần, trên 110% = đã vượt. Sort theo bid cao nhất."
                 />
                 <th className="px-2 py-2 text-left font-medium min-w-[12rem]">Camp (đang bid)</th>
                 <th
@@ -769,23 +918,7 @@ export function UnderbidView() {
                         </span>
                       )}
                     </td>
-                    <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px]">
-                      {r.breakeven === null ? (
-                        <span
-                          className="text-slate-300"
-                          title="Thiếu $/install hoặc CR organic — không tính được trần mà không đoán."
-                        >
-                          —
-                        </span>
-                      ) : (
-                        <span
-                          className={r.nv?.thin ? 'text-amber-700' : 'font-semibold text-indigo-700'}
-                          title={`${(r.nv?.netPerInstall ?? 0).toFixed(0)} × 90% × CR ${formatPercent(r.organicCr)}`}
-                        >
-                          ${r.breakeven.toFixed(2)}
-                        </span>
-                      )}
-                    </td>
+                    <CeilingCells ceil={r.ceil} />
                     <CampCell
                       camps={r.camps}
                       manual={r.inPaidSource === 'manual'}
@@ -808,7 +941,7 @@ export function UnderbidView() {
             </tbody>
           </table>
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t">
-            Rule lọc chạy trên <b>{window}</b> · Org install = số install organic trong {window} · pos = avg position · <b>pos L30</b> = vị trí trung bình 30 ngày gần nhất (chỉ để tham khảo, không ảnh hưởng rule) · Org CR = install organic ÷ users organic (CR cao = tiềm năng convert tốt, đáng tăng bid) · Paid share = paid ÷ (organic + paid) · <b>click cột để sort</b> · mặc định sắp theo nhu cầu organic mà paid đang bỏ lỡ
+            Rule lọc chạy trên <b>{window}</b> · Org install = số install organic trong {window} · pos = avg position · <b>pos L30</b> = vị trí trung bình 30 ngày gần nhất (chỉ để tham khảo, không ảnh hưởng rule) · Org CR = install organic ÷ users organic (CR cao = tiềm năng convert tốt, đáng tăng bid) · Paid share = paid ÷ (organic + paid) · <b>Trần bid</b> = mỗi camp một dòng, trung bình theo nước camp target của min(giá trị install paid × 90% × CR used, Tier ceil), cùng mốc &quot;bid cho phép&quot; của Overbid; ⛔ = có nước bị trần tier chặn · <b>Bid đang set</b> = bid của keyword trong camp đó (Master KW Lookup), nhãn so trần của chính camp; camp vượt trần xếp trước · <b>click cột để sort</b> · mặc định sắp theo nhu cầu organic mà paid đang bỏ lỡ
           </div>
         </div>
       )}

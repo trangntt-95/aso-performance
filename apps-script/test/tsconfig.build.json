@@ -33,6 +33,7 @@
     "../../lib/market/bidCapAgg.ts",
     "../../lib/market/campHealth.ts",
     "../../lib/market/overbid.ts",
-    "../../lib/market/underbid.ts"
+    "../../lib/market/underbid.ts",
+    "../../lib/market/underbidCeiling.ts"
   ]
 }

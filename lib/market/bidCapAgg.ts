@@ -37,6 +37,13 @@ export interface BidCapCell {
   bidMin: number;
   /** Tier ceiling — one value per country in the sheet, so any cluster's will do. */
   tierCeiling: number;
+  /** NPI của ô: giá trị một install paid ở Country × Category (cột 'Net Val' /
+   *  'NPI (Max CPI)'), trung bình các cluster có số. 0 = sheet không ghi. Đây là
+   *  vế "giá trị" trong công thức Bid = min(NPI × 90% × CR, Tier ceil). */
+  npi: number;
+  /** 'CR used' của ô, phần trăm, trung bình các cluster có số. 0 = không ghi.
+   *  Là CR paid sheet dùng để quy giá trị một install ra giá một click. */
+  crUsedPct: number;
   clicks: number;
   installs: number;
   instL90: number;
@@ -63,9 +70,11 @@ const cellKey = (country: string, category: string) => `${country}||${category}`
  * sheet at all" — a distinction the empty-map version of this used to lose.
  */
 export function aggregateBidCapCells(bidCap: BidCapRow[]): Map<string, BidCapCell> {
-  interface Acc extends Omit<BidCapCell, 'bid' | 'cpiCap' | 'bidMax' | 'bidMin'> {
+  interface Acc extends Omit<BidCapCell, 'bid' | 'cpiCap' | 'bidMax' | 'bidMin' | 'npi' | 'crUsedPct'> {
     bids: number[];
     caps: number[];
+    npis: number[];
+    crs: number[];
   }
   const acc = new Map<string, Acc>();
   for (const r of bidCap) {
@@ -87,9 +96,13 @@ export function aggregateBidCapCells(bidCap: BidCapRow[]): Map<string, BidCapCel
         clustersToCut: 0,
         bids: [],
         caps: [],
+        npis: [],
+        crs: [],
       };
       acc.set(k, a);
     }
+    if (r.netValue !== null && r.netValue > 0) a.npis.push(r.netValue);
+    if (r.crUsedPct !== null && r.crUsedPct > 0) a.crs.push(r.crUsedPct);
     a.clusters += 1;
     a.clicks += r.clicksL30;
     a.installs += r.installsL30;
@@ -115,11 +128,13 @@ export function aggregateBidCapCells(bidCap: BidCapRow[]): Map<string, BidCapCel
   }
   const out = new Map<string, BidCapCell>();
   acc.forEach((a, k) => {
-    const { bids, caps, ...rest } = a;
+    const { bids, caps, npis, crs, ...rest } = a;
     out.set(k, {
       ...rest,
       bid: mean(bids),
       cpiCap: mean(caps),
+      npi: mean(npis),
+      crUsedPct: mean(crs),
       bidMax: bids.length ? Math.max(...bids) : 0,
       bidMin: bids.length ? Math.min(...bids) : 0,
     });
