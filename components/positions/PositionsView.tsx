@@ -205,6 +205,21 @@ export function PositionsView() {
 
   return (
     <div className="space-y-3">
+      {/* Nguồn nói trước, vì đây là chỗ hay bị so với Shopify Ads: 16/09/2026
+          "profit × Australia" trống L30 trong khi Shopify Ads có 1 install, pos 1,
+          visibility 100% — GA4 ghi câu người dùng gõ ("true profit") và chỉ khi
+          họ thực sự bấm vào listing; impression và keyword bid là chuyện của
+          Shopify Ads. */}
+      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="leading-relaxed">
+          <b>Nguồn: GA4</b>, đếm khi khách <b>thực sự bấm vào listing</b>, không phải impression. Mỗi dòng là{' '}
+          <b>câu khách gõ</b> (không phải keyword bid), chỉ xuất hiện khi có ít nhất một phiên trong cửa sổ, và
+          thường thấp hơn Shopify Ads dashboard khoảng 10%. Keyword đang bid mà không có dòng ở đây nghĩa là
+          chưa ai gõ đúng câu đó rồi bấm vào, không phải quảng cáo không hiện — hiển thị và visibility xem ở
+          Shopify Ads.
+        </div>
+      </div>
       <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-900">
         <b>Vị trí keyword theo nước</b> qua 5 cửa sổ L3 → L90, đọc từ các tab{' '}
         <code className="text-[10px]">Country_L*</code> (GA4): vị trí trung bình trong cửa sổ, kèm cửa sổ liền trước để
