@@ -48,11 +48,13 @@ eq('D: không có trần → so trung vị, $30 không gấp 1,5 trung vị → 
 {
   const quiet = [...rows];
   for (let d = 1; d <= 14; d++) quiet.push(day(`2026-09-${String(d).padStart(2, '0')}`, 'E', d === 3 || d === 12 ? 1 : 0, 0, 0, 0));
-  const rq = analyseCampHealth(quiet, { windowDays: 7, capOf: (c) => cap[c] ?? null, knownCamps: ['E', 'F'] });
+  const rq = analyseCampHealth(quiet, { windowDays: 7, capOf: (c) => cap[c] ?? null, knownCamps: ['E', 'F'], pausedCamps: ['G'] });
   const byQ = Object.fromEntries(rq.rows.map((x) => [x.camp, x]));
   eq('E: có impression, 0 click, $0 cả hai kỳ → silent, không biến mất', byQ.E?.bucket, 'silent');
   eq('E: lý do nêu số impression', /1 lượt hiển thị/.test(byQ.E?.reason ?? ''), true);
   eq('F: không có dòng nào trong export → silent như cũ', byQ.F?.bucket, 'silent');
+  eq('G: trong Paused_camp, không có dòng export → vẫn có mặt, nhóm paused', byQ.G?.bucket, 'paused');
+  eq('mỗi camp đúng một dòng', rq.rows.length, new Set(rq.rows.map((x) => x.camp)).size);
   eq('A vẫn pricey, không bị ảnh hưởng', byQ.A.bucket, 'pricey');
 }
 

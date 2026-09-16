@@ -356,13 +356,34 @@ export function analyseCampHealth(
   }
 
   // Camps the account knows about that left no trace in the export at all.
+  // Paused_camp names are known camps too: before 16/09/2026 a paused camp
+  // with no export row was skipped here AND had no row above → 80 camps in
+  // Paused_camp appeared nowhere. They now sit in 'paused' so every camp the
+  // sheets mention has exactly one row in this table.
   const seenKeys = new Set(Array.from(byCamp.keys()));
   const silentKeys = new Set<string>();
-  for (const name of opts.knownCamps ?? []) {
+  for (const name of [...(opts.knownCamps ?? []), ...(opts.pausedCamps ?? [])]) {
     if (!name) continue;
     const key = grouper.key(name);
-    if (!key || seenKeys.has(key) || pausedKeys.has(key) || silentKeys.has(key)) continue;
+    if (!key || seenKeys.has(key) || silentKeys.has(key)) continue;
     silentKeys.add(key);
+    if (pausedKeys.has(key)) {
+      out.push({
+        camp: name.trim(),
+        bucket: 'paused',
+        cur: empty(),
+        prev: empty(),
+        impDelta: null,
+        installDelta: null,
+        spendDelta: null,
+        atRisk: 0,
+        reason: `Có trong tab Paused_camp và không có dòng nào trong export → đã tắt từ trước kỳ dữ liệu. Không cần làm gì; xoá khỏi Master KW Lookup nếu muốn gọn.`,
+        reliable: false,
+        lastActive: '',
+        series: [],
+      });
+      continue;
+    }
     out.push({
       // Tên gốc từ Camp_Links / Master: grouper không có nhãn quan sát cho camp
       // chưa từng xuất hiện, và key của nó là chữ thường.
