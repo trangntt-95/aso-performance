@@ -22,7 +22,7 @@ import { cn } from '@/lib/utils';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { KeywordCampsList } from '@/components/shared/KeywordCampsList';
 import { useNotesStore } from '@/lib/store/notesStore';
-import { KEYWORD_NOTE_SCOPE, keywordNoteKeys, readKeywordNote } from '@/lib/store/keywordNotes';
+import { KEYWORD_NOTE_SCOPE, KEYWORD_PIN_SCOPE, keywordNoteId, keywordNoteKeys, readKeywordNote, readPinnedCamps, togglePinnedCamp } from '@/lib/store/keywordNotes';
 
 // Keyword đang bid mà không ai bấm — mặt trái của bảng chính. Xem
 // lib/market/idleBids.ts cho lý do chia ba nhóm.
@@ -82,9 +82,12 @@ export function IdleBids() {
   const loadNotes = useNotesStore((s) => s.load);
   const notesLoaded = useNotesStore((s) => s.loaded);
   const notes = useNotesStore((s) => s.notes);
+  const setNote = useNotesStore((s) => s.setNote);
   useEffect(() => {
     if (!notesLoaded) loadNotes();
   }, [notesLoaded, loadNotes]);
+  const togglePin = (keyword: string, camp: string) =>
+    setNote(KEYWORD_PIN_SCOPE, keywordNoteId(keyword), togglePinnedCamp(readPinnedCamps(notes, keyword), camp));
 
   const report = useMemo(() => buildIdleBidsReport(data, win), [data, win]);
   const winRange = data?.windowDates?.[win];
@@ -347,7 +350,7 @@ export function IdleBids() {
                       {r.bidMax !== null && r.bidMin !== null && r.bidMax !== r.bidMin ? `${money(r.bidMax)} – ${money(r.bidMin)}` : money(r.bidMax)}
                     </td>
                     <td className="border-l border-slate-200 px-2 py-1">
-                      <KeywordCampsList camps={r.camps} />
+                      <KeywordCampsList camps={r.camps} pinned={readPinnedCamps(notes, r.keyword)} onTogglePin={(camp) => togglePin(r.keyword, camp)} />
                     </td>
                     <NoteCell
                       scope={KEYWORD_NOTE_SCOPE}

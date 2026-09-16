@@ -22,7 +22,7 @@ import { normalizeCampName } from '@/lib/sheets/campName';
 import { KeywordCampsList } from '@/components/shared/KeywordCampsList';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { useNotesStore } from '@/lib/store/notesStore';
-import { KEYWORD_NOTE_SCOPE, keywordNoteKeys } from '@/lib/store/keywordNotes';
+import { KEYWORD_NOTE_SCOPE, KEYWORD_PIN_SCOPE, keywordNoteId, keywordNoteKeys, readPinnedCamps, togglePinnedCamp } from '@/lib/store/keywordNotes';
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -223,9 +223,16 @@ export function PositionsView() {
   // Note keyword dùng chung với Underbid / Paid Coverage / trend sheet (App_Notes).
   const loadNotes = useNotesStore((st) => st.load);
   const notesLoaded = useNotesStore((st) => st.loaded);
+  const allNotes = useNotesStore((st) => st.notes);
+  const setNote = useNotesStore((st) => st.setNote);
   useEffect(() => {
     if (!notesLoaded) loadNotes();
   }, [notesLoaded, loadNotes]);
+  // Ghim camp theo keyword (scope 'underbid-camp'), dùng chung với Underbid:
+  // ghim ở đây là Underbid đo Impact theo đúng camp đó và ngược lại.
+  const pinnedOf = (keyword: string) => readPinnedCamps(allNotes, keyword);
+  const togglePin = (keyword: string, camp: string) =>
+    setNote(KEYWORD_PIN_SCOPE, keywordNoteId(keyword), togglePinnedCamp(pinnedOf(keyword), camp));
 
   if (error) {
     return (
@@ -385,9 +392,9 @@ export function PositionsView() {
                 <th className="px-2 py-2 text-left font-medium min-w-[12rem]" title={`Keyword Brand có vị trí PAID ≤ ${BRAND_TOP_POS} ở cửa sổ đang sắp (GA4) → đã top; kèm camp brand đang phủ nước đó (Geo Camp_Links) với spend và vị trí camp 14 ngày từ export Shopify. Không có spend theo keyword nên cờ chỉ ra CAMP để hạ bid.`}>
                   Cảnh báo
                 </th>
-                <th className="px-2 py-2 text-left font-medium" title="Camp chưa tắt đang bid keyword này (Master KW Lookup trừ Paused_camp), kèm bid ở camp đó. Xếp: camp có Geo ghi rõ nước này trước, rồi camp Geo trống, cuối là camp không phủ nước (mờ). Bấm +N để xem hết.">
+                <th className="px-2 py-2 text-left font-medium" title="Camp chưa tắt đang bid keyword này (Master KW Lookup trừ Paused_camp), kèm bid ở camp đó. Xếp: camp đã ghim trước, rồi camp có Geo ghi rõ nước này, rồi Geo trống, cuối là camp không phủ nước (mờ). Bấm 'ghim' ở camp mình thật sự chỉnh bid — ghim dùng chung với Underbid (Impact bid đo theo camp đã ghim). Bấm +N để xem hết.">
                   Camp đang bid
-                  <div className="text-[9px] font-normal text-slate-400">Geo đúng nước trước · bid · mờ = không phủ nước này</div>
+                  <div className="text-[9px] font-normal text-slate-400">📌 ghim = camp đang theo dõi, chung với Underbid · Geo đúng nước trước · mờ = không phủ</div>
                 </th>
                 <th className="px-2 py-2 text-left font-medium" title="Ghi chú theo KEYWORD (một note cho mọi nước), lưu vào App_Notes. Cùng một ô với tab Underbid, Paid Coverage và trend sheet — ghi ở đâu cũng thấy ở mọi nơi.">
                   Ghi chú
@@ -482,7 +489,13 @@ export function PositionsView() {
                     })()}
                   </td>
                   <td className="px-2 py-1.5">
-                    <KeywordCampsList camps={campIndex.get(r.keyword).live} rank={geoRank(r.country)} emptyLabel="chưa bid" />
+                    <KeywordCampsList
+                      camps={campIndex.get(r.keyword).live}
+                      rank={geoRank(r.country)}
+                      pinned={pinnedOf(r.keyword)}
+                      onTogglePin={(camp) => togglePin(r.keyword, camp)}
+                      emptyLabel="chưa bid"
+                    />
                   </td>
                   <NoteCell
                     scope={KEYWORD_NOTE_SCOPE}
@@ -503,7 +516,7 @@ export function PositionsView() {
             traffic ở cửa sổ đó · tier nước theo Max bid cap · bấm keyword để mở drill ·{' '}
             <b>Cảnh báo 🏁</b> = keyword Brand có vị trí paid ≤ {BRAND_TOP_POS} ở cửa sổ đang sắp (GA4), kèm camp brand đang phủ nước đó
             với spend / vị trí 14 ngày từ export Shopify Ads — hạ bid ở camp đó; spend theo riêng keyword không có trong dữ liệu ·{' '}
-            <b>Camp đang bid</b> = camp chưa tắt có keyword này trong Master, bid ở camp đó; camp mờ = Geo không phủ nước của dòng ·{' '}
+            <b>Camp đang bid</b> = camp chưa tắt có keyword này trong Master, bid ở camp đó; camp mờ = Geo không phủ nước của dòng; <b>ghim</b> = camp mình đang theo dõi / chỉnh bid cho keyword, dùng chung với Underbid (ở đó Impact bid đo theo camp đã ghim) ·{' '}
             <b>Ghi chú</b> theo keyword (chung cho mọi nước), cùng một note với Underbid, Paid Coverage và trend sheet.
           </div>
         </div>

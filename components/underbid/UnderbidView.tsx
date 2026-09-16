@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pin, AlertCircle, X, ExternalLink, AlertTriangle, ChevronDown } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
-import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
-import { KEYWORD_NOTE_SCOPE, keywordNoteKeys, readKeywordNoteAt } from '@/lib/store/keywordNotes';
+import { useNotesStore } from '@/lib/store/notesStore';
+import { KEYWORD_NOTE_SCOPE, KEYWORD_PIN_SCOPE, keywordNoteId, keywordNoteKeys, readKeywordNoteAt, readPinnedCamps, togglePinnedCamp } from '@/lib/store/keywordNotes';
 import { Input } from '@/components/ui/input';
 import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
 import { matchKeywordQuery, parseKeywordQuery } from '@/lib/utils/keywordQuery';
@@ -402,10 +402,9 @@ function CampCell({
   );
 }
 
-// Scope for the pinned-camp choice. Separate from the 'underbid' note scope so
-// pinning a camp never disturbs a note's updatedAt — that timestamp is the
-// measurement anchor for the Impact bid column.
-const CAMP_SCOPE = 'underbid-camp';
+// Ghim camp: scope 'underbid-camp' (KEYWORD_PIN_SCOPE), tách khỏi scope note để
+// bấm ghim không đụng updatedAt của note — mốc đo Impact bid. Khoá và cách đọc
+// dùng chung với Vị trí keyword / Paid Coverage: xem lib/store/keywordNotes.ts.
 
 export function UnderbidView() {
   const { data, isLoading, error } = useSheetData();
@@ -418,15 +417,9 @@ export function UnderbidView() {
   const setNote = useNotesStore((s) => s.setNote);
   // Pins are stored newline-separated in one note value. Camp names never
   // contain newlines (Camp_Links collapses them), so the split is unambiguous.
-  const chosenCampsOf = (term: string): string[] =>
-    (allNotes[noteKeyOf(CAMP_SCOPE, term)] || '')
-      .split('\n')
-      .map((x) => x.trim())
-      .filter(Boolean);
+  const chosenCampsOf = (term: string): string[] => readPinnedCamps(allNotes, term);
   const toggleCamp = (term: string, campName: string) => {
-    const cur = chosenCampsOf(term);
-    const next = cur.includes(campName) ? cur.filter((c) => c !== campName) : [...cur, campName];
-    setNote(CAMP_SCOPE, term, next.join('\n'));
+    setNote(KEYWORD_PIN_SCOPE, keywordNoteId(term), togglePinnedCamp(chosenCampsOf(term), campName));
   };
   useEffect(() => {
     loadNotes();

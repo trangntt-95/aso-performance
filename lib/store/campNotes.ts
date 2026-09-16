@@ -3,7 +3,8 @@
 import { buildCampNameResolver, normalizeCampName } from '@/lib/sheets/campName';
 import { buildCampGrouper } from '@/lib/sheets/campGroup';
 import { noteKeyOf } from '@/lib/store/notesStore';
-import { readKeywordNote } from '@/lib/store/keywordNotes';
+import { KEYWORD_PIN_SCOPE, readKeywordNote } from '@/lib/store/keywordNotes';
+import { normKw } from '@/lib/sheets/kwNorm';
 import type { CampLinkRow } from '@/lib/sheets/types';
 
 // One note per CAMPAIGN, shared by every table that shows campaigns.
@@ -128,14 +129,16 @@ export interface KeywordNoteForCamp {
   note: string;
 }
 
-const UNDERBID_CAMP_SCOPE = 'underbid-camp';
 const SEP = '||';
 
 export function buildKeywordNotesByCamp(
   notes: Record<string, string>,
 ): Map<string, KeywordNoteForCamp[]> {
   const out = new Map<string, KeywordNoteForCamp[]>();
-  const prefix = UNDERBID_CAMP_SCOPE + SEP;
+  // Ghim có thể nằm dưới khoá chuẩn hoá (mới) lẫn khoá tên thô (cũ) của cùng
+  // một keyword → gộp theo normKw để một keyword không hiện hai lần ở một camp.
+  const seen = new Set<string>();
+  const prefix = KEYWORD_PIN_SCOPE + SEP;
   for (const [key, value] of Object.entries(notes)) {
     if (!key.startsWith(prefix) || !value) continue;
     const keyword = key.slice(prefix.length);
@@ -143,6 +146,9 @@ export function buildKeywordNotesByCamp(
     const note = readKeywordNote(notes, keyword);
     for (const camp of value.split('\n').map((c) => c.trim()).filter(Boolean)) {
       const id = campNoteId(camp);
+      const dedupe = `${id}\u0000${normKw(keyword)}`;
+      if (seen.has(dedupe)) continue;
+      seen.add(dedupe);
       const list = out.get(id);
       if (list) list.push({ keyword, note });
       else out.set(id, [{ keyword, note }]);
