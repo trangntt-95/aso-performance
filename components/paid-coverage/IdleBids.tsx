@@ -291,23 +291,28 @@ export function IdleBids() {
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="bg-slate-50 text-slate-600">
-                <tr>
+                <tr className="align-bottom">
                   <th className="px-2 py-1 text-left font-medium">Keyword</th>
                   <th className="px-2 py-1 text-left font-medium">Nhóm</th>
-                  <th className="px-2 py-1 text-right font-medium" title={`Users / install organic trong ${report.historyWindow}`}>
+                  <th className="px-2 py-1 text-right font-medium" title="Người tìm thấy app qua kết quả tự nhiên (không phải quảng cáo) và bấm vào listing, rồi bao nhiêu người trong đó cài. Có organic mà paid không hiện = đang thua đấu giá.">
                     Organic {report.historyWindow}
+                    <div className="text-[9px] font-normal text-slate-400">users · install, không qua ads</div>
                   </th>
-                  <th className="px-2 py-1 text-right font-medium" title={`Users / install paid trong ${report.historyWindow} — có mà ${win} = 0 nghĩa là từng hiện rồi mất`}>
+                  <th className="px-2 py-1 text-right font-medium" title={`Người bấm vào quảng cáo của keyword này trong ${report.historyWindow}, và bao nhiêu người cài. Có số ở đây mà ${win} = 0 nghĩa là từng hiện rồi mất.`}>
                     Paid {report.historyWindow}
+                    <div className="text-[9px] font-normal text-slate-400">users · install qua ads, cả năm</div>
                   </th>
-                  <th className="px-2 py-1 text-right font-medium text-slate-500" title="Impression / click trong export Shopify Ads (cả kỳ export). Trống khi export không có keyword này.">
-                    Export
+                  <th className="px-2 py-1 text-right font-medium text-slate-500" title="Từ file export Shopify Ads (tab Search_Term_Unbidded): quảng cáo của keyword này hiện ra bao nhiêu lần và được bấm bao nhiêu lần. GA4 không thấy lượt hiện, chỉ export mới có. Trống = export không có keyword này.">
+                    Export Shopify Ads
+                    <div className="text-[9px] font-normal text-slate-400">lượt hiện · click</div>
                   </th>
-                  <th className="px-2 py-1 text-right font-medium" title="Bid cao nhất – thấp nhất đang đặt ở các camp chưa tắt">
-                    Bid
+                  <th className="px-2 py-1 text-right font-medium" title="Bid max đang đặt cho keyword này. Keyword nằm ở nhiều camp thì mỗi camp một bid, nên ghi cao nhất – thấp nhất.">
+                    Bid đang đặt
+                    <div className="text-[9px] font-normal text-slate-400">cao nhất – thấp nhất</div>
                   </th>
-                  <th className="border-l border-slate-200 px-2 py-1 text-left font-medium" title="Camp chưa tắt đang chứa keyword, kèm bid ở camp đó">
-                    Camp
+                  <th className="border-l border-slate-200 px-2 py-1 text-left font-medium" title="Camp chưa tắt đang chứa keyword, kèm bid ở camp đó. Bấm +N để xem các camp còn lại.">
+                    Camp đang bid
+                    <div className="text-[9px] font-normal text-slate-400">tên camp · bid ở camp đó</div>
                   </th>
                 </tr>
               </thead>
@@ -331,13 +336,31 @@ export function IdleBids() {
                       </span>
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums">
-                      {r.organicUsers > 0 ? `${formatNumber(r.organicUsers)} / ${formatNumber(r.organicInstalls)}` : <span className="text-slate-300">—</span>}
+                      {r.organicUsers > 0 ? (
+                        <>
+                          {formatNumber(r.organicUsers)} users · {formatNumber(r.organicInstalls)} install
+                        </>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums">
-                      {r.paidUsers > 0 ? `${formatNumber(r.paidUsers)} / ${formatNumber(r.paidInstalls)}` : <span className="text-slate-300">—</span>}
+                      {r.paidUsers > 0 ? (
+                        <>
+                          {formatNumber(r.paidUsers)} users · {formatNumber(r.paidInstalls)} install
+                        </>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums text-slate-500">
-                      {r.exportImpressions > 0 ? `${formatNumber(r.exportImpressions)} / ${formatNumber(r.exportClicks)}` : <span className="text-slate-300">—</span>}
+                      {r.exportImpressions > 0 ? (
+                        <>
+                          {formatNumber(r.exportImpressions)} hiện · {formatNumber(r.exportClicks)} click
+                        </>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums">
                       {r.bidMax !== null && r.bidMin !== null && r.bidMax !== r.bidMin ? `${money(r.bidMax)} – ${money(r.bidMin)}` : money(r.bidMax)}
@@ -367,7 +390,9 @@ export function IdleBids() {
             </button>
           )}
           <p className="text-[10px] leading-relaxed text-slate-400">
-            Không có users paid ≠ không có impression: GA4 chỉ thấy keyword khi có người bấm vào listing. Keyword hiện
+            <b>Đọc cột:</b> hai cột Organic / Paid là lịch sử cả năm của keyword, để biết có ai tìm không; cột Export
+            là lượt quảng cáo hiện ra theo file export Shopify (GA4 không đo được lượt hiện); Bid là bid max đang đặt,
+            keyword ở nhiều camp thì ghi cao nhất – thấp nhất. Không có users paid ≠ không có impression: GA4 chỉ thấy keyword khi có người bấm vào listing. Keyword hiện
             ra mà không ai bấm sẽ chỉ có ở cột Export (khi export Shopify có nó). Nhóm chia theo{' '}
             {report.historyWindow}; đổi {win} chỉ đổi điều kiện &ldquo;0 users paid&rdquo;.
           </p>
