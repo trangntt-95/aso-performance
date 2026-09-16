@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Pin } from 'lucide-react';
 import { useNotesStore } from '@/lib/store/notesStore';
 import { readKeywordCountryNotes } from '@/lib/store/keywordNotes';
@@ -8,9 +9,15 @@ import { cn } from '@/lib/utils';
 // Note và ghim theo NƯỚC của một keyword (ghi ở tab Vị trí keyword), hiện
 // đọc-chỉ dưới ô note keyword ở Underbid / Paid Coverage / trend sheet. Đọc-chỉ
 // vì sửa "profit ở Úc" phải làm ở dòng profit × Australia, nơi có số của Úc.
+//
+// Chọn `notes` (tham chiếu ổn định) rồi mới lọc bằng useMemo. Selector trả
+// mảng mới mỗi lần là React #185 (16/09/2026: Underbid và Paid Coverage trắng
+// trang ngay sau deploy) — useSyncExternalStore coi snapshot đổi liên tục là
+// vòng lặp.
 
 export function KeywordCountryNotes({ keyword, highlight, className }: { keyword: string; highlight?: string; className?: string }) {
-  const items = useNotesStore((s) => readKeywordCountryNotes(s.notes, keyword));
+  const notes = useNotesStore((s) => s.notes);
+  const items = useMemo(() => readKeywordCountryNotes(notes, keyword), [notes, keyword]);
   if (items.length === 0) return null;
   return (
     <div className={cn('mt-1 space-y-0.5 border-t border-slate-100 pt-1', className)}>
