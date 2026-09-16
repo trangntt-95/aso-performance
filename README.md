@@ -22,7 +22,7 @@ Dữ liệu nguồn nằm ở Google Sheets. App **chỉ đọc** các tab data 
 | **Market Health** | `/market-index` | Verdict theo từng window (L3→L90), funnel breakdown, so sánh WoW, narrative + bằng chứng data; trọng số quốc gia theo doanh thu hoặc user. |
 | **Search Terms** | `/categories` | Bảng tra cứu mọi keyword × kênh: category, trạng thái paid, metric theo L7/L30/L90/L365, value/install, bản dịch; cảnh báo keyword paid đốt tiền không ra install. |
 | **Vị trí keyword** | `/positions` | Vị trí keyword theo nước qua L3→L90, mặc định Brand + top Profit ở Tier 2–3; cờ brand đã top mà vẫn đang mua. |
-| **Paid Coverage** | `/paid-coverage` | Keyword có traffic nhưng chưa được bid (gồm gap theo quốc gia) và câu tìm kiếm paid GA4 chưa có keyword riêng. |
+| **Paid Coverage** | `/paid-coverage` | Keyword có traffic nhưng chưa được bid (gồm gap theo quốc gia), câu tìm kiếm paid GA4 chưa có keyword riêng, và chiều ngược lại: keyword đang bid mà 0 users paid, chia nhóm có nhu cầu / tín hiệu yếu / không có gì. |
 | **Underbid Keywords** | `/underbid` | Keyword có nhu cầu organic thật nhưng đang bid thiếu → nên tăng bid; đo impact sau khi note. |
 | **Overbid Camps** | `/overbid-camps` | Campaign đang trả quá cao (CPC/CPI vượt ngưỡng, hoặc tiêu mà 0 install) → nên giảm bid; panel brand đã top. |
 | **Camp Health** | `/camp-health` | Tiền đang chảy vào đâu: camp click mà 0 install, CTR thấp, mất hiển thị, có tiềm năng. |
