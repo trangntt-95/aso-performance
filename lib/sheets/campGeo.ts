@@ -191,7 +191,8 @@ export function isNeverTargeted(country: string): boolean {
   return NEVER_TARGET_COUNTRIES.has(country);
 }
 
-const covers = (geo: CampGeo, country: string): boolean => {
+/** Camp có Geo này có phủ nước không. Geo trống = mọi nước trừ IN/PK/VN. */
+export const campGeoCovers = (geo: CampGeo, country: string): boolean => {
   switch (geo.mode) {
     case 'all':
       return true;
@@ -235,7 +236,7 @@ export function resolveCountryCoverage(
     }
     // A blank-Geo camp now counts as covering everything (see `covers`), so a
     // country is a GAP only when NO camp — known or blank — targets it.
-    if (geos.some((g) => covers(g, country))) covered.push(country);
+    if (geos.some((g) => campGeoCovers(g, country))) covered.push(country);
     else gaps.push(country);
   }
   return { covered, gaps, hasUnknownGeo };

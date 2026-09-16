@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,13 @@ import { CATEGORY_ORDER } from '@/lib/utils/colors';
 import type { Category } from '@/lib/sheets/types';
 import { buildCountryNetValue } from '@/lib/market/keywordNetValue';
 import { findBrandTopCamps } from '@/lib/market/brandTop';
+import { buildKeywordCampIndex, type OriginCamp } from '@/lib/market/installOrigin';
+import { buildCampGeoIndex, campGeoCovers, type CampGeo } from '@/lib/sheets/campGeo';
+import { normalizeCampName } from '@/lib/sheets/campName';
+import { KeywordCampsList } from '@/components/shared/KeywordCampsList';
+import { NoteCell } from '@/components/shared/NoteCell';
+import { useNotesStore } from '@/lib/store/notesStore';
+import { KEYWORD_NOTE_SCOPE, keywordNoteKeys } from '@/lib/store/keywordNotes';
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -192,6 +199,31 @@ export function PositionsView() {
     setSurface('both');
   };
 
+  // Camp chưa tắt đang bid keyword (Master trừ Paused_camp) + Geo để làm mờ
+  // camp không phủ nước của dòng. Master không nói camp nào phục vụ nước nào,
+  // nên liệt kê hết và để Geo xếp camp đúng nước lên trước.
+  const campIndex = useMemo(() => buildKeywordCampIndex(data), [data]);
+  const geoByKey = useMemo(() => {
+    const out = new Map<string, CampGeo>();
+    buildCampGeoIndex(data?.campLinks ?? []).forEach((g, name) => {
+      const k = normalizeCampName(name).toLowerCase();
+      const cur = out.get(k);
+      if (!cur || (cur.mode === 'unknown' && g.mode !== 'unknown')) out.set(k, g);
+    });
+    return out;
+  }, [data?.campLinks]);
+  const notCovering = (country: string) => (c: OriginCamp) => {
+    const g = geoByKey.get(normalizeCampName(c.camp).toLowerCase());
+    return g ? !campGeoCovers(g, country) : false;
+  };
+
+  // Note keyword dùng chung với Underbid / Paid Coverage / trend sheet (App_Notes).
+  const loadNotes = useNotesStore((st) => st.load);
+  const notesLoaded = useNotesStore((st) => st.loaded);
+  useEffect(() => {
+    if (!notesLoaded) loadNotes();
+  }, [notesLoaded, loadNotes]);
+
   if (error) {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
@@ -350,6 +382,14 @@ export function PositionsView() {
                 <th className="px-2 py-2 text-left font-medium min-w-[12rem]" title={`Keyword Brand có vị trí PAID ≤ ${BRAND_TOP_POS} ở cửa sổ đang sắp (GA4) → đã top; kèm camp brand đang phủ nước đó (Geo Camp_Links) với spend và vị trí camp 14 ngày từ export Shopify. Không có spend theo keyword nên cờ chỉ ra CAMP để hạ bid.`}>
                   Cảnh báo
                 </th>
+                <th className="px-2 py-2 text-left font-medium" title="Camp chưa tắt đang bid keyword này (Master KW Lookup trừ Paused_camp), kèm bid ở camp đó. Camp mờ = Geo Camp_Links không phủ nước của dòng. Bấm +N để xem hết.">
+                  Camp đang bid
+                  <div className="text-[9px] font-normal text-slate-400">tên camp · bid · mờ = không phủ nước này</div>
+                </th>
+                <th className="px-2 py-2 text-left font-medium" title="Ghi chú theo KEYWORD (một note cho mọi nước), lưu vào App_Notes. Cùng một ô với tab Underbid, Paid Coverage và trend sheet — ghi ở đâu cũng thấy ở mọi nơi.">
+                  Ghi chú
+                  <div className="text-[9px] font-normal text-slate-400">theo keyword · chung mọi tab</div>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -438,6 +478,15 @@ export function PositionsView() {
                       );
                     })()}
                   </td>
+                  <td className="px-2 py-1.5">
+                    <KeywordCampsList camps={campIndex.get(r.keyword).live} dimmed={notCovering(r.country)} emptyLabel="chưa bid" />
+                  </td>
+                  <NoteCell
+                    scope={KEYWORD_NOTE_SCOPE}
+                    noteId={keywordNoteKeys(r.keyword).id}
+                    fallbackKeys={keywordNoteKeys(r.keyword).legacy}
+                    className="px-2 py-1.5 align-top"
+                  />
                 </tr>
               ))}
             </tbody>
@@ -450,7 +499,9 @@ export function PositionsView() {
             <span className="text-rose-600">&gt;5</span> · ô &ldquo;—&rdquo; = có traffic mà GA4 không trả rank; ô trống = không có
             traffic ở cửa sổ đó · tier nước theo Max bid cap · bấm keyword để mở drill ·{' '}
             <b>Cảnh báo 🏁</b> = keyword Brand có vị trí paid ≤ {BRAND_TOP_POS} ở cửa sổ đang sắp (GA4), kèm camp brand đang phủ nước đó
-            với spend / vị trí 14 ngày từ export Shopify Ads — hạ bid ở camp đó; spend theo riêng keyword không có trong dữ liệu.
+            với spend / vị trí 14 ngày từ export Shopify Ads — hạ bid ở camp đó; spend theo riêng keyword không có trong dữ liệu ·{' '}
+            <b>Camp đang bid</b> = camp chưa tắt có keyword này trong Master, bid ở camp đó; camp mờ = Geo không phủ nước của dòng ·{' '}
+            <b>Ghi chú</b> theo keyword (chung cho mọi nước), cùng một note với Underbid, Paid Coverage và trend sheet.
           </div>
         </div>
       )}

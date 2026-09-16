@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, EyeOff, ExternalLink } from 'lucide-react';
+import { ChevronDown, EyeOff } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { formatNumber, formatDMYRange } from '@/lib/utils/format';
 import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
@@ -20,6 +20,7 @@ import {
 } from '@/lib/market/idleBids';
 import { cn } from '@/lib/utils';
 import { NoteCell } from '@/components/shared/NoteCell';
+import { KeywordCampsList } from '@/components/shared/KeywordCampsList';
 import { useNotesStore } from '@/lib/store/notesStore';
 import { KEYWORD_NOTE_SCOPE, keywordNoteKeys, readKeywordNote } from '@/lib/store/keywordNotes';
 
@@ -64,52 +65,6 @@ const SORTS: { id: Sort; label: string; hint: string }[] = [
 ];
 
 const money = (n: number | null | undefined) => (n && n > 0 ? `$${n.toFixed(2)}` : '—');
-
-function CampCell({ row }: { row: IdleBidRow }) {
-  const [open, setOpen] = useState(false);
-  const first = row.camps[0];
-  if (!first) return <span className="text-slate-400">—</span>;
-  const rest = row.camps.slice(1);
-  const Name = ({ camp, url, bidMax }: { camp: string; url?: string; bidMax: number | null }) => (
-    <span className="flex items-baseline gap-1 whitespace-nowrap">
-      {url ? (
-        <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-baseline gap-1 text-[11px] text-indigo-600 hover:underline">
-          {camp}
-          <ExternalLink className="h-2.5 w-2.5 shrink-0 self-center" />
-        </a>
-      ) : (
-        <span className="text-[11px] text-slate-700">{camp}</span>
-      )}
-      <span className="text-[10px] text-slate-400">{money(bidMax)}</span>
-    </span>
-  );
-  return (
-    <div className="min-w-0">
-      <div className="flex items-baseline gap-1">
-        <Name camp={first.camp} url={first.url} bidMax={first.bidMax} />
-        {rest.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-600 hover:bg-slate-200"
-            title={rest.map((c) => c.camp).join('\n')}
-          >
-            +{rest.length}
-          </button>
-        )}
-      </div>
-      {open && (
-        <ul className="mt-1 space-y-0.5 border-l border-slate-200 pl-2">
-          {rest.map((c) => (
-            <li key={c.camp}>
-              <Name camp={c.camp} url={c.url} bidMax={c.bidMax} />
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
 
 export function IdleBids() {
   const { data } = useSheetData();
@@ -392,7 +347,7 @@ export function IdleBids() {
                       {r.bidMax !== null && r.bidMin !== null && r.bidMax !== r.bidMin ? `${money(r.bidMax)} – ${money(r.bidMin)}` : money(r.bidMax)}
                     </td>
                     <td className="border-l border-slate-200 px-2 py-1">
-                      <CampCell row={r} />
+                      <KeywordCampsList camps={r.camps} />
                     </td>
                     <NoteCell
                       scope={KEYWORD_NOTE_SCOPE}
