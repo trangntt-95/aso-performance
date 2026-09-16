@@ -9,9 +9,10 @@ import { cn } from '@/lib/utils';
 // bảng theo keyword (Vị trí keyword, Đang bid mà không ai bấm). Dòng đầu hiện
 // sẵn, còn lại sau nút +N để bảng 800 dòng không dài gấp năm.
 //
-// `dimmed(camp)` = camp không phủ nước của dòng (theo Geo Camp_Links): vẫn
-// liệt kê vì Master không nói camp nào phục vụ nước nào, nhưng làm mờ để mắt
-// rơi vào camp đúng nước trước.
+// `rank(camp)` xếp camp theo Geo Camp_Links so với nước của dòng: 0 = Geo ghi
+// rõ nước này, 1 = Geo trống hay dạng loại trừ (có thể phủ), 2 = không phủ →
+// làm mờ. Vẫn liệt kê hết vì Master không nói camp nào phục vụ nước nào; thứ
+// tự chỉ để mắt rơi vào camp đúng nước trước, trong cùng hạng giữ bid giảm dần.
 
 const money = (n: number | null | undefined) => (n && n > 0 ? `$${n.toFixed(2)}` : '—');
 
@@ -33,19 +34,20 @@ function CampName({ camp, dim }: { camp: OriginCamp; dim: boolean }) {
 
 export function KeywordCampsList({
   camps,
-  dimmed,
+  rank,
   emptyLabel = '—',
 }: {
   camps: OriginCamp[];
-  dimmed?: (camp: OriginCamp) => boolean;
+  rank?: (camp: OriginCamp) => 0 | 1 | 2;
   emptyLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   if (camps.length === 0) return <span className="text-[11px] text-slate-400">{emptyLabel}</span>;
-  // Camp phủ nước này lên trước; trong mỗi nhóm giữ thứ tự bid giảm dần.
-  const ordered = dimmed ? [...camps.filter((c) => !dimmed(c)), ...camps.filter((c) => dimmed(c))] : camps;
+  const rankOf = (c: OriginCamp) => (rank ? rank(c) : 1);
+  // Sort ổn định: cùng hạng giữ thứ tự bid giảm dần của campIndex.
+  const ordered = camps.map((c, i) => ({ c, i })).sort((a, b) => rankOf(a.c) - rankOf(b.c) || a.i - b.i).map((x) => x.c);
   const [first, ...rest] = ordered;
-  const isDim = (c: OriginCamp) => (dimmed ? dimmed(c) : false);
+  const isDim = (c: OriginCamp) => rankOf(c) >= 2;
   return (
     <div className="min-w-0">
       <div className="flex items-baseline gap-1">

@@ -212,9 +212,12 @@ export function PositionsView() {
     });
     return out;
   }, [data?.campLinks]);
-  const notCovering = (country: string) => (c: OriginCamp) => {
+  // 0 = Geo ghi rõ nước này · 1 = Geo trống / loại trừ (có thể phủ) · 2 = không phủ (mờ).
+  const geoRank = (country: string) => (c: OriginCamp): 0 | 1 | 2 => {
     const g = geoByKey.get(normalizeCampName(c.camp).toLowerCase());
-    return g ? !campGeoCovers(g, country) : false;
+    if (!g) return 1;
+    if (!campGeoCovers(g, country)) return 2;
+    return g.mode === 'include' ? 0 : 1;
   };
 
   // Note keyword dùng chung với Underbid / Paid Coverage / trend sheet (App_Notes).
@@ -382,9 +385,9 @@ export function PositionsView() {
                 <th className="px-2 py-2 text-left font-medium min-w-[12rem]" title={`Keyword Brand có vị trí PAID ≤ ${BRAND_TOP_POS} ở cửa sổ đang sắp (GA4) → đã top; kèm camp brand đang phủ nước đó (Geo Camp_Links) với spend và vị trí camp 14 ngày từ export Shopify. Không có spend theo keyword nên cờ chỉ ra CAMP để hạ bid.`}>
                   Cảnh báo
                 </th>
-                <th className="px-2 py-2 text-left font-medium" title="Camp chưa tắt đang bid keyword này (Master KW Lookup trừ Paused_camp), kèm bid ở camp đó. Camp mờ = Geo Camp_Links không phủ nước của dòng. Bấm +N để xem hết.">
+                <th className="px-2 py-2 text-left font-medium" title="Camp chưa tắt đang bid keyword này (Master KW Lookup trừ Paused_camp), kèm bid ở camp đó. Xếp: camp có Geo ghi rõ nước này trước, rồi camp Geo trống, cuối là camp không phủ nước (mờ). Bấm +N để xem hết.">
                   Camp đang bid
-                  <div className="text-[9px] font-normal text-slate-400">tên camp · bid · mờ = không phủ nước này</div>
+                  <div className="text-[9px] font-normal text-slate-400">Geo đúng nước trước · bid · mờ = không phủ nước này</div>
                 </th>
                 <th className="px-2 py-2 text-left font-medium" title="Ghi chú theo KEYWORD (một note cho mọi nước), lưu vào App_Notes. Cùng một ô với tab Underbid, Paid Coverage và trend sheet — ghi ở đâu cũng thấy ở mọi nơi.">
                   Ghi chú
@@ -479,7 +482,7 @@ export function PositionsView() {
                     })()}
                   </td>
                   <td className="px-2 py-1.5">
-                    <KeywordCampsList camps={campIndex.get(r.keyword).live} dimmed={notCovering(r.country)} emptyLabel="chưa bid" />
+                    <KeywordCampsList camps={campIndex.get(r.keyword).live} rank={geoRank(r.country)} emptyLabel="chưa bid" />
                   </td>
                   <NoteCell
                     scope={KEYWORD_NOTE_SCOPE}
