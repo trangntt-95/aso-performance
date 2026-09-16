@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, EyeOff, ExternalLink } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { formatNumber, formatDMYRange } from '@/lib/utils/format';
@@ -19,6 +19,9 @@ import {
   type IdleWindow,
 } from '@/lib/market/idleBids';
 import { cn } from '@/lib/utils';
+import { NoteCell } from '@/components/shared/NoteCell';
+import { useNotesStore } from '@/lib/store/notesStore';
+import { KEYWORD_NOTE_SCOPE, keywordNoteKeys, readKeywordNote } from '@/lib/store/keywordNotes';
 
 // Keyword đang bid mà không ai bấm — mặt trái của bảng chính. Xem
 // lib/market/idleBids.ts cho lý do chia ba nhóm.
@@ -117,6 +120,16 @@ export function IdleBids() {
   const [sort, setSort] = useState<Sort>('signal');
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(100);
+  const [onlyNoted, setOnlyNoted] = useState(false);
+
+  // Note keyword dùng chung với Underbid / trend sheet (App_Notes, scope
+  // 'underbid', khoá keyword chuẩn hoá) — ghi ở đây là Underbid thấy ngay.
+  const loadNotes = useNotesStore((s) => s.load);
+  const notesLoaded = useNotesStore((s) => s.loaded);
+  const notes = useNotesStore((s) => s.notes);
+  useEffect(() => {
+    if (!notesLoaded) loadNotes();
+  }, [notesLoaded, loadNotes]);
 
   const report = useMemo(() => buildIdleBidsReport(data, win), [data, win]);
   const winRange = data?.windowDates?.[win];
@@ -148,6 +161,7 @@ export function IdleBids() {
     const query = parseKeywordQuery(q);
     const list = inCategory.filter((r) => {
       if (!groups.has(r.group)) return false;
+      if (onlyNoted && !readKeywordNote(notes, r.keyword).trim()) return false;
       if (query.empty) return true;
       return matchKeywordQuery(`${r.keyword} ${r.camps.map((c) => c.camp).join(' ')}`, query);
     });
@@ -165,8 +179,12 @@ export function IdleBids() {
     };
     const order: Record<IdleGroup, number> = { demand: 0, weak: 1, none: 2 };
     return [...list].sort((a, b) => order[a.group] - order[b.group] || key(b) - key(a) || a.keyword.localeCompare(b.keyword));
-  }, [inCategory, groups, q, sort]);
+  }, [inCategory, groups, q, sort, onlyNoted, notes]);
   const shown = useMemo(() => filtered.slice(0, limit), [filtered, limit]);
+  const notedCount = useMemo(
+    () => inCategory.reduce((n, r) => n + (readKeywordNote(notes, r.keyword).trim() ? 1 : 0), 0),
+    [inCategory, notes],
+  );
 
   if (!data || !report) return null;
 
@@ -281,6 +299,10 @@ export function IdleBids() {
               ))}
             </div>
             <KeywordSearchBox value={q} onChange={setQ} placeholder="Tìm keyword / camp — vd: profit -whale" />
+            <label className="inline-flex items-center gap-1 text-[11px] text-slate-600" title="Chỉ hiện keyword đã có ghi chú (ghi ở đây hoặc ở Underbid — cùng một note).">
+              <input type="checkbox" checked={onlyNoted} onChange={(e) => setOnlyNoted(e.target.checked)} className="h-3 w-3" />
+              chỉ có note ({formatNumber(notedCount)})
+            </label>
             <CopyKeywordsButton keywords={filtered.map((r) => r.keyword)} label={`Copy ${formatNumber(filtered.length)} keyword`} className="ml-auto" />
             <CopyKeywordsButton
               keywords={filtered.filter((r) => r.group === 'demand').map((r) => r.keyword)}
@@ -313,6 +335,10 @@ export function IdleBids() {
                   <th className="border-l border-slate-200 px-2 py-1 text-left font-medium" title="Camp chưa tắt đang chứa keyword, kèm bid ở camp đó. Bấm +N để xem các camp còn lại.">
                     Camp đang bid
                     <div className="text-[9px] font-normal text-slate-400">tên camp · bid ở camp đó</div>
+                  </th>
+                  <th className="px-2 py-1 text-left font-medium" title="Ghi chú theo keyword, lưu vào App_Notes. Cùng một note với cột Ghi chú ở tab Underbid và trend sheet: ghi ở đâu cũng thấy ở mọi nơi.">
+                    Ghi chú
+                    <div className="text-[9px] font-normal text-slate-400">chung với Underbid</div>
                   </th>
                 </tr>
               </thead>
@@ -368,11 +394,17 @@ export function IdleBids() {
                     <td className="border-l border-slate-200 px-2 py-1">
                       <CampCell row={r} />
                     </td>
+                    <NoteCell
+                      scope={KEYWORD_NOTE_SCOPE}
+                      noteId={keywordNoteKeys(r.keyword).id}
+                      fallbackKeys={keywordNoteKeys(r.keyword).legacy}
+                      className="px-2 py-1 align-top"
+                    />
                   </tr>
                 ))}
                 {shown.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-2 py-3 text-center text-[11px] text-slate-500">
+                    <td colSpan={8} className="px-2 py-3 text-center text-[11px] text-slate-500">
                       Không có keyword nào khớp bộ lọc — bật thêm nhóm hoặc xoá ô tìm.
                     </td>
                   </tr>
@@ -390,7 +422,8 @@ export function IdleBids() {
             </button>
           )}
           <p className="text-[10px] leading-relaxed text-slate-400">
-            <b>Đọc cột:</b> hai cột Organic / Paid là lịch sử cả năm của keyword, để biết có ai tìm không; cột Export
+            <b>Đọc cột:</b> Ghi chú là note theo keyword, cùng một ô với tab Underbid và trend sheet — ghi &ldquo;đã tăng
+            bid lên $X ngày …&rdquo; ở đây thì Underbid thấy ngay, và Impact bid ở đó đo từ mốc này. Hai cột Organic / Paid là lịch sử cả năm của keyword, để biết có ai tìm không; cột Export
             là lượt quảng cáo hiện ra theo file export Shopify (GA4 không đo được lượt hiện); Bid là bid max đang đặt,
             keyword ở nhiều camp thì ghi cao nhất – thấp nhất. Không có users paid ≠ không có impression: GA4 chỉ thấy keyword khi có người bấm vào listing. Keyword hiện
             ra mà không ai bấm sẽ chỉ có ở cột Export (khi export Shopify có nó). Nhóm chia theo{' '}

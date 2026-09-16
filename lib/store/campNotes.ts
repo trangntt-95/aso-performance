@@ -3,6 +3,7 @@
 import { buildCampNameResolver, normalizeCampName } from '@/lib/sheets/campName';
 import { buildCampGrouper } from '@/lib/sheets/campGroup';
 import { noteKeyOf } from '@/lib/store/notesStore';
+import { readKeywordNote } from '@/lib/store/keywordNotes';
 import type { CampLinkRow } from '@/lib/sheets/types';
 
 // One note per CAMPAIGN, shared by every table that shows campaigns.
@@ -128,7 +129,6 @@ export interface KeywordNoteForCamp {
 }
 
 const UNDERBID_CAMP_SCOPE = 'underbid-camp';
-const UNDERBID_SCOPE = 'underbid';
 const SEP = '||';
 
 export function buildKeywordNotesByCamp(
@@ -140,7 +140,7 @@ export function buildKeywordNotesByCamp(
     if (!key.startsWith(prefix) || !value) continue;
     const keyword = key.slice(prefix.length);
     if (!keyword) continue;
-    const note = notes[UNDERBID_SCOPE + SEP + keyword] ?? '';
+    const note = readKeywordNote(notes, keyword);
     for (const camp of value.split('\n').map((c) => c.trim()).filter(Boolean)) {
       const id = campNoteId(camp);
       const list = out.get(id);

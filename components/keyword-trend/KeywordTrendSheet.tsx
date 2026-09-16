@@ -16,7 +16,8 @@ import { normKw } from '@/lib/sheets/kwNorm';
 import { KeywordOriginBlock } from './KeywordOriginBlock';
 import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
 import { useStatusStore } from '@/lib/store/statusStore';
-import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
+import { useNotesStore } from '@/lib/store/notesStore';
+import { readKeywordNote, readKeywordNoteAt } from '@/lib/store/keywordNotes';
 import { keywordPaidShare, summarizeImpact, type ImpactPoint } from '@/lib/market/noteImpact';
 import { buildKeywordCountryNetValue, sumNetValueAggs, type NetValueAgg } from '@/lib/market/keywordNetValue';
 import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
@@ -267,9 +268,10 @@ export function KeywordTrendSheet() {
   useEffect(() => {
     if (!notesLoaded) loadNotes();
   }, [notesLoaded, loadNotes]);
-  const ubNoteKey = keyword ? noteKeyOf('underbid', keyword) : '';
-  const ubNote = useNotesStore((s) => (ubNoteKey ? s.notes[ubNoteKey] : undefined));
-  const ubNoteAt = useNotesStore((s) => (ubNoteKey ? s.updatedAt[ubNoteKey] : undefined));
+  // Note keyword dùng chung mọi bảng (Underbid, Paid Coverage) — khoá chuẩn hoá,
+  // đọc dự phòng khoá tên thô. Xem lib/store/keywordNotes.ts.
+  const ubNote = useNotesStore((s) => (keyword ? readKeywordNote(s.notes, keyword) || undefined : undefined));
+  const ubNoteAt = useNotesStore((s) => (keyword ? readKeywordNoteAt(s.updatedAt, keyword) : undefined));
 
   const bidImpact = useMemo(() => {
     if (!keyword || !data || !ubNoteAt) return null;

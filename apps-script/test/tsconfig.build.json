@@ -37,6 +37,8 @@
     "../../lib/market/underbidCeiling.ts",
     "../../lib/market/idleBids.ts",
     "../../lib/market/installOrigin.ts",
-    "../../lib/sheets/campUrl.ts"
+    "../../lib/sheets/campUrl.ts",
+    "../../lib/store/keywordNotes.ts",
+    "../../lib/store/notesStore.ts"
   ]
 }

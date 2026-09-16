@@ -5,6 +5,7 @@ import { Pin, AlertCircle, X, ExternalLink, AlertTriangle, ChevronDown } from 'l
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { useNotesStore, noteKeyOf } from '@/lib/store/notesStore';
+import { KEYWORD_NOTE_SCOPE, keywordNoteKeys, readKeywordNoteAt } from '@/lib/store/keywordNotes';
 import { Input } from '@/components/ui/input';
 import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
 import { matchKeywordQuery, parseKeywordQuery } from '@/lib/utils/keywordQuery';
@@ -455,14 +456,14 @@ export function UnderbidView() {
     [data?.shopifyDaily, data?.campLinks],
   );
   const perCampImpact = (term: string, camps: string[]): PerCampImpact[] => {
-    const ts = noteTimes[noteKeyOf('underbid', term)];
+    const ts = readKeywordNoteAt(noteTimes, term);
     if (!ts) return [];
     const at = new Date(ts).getTime();
     if (!Number.isFinite(at)) return [];
     return camps.map((camp) => ({ camp, impact: campBidImpact(campDaily.get(camp), at) }));
   };
   const impactOf = (term: string): NoteImpact | null => {
-    const ts = noteTimes[noteKeyOf('underbid', term)];
+    const ts = readKeywordNoteAt(noteTimes, term);
     if (!ts) return null;
     const at = new Date(ts).getTime();
     if (!Number.isFinite(at)) return null;
@@ -560,7 +561,7 @@ export function UnderbidView() {
     const now = Date.now();
     for (const r of rows) {
       let best: HiddenInfo | null = null;
-      const ts = noteSnapshot[noteKeyOf('underbid', r.term)];
+      const ts = readKeywordNoteAt(noteSnapshot, r.term);
       if (ts) {
         const noted = new Date(ts).getTime();
         if (Number.isFinite(noted)) best = { until: noted + HIDE_DAYS * DAY_MS, via: 'keyword' };
@@ -934,7 +935,9 @@ export function UnderbidView() {
                     ) : (
                       <ImpactCell impact={impactOf(r.term)} onOpen={() => openKeyword(r.term, { surface: 'paid' })} />
                     )}
-                    <NoteCell scope="underbid" noteId={r.term} />
+                    {/* Note keyword dùng chung với Paid Coverage / trend sheet: khoá
+                        chuẩn hoá, đọc dự phòng khoá tên thô. Xem lib/store/keywordNotes.ts. */}
+                    <NoteCell scope={KEYWORD_NOTE_SCOPE} noteId={keywordNoteKeys(r.term).id} fallbackKeys={keywordNoteKeys(r.term).legacy} />
                   </tr>
                 );
               })}
