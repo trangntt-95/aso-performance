@@ -330,12 +330,12 @@ export function IdleBids() {
                         )}
                       </div>
                     </td>
-                    <td className="px-2 py-1">
+                    <td className="whitespace-nowrap px-2 py-1">
                       <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium ring-1', GROUP_META[r.group].tone)} title={GROUP_META[r.group].action}>
                         {GROUP_META[r.group].label}
                       </span>
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums">
+                    <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">
                       {r.organicUsers > 0 ? (
                         <>
                           {formatNumber(r.organicUsers)} users · {formatNumber(r.organicInstalls)} install
@@ -344,7 +344,7 @@ export function IdleBids() {
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums">
+                    <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">
                       {r.paidUsers > 0 ? (
                         <>
                           {formatNumber(r.paidUsers)} users · {formatNumber(r.paidInstalls)} install
@@ -353,7 +353,7 @@ export function IdleBids() {
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-slate-500">
+                    <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums text-slate-500">
                       {r.exportImpressions > 0 ? (
                         <>
                           {formatNumber(r.exportImpressions)} hiện · {formatNumber(r.exportClicks)} click
@@ -362,7 +362,7 @@ export function IdleBids() {
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums">
+                    <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">
                       {r.bidMax !== null && r.bidMin !== null && r.bidMax !== r.bidMin ? `${money(r.bidMax)} – ${money(r.bidMin)}` : money(r.bidMax)}
                     </td>
                     <td className="border-l border-slate-200 px-2 py-1">
