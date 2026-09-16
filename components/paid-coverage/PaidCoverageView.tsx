@@ -16,6 +16,8 @@ import { buildOrganicDiscovery, type DiscoveredTerm } from '@/lib/market/organic
 import { PaidStatusBadge } from '@/components/shared/PaidStatusBadge';
 import { SurfaceIcon } from '@/components/shared/SurfaceIcon';
 import { formatNumber } from '@/lib/utils/format';
+import { useTableSort } from '@/lib/hooks/useTableSort';
+import { SortableTh } from '@/components/shared/SortableTh';
 import { cn } from '@/lib/utils';
 import { buildCountryBidIndex, bidPressureFor, type BidPressureSummary } from '@/lib/market/countryBid';
 import { normKw } from '@/lib/sheets/kwNorm';
@@ -96,6 +98,50 @@ type StatusFilter = 'all' | 'not_in_paid' | 'not_in_paid_strict' | 'paused' | 'i
 type Win = 'l7' | 'l30' | 'l90' | 'l365';
 
 const WIN_LABEL: Record<Win, string> = { l7: 'L7', l30: 'L30', l90: 'L90', l365: 'L365' };
+const WIN_KEYS: readonly Win[] = ['l7', 'l30', 'l90', 'l365'];
+
+// Cột sắp được. Cột window sắp theo users của đúng window đó; Countries theo
+// số nước có traffic; Bid vs trần theo số nước bị trần chặn.
+type SortKey = Win | 'keyword' | 'category' | 'value' | 'countries' | 'paid' | 'bid';
+const TEXT_COLS: readonly SortKey[] = ['keyword', 'category', 'paid'];
+const SORT_LABEL: Record<Exclude<SortKey, Win>, string> = {
+  keyword: 'Keyword',
+  category: 'Category',
+  value: 'Value/install',
+  countries: 'Countries',
+  paid: 'Paid?',
+  bid: 'Bid vs trần tier',
+};
+
+function paidLabel(r: PaidStatus): string | null {
+  // Cùng nhãn với PaidStatusBadge; negative không có badge → null (cuối bảng).
+  if (r.negative) return null;
+  if (r.paused) return 'Paused camp';
+  if (!r.inPaid) return 'Not in Paid';
+  return r.source === 'manual' ? 'Added (manual)' : 'In Paid';
+}
+
+function sortValue(r: CoverageRow, key: SortKey, countryWin: Win): number | string | null {
+  switch (key) {
+    case 'keyword':
+      return r.keyword;
+    case 'category':
+      return r.category;
+    case 'value':
+      return r.nv?.netPerInstall ?? null;
+    case 'countries':
+      return r.countriesByWin[countryWin].length || null;
+    case 'paid':
+      return paidLabel(r);
+    case 'bid': {
+      const p = r.bidPressure;
+      if (!p || (p.capped.length === 0 && p.headroom.length === 0)) return null;
+      return p.capped.length;
+    }
+    default:
+      return r[key]?.users ?? null;
+  }
+}
 
 // Country_L90 / Country_L365 tabs are empty in the sheet → the Countries column
 // falls back to the nearest window that actually has country data.
@@ -384,53 +430,56 @@ export function PaidCoverageView() {
     return { categories: Array.from(c).sort(), countries: Array.from(k).sort() };
   }, [rows]);
 
-  // Sắp theo users (mặc định) hay theo giá trị install. Users nói "nhiều người
-  // tìm", giá trị nói "đáng tiền" — danh sách chưa-bid cần cả hai, và cái thứ
-  // hai mới là thứ tự nên mở camp.
-  const [sortBy, setSortBy] = useState<'users' | 'value'>('users');
+  // Sắp theo cột: mặc định users của window đang chọn, giảm. Users nói "nhiều
+  // người tìm", Value/install nói "đáng tiền" — danh sách chưa-bid cần cả hai,
+  // bấm tiêu đề cột để đổi.
+  const sort = useTableSort<SortKey>(win, { ascFirst: TEXT_COLS });
+  const thProps = { sortKey: sort.sortKey, sortDir: sort.sortDir, onSort: sort.toggle };
+  // Đổi window trong khi đang sắp theo một cột window → sắp theo window mới
+  // (như trước: sort luôn đi theo window đang chọn).
+  const changeWin = (w: Win) => {
+    setWin(w);
+    if (sort.sortKey !== w && (WIN_KEYS as readonly string[]).includes(sort.sortKey)) sort.toggle(w);
+  };
 
   const filtered = useMemo(() => {
     // 'profit -calc' = chứa profit, KHÔNG chứa calc. Xem lib/utils/keywordQuery.ts.
     const query = parseKeywordQuery(search);
     const minU = minUsers.trim() === '' ? null : Number(minUsers);
     const minI = minInstalls.trim() === '' ? null : Number(minInstalls);
-    return rows
-      .filter((r) => {
-        if (statusFilter === 'in_paid' && r.source !== 'master') return false;
-        if (statusFilter === 'paused' && r.source !== 'paused') return false;
-        // not_in_paid INCLUDES paused (camp tắt = đang không bid).
-        if (statusFilter === 'not_in_paid' && r.inPaid) return false;
-        // strict variant: also EXCLUDES paused camp (chưa từng được bid thật sự).
-        if (statusFilter === 'not_in_paid_strict' && (r.inPaid || r.paused)) return false;
-        if (statusFilter === 'over_bid') {
-          if (!r.bidPressure || r.bidPressure.capped.length === 0) return false;
-          if (countryFilter !== 'all' && !r.bidPressure.capped.some((c) => c.country === countryFilter))
-            return false;
-        } else if (countryFilter !== 'all' && !r.countries.some((c) => c.name === countryFilter)) {
+    return rows.filter((r) => {
+      if (statusFilter === 'in_paid' && r.source !== 'master') return false;
+      if (statusFilter === 'paused' && r.source !== 'paused') return false;
+      // not_in_paid INCLUDES paused (camp tắt = đang không bid).
+      if (statusFilter === 'not_in_paid' && r.inPaid) return false;
+      // strict variant: also EXCLUDES paused camp (chưa từng được bid thật sự).
+      if (statusFilter === 'not_in_paid_strict' && (r.inPaid || r.paused)) return false;
+      if (statusFilter === 'over_bid') {
+        if (!r.bidPressure || r.bidPressure.capped.length === 0) return false;
+        if (countryFilter !== 'all' && !r.bidPressure.capped.some((c) => c.country === countryFilter))
           return false;
-        }
-        if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
-        if (minU !== null && Number.isFinite(minU)) {
-          if ((r[win]?.users ?? 0) < minU) return false;
-        }
-        if (minI !== null && Number.isFinite(minI)) {
-          if ((r[win]?.installs ?? 0) < minI) return false;
-        }
-        if (!query.empty) {
-          if (!matchKeywordQuery(`${r.keyword} ${r.english}`, query)) return false;
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        if (sortBy === 'value') {
-          // Chưa có giá trị → cuối bảng; mỏng vẫn xếp theo số nhưng đã tô vàng.
-          const av = a.nv?.netPerInstall ?? -Infinity;
-          const bv = b.nv?.netPerInstall ?? -Infinity;
-          if (bv !== av) return bv - av;
-        }
-        return (b[win]?.users ?? 0) - (a[win]?.users ?? 0);
-      });
-  }, [rows, search, statusFilter, categoryFilter, countryFilter, minUsers, minInstalls, win, sortBy]);
+      } else if (countryFilter !== 'all' && !r.countries.some((c) => c.name === countryFilter)) {
+        return false;
+      }
+      if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
+      if (minU !== null && Number.isFinite(minU)) {
+        if ((r[win]?.users ?? 0) < minU) return false;
+      }
+      if (minI !== null && Number.isFinite(minI)) {
+        if ((r[win]?.installs ?? 0) < minI) return false;
+      }
+      if (!query.empty) {
+        if (!matchKeywordQuery(`${r.keyword} ${r.english}`, query)) return false;
+      }
+      return true;
+    });
+  }, [rows, search, statusFilter, categoryFilter, countryFilter, minUsers, minInstalls, win]);
+
+  // Sắp SAU khi lọc, trước khi render; không có số → cuối bảng dù chiều nào.
+  const sorted = useMemo(
+    () => sort.sortRows(filtered, (r, key) => sortValue(r, key, countryWin)),
+    [filtered, sort, countryWin],
+  );
 
   // "Pure" not-in-paid: loại bỏ ⏸ paused camp — danh sách kw
   // thật sự chưa từng / không nên bid, dùng để copy vào camp mới.
@@ -556,9 +605,9 @@ export function PaidCoverageView() {
             />
             <select
               value={win}
-              onChange={(e) => setWin(e.target.value as Win)}
+              onChange={(e) => changeWin(e.target.value as Win)}
               className="h-6 px-1 text-[10px] rounded bg-slate-50 text-slate-700 border-0 focus:outline-none"
-              title="Window áp dụng cho filter Users/Install + sort"
+              title="Window áp dụng cho filter Users/Install + sort (khi đang sắp theo cột window)"
             >
               {(Object.keys(WIN_LABEL) as Win[]).map((w) => (
                 <option key={w} value={w}>
@@ -567,15 +616,6 @@ export function PaidCoverageView() {
               ))}
             </select>
           </div>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'users' | 'value')}
-            className="h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            title="Thứ tự bảng"
-          >
-            <option value="users">Sắp: Users {WIN_LABEL[win]}</option>
-            <option value="value">Sắp: Value/install</option>
-          </select>
           {dirty && (
             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={resetAll}>
               <X className="h-3 w-3" />
@@ -584,7 +624,7 @@ export function PaidCoverageView() {
           )}
           <div className="ml-auto flex items-center gap-2">
             <CopyKeywordsButton
-              keywords={filtered.map((r) => r.keyword)}
+              keywords={sorted.map((r) => r.keyword)}
               label={statusFilter === 'not_in_paid' ? 'Copy Not-in-Paid (gồm ⏸)' : 'Copy keywords'}
             />
             {statusFilter === 'not_in_paid' && (
@@ -598,7 +638,11 @@ export function PaidCoverageView() {
         <div className="text-xs text-slate-500">
           {filtered.length}
           {filtered.length !== rows.length ? ` / ${rows.length}` : ''} keyword
-          {rows.length === 1 ? '' : 's'} · sort theo Users {WIN_LABEL[win]}
+          {rows.length === 1 ? '' : 's'} · sort theo{' '}
+          {(WIN_KEYS as readonly string[]).includes(sort.sortKey)
+            ? `Users ${WIN_LABEL[sort.sortKey as Win]}`
+            : SORT_LABEL[sort.sortKey as Exclude<SortKey, Win>]}{' '}
+          {sort.sortDir === 'asc' ? '▲' : '▼'}
         </div>
       )}
 
@@ -617,47 +661,53 @@ export function PaidCoverageView() {
           <table className="w-full text-xs">
             <thead className="bg-slate-50 text-slate-600 sticky top-0 z-10 shadow-sm [&_th]:bg-slate-50">
               <tr>
-                <th className="px-3 py-2 text-left font-medium min-w-[14rem]">Keyword</th>
-                <th className="px-2 py-2 text-left font-medium">Category</th>
-                <th className="px-2 py-2 text-left font-medium" title="Users / Install">L7</th>
-                <th className="px-2 py-2 text-left font-medium" title="Users / Install">L30</th>
-                <th className="px-2 py-2 text-left font-medium" title="Users / Install">L90</th>
-                <th className="px-2 py-2 text-left font-medium" title="Users / Install">L365</th>
-                <th
-                  className="px-2 py-2 text-right font-medium"
+                <SortableTh col="keyword" {...thProps} align="left" className="px-3 py-2 min-w-[14rem]" label="Keyword" />
+                <SortableTh col="category" {...thProps} align="left" className="px-2 py-2" label="Category" />
+                <SortableTh col="l7" {...thProps} align="left" className="px-2 py-2" title="Users / Install · sắp theo Users" label="L7" />
+                <SortableTh col="l30" {...thProps} align="left" className="px-2 py-2" title="Users / Install · sắp theo Users" label="L30" />
+                <SortableTh col="l90" {...thProps} align="left" className="px-2 py-2" title="Users / Install · sắp theo Users" label="L90" />
+                <SortableTh col="l365" {...thProps} align="left" className="px-2 py-2" title="Users / Install · sắp theo Users" label="L365" />
+                <SortableTh
+                  col="value"
+                  {...thProps}
+                  className="px-2 py-2"
                   title={
                     'Một install của keyword này đáng bao nhiêu: net value (doanh thu − phí Shopify, chưa trừ ads) ÷ installs, ' +
                     `gộp mọi nước và cả organic + paid. Nguồn: tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}. ` +
-                    "'mỏng' = dưới 3 shop trả tiền, chưa nên bid theo. Keyword chưa bid mà giá trị cao là chỗ mở camp trước."
+                    "'mỏng' = dưới 3 shop trả tiền, chưa nên bid theo. Keyword chưa bid mà giá trị cao là chỗ mở camp trước"
                   }
-                >
-                  Value/install
-                </th>
-                <th
-                  className="px-2 py-2 text-left font-medium"
+                  label="Value/install"
+                />
+                <SortableTh
+                  col="countries"
+                  {...thProps}
+                  align="left"
+                  className="px-2 py-2"
                   title={
-                    countryWin !== win
+                    (countryWin !== win
                       ? `Country lấy theo ${WIN_LABEL[countryWin]} (dùng chung mọi window — phân bố nước gần như không đổi), nhiều users nhất trước`
-                      : `Country có traffic trong window ${WIN_LABEL[win]}, nhiều users nhất trước`
+                      : `Country có traffic trong window ${WIN_LABEL[win]}, nhiều users nhất trước`) + ' · sắp theo số nước'
                   }
-                >
-                  Countries · {WIN_LABEL[countryWin]}
-                </th>
-                <th className="px-2 py-2 text-left font-medium">Paid?</th>
-                <th
-                  className="px-2 py-2 text-left font-medium"
+                  label={<>Countries · {WIN_LABEL[countryWin]}</>}
+                />
+                <SortableTh col="paid" {...thProps} align="left" className="px-2 py-2" label="Paid?" />
+                <SortableTh
+                  col="bid"
+                  {...thProps}
+                  align="left"
+                  className="px-2 py-2"
                   title={
                     "Bid Rec ⭐ của Category × Country so với trần tier ('Tier ceil.') của nước đó — " +
                     'sát trần nghĩa là tier đang quyết định bid chứ không phải thị trường. ' +
-                    "KHÔNG phải CPC thực: sheet 'Max bid cap' đã bỏ cột Spend từ 8/2026 nên không tính được tiền trả thật theo nước."
+                    "KHÔNG phải CPC thực: sheet 'Max bid cap' đã bỏ cột Spend từ 8/2026 nên không tính được tiền trả thật theo nước. " +
+                    'Sắp theo số nước bị trần chặn'
                   }
-                >
-                  Bid vs trần tier
-                </th>
+                  label="Bid vs trần tier"
+                />
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => {
+              {sorted.map((row) => {
                 const s = categoryStyle(row.category);
                 const showTranslation = shouldShowTranslation(row.keyword, row.english, row.category);
                 return (

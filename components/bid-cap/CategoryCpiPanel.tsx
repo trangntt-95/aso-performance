@@ -4,8 +4,10 @@ import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { buildCategoryCpi, type CategoryCpiRow } from '@/lib/market/categoryCpi';
+import { useTableSort } from '@/lib/hooks/useTableSort';
+import { SortableTh } from '@/components/shared/SortableTh';
 import {
-  CapHead,
+  CAP_COLS,
   CapSection,
   CapStat,
   CpiCell,
@@ -28,6 +30,28 @@ import { formatPercent } from '@/lib/utils/format';
 // keywords with nothing in the data to divide by, so it isn't offered.
 
 type Lens = 'all' | 'over' | 'no-cap';
+
+// Cột sắp được: khóa trùng với `key` của CAP_COLS để tiêu đề và ô không lệch nhau.
+type SortCol = 'name' | 'spend' | 'installs' | 'cpi' | 'cap' | 'gap' | 'verdict';
+
+function sortValue(r: CategoryCpiRow, key: SortCol): number | string | null {
+  switch (key) {
+    case 'name':
+      return r.category;
+    case 'spend':
+      return r.spend;
+    case 'installs':
+      return r.installs;
+    case 'cpi':
+      return r.cpi;
+    case 'cap':
+      return r.cpiCap;
+    case 'gap':
+      return r.vsCap;
+    case 'verdict':
+      return verdictOf(r).label;
+  }
+}
 
 const LENS_LABEL: Record<Lens, string> = {
   all: 'Tất cả category',
@@ -183,6 +207,10 @@ export function CategoryCpiPanel() {
     }
   }, [report, lens]);
 
+  // Mặc định như trước: chi nhiều nhất trước (rows đã sắp theo spend giảm).
+  const sort = useTableSort<SortCol>('spend', { ascFirst: ['name', 'verdict'] });
+  const sorted = useMemo(() => sort.sortRows(rows, sortValue), [rows, sort]);
+
   if (isLoading || !report || report.rows.length === 0) return null;
   const overCount = report.rows.filter((r) => r.vsCap !== null && r.vsCap > 0).length;
   const noCapCount = report.rows.filter((r) => r.cpiCap === null).length;
@@ -242,9 +270,25 @@ export function CategoryCpiPanel() {
 
       <div className="overflow-x-auto rounded border border-slate-200">
         <table className="w-full text-xs">
-          <CapHead nameLabel="Category" />
+          <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
+            <tr>
+              {CAP_COLS.map((c) => (
+                <SortableTh<SortCol>
+                  key={c.key}
+                  col={c.key as SortCol}
+                  sortKey={sort.sortKey}
+                  sortDir={sort.sortDir}
+                  onSort={sort.toggle}
+                  align={c.align}
+                  title={c.title}
+                  label={c.key === 'name' ? 'Category' : c.label}
+                  className="whitespace-nowrap px-2 py-1.5"
+                />
+              ))}
+            </tr>
+          </thead>
           <tbody>
-            {rows.map((r) => (
+            {sorted.map((r) => (
               <Row key={r.category} r={r} />
             ))}
           </tbody>

@@ -12,6 +12,8 @@ import {
 import { FX_NOTE } from '@/lib/config/fx';
 import { formatNumber, formatPercent } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
+import { useTableSort } from '@/lib/hooks/useTableSort';
+import { SortableTh } from '@/components/shared/SortableTh';
 
 // The five Google Ads tabs that diagnose rather than total. Each section is
 // collapsible and renders nothing at all when its tab is absent, so the page
@@ -22,6 +24,25 @@ const usd = (n: number | null) => (n === null ? '—' : `$${n < 10 ? n.toFixed(2
 type CountryFilter = 'spending' | 'all' | 'excluded' | 'restricted' | 'uncapped' | 'no-revenue';
 type QsFilter = 'weak' | 'low-qs' | 'all';
 type BidFilter = 'all' | 'over-target' | 'no-target';
+
+// Sắp theo cột cho ba bảng danh sách (useTableSort). Mặc định chi giảm — đúng
+// thứ tự lib đã xếp. Chữ tăng A→Z; CPC / cost-per-conv / CPA / CPI rẻ hơn lên
+// trước; nhãn QS (Ad / Landing / CTR) xếp dưới TB → TB → trên TB.
+type CountrySortKey = 'country' | 'cost' | 'clicks' | 'ctr' | 'cpc' | 'cpa' | 'cap' | 'value' | 'campaigns';
+const COUNTRY_ASC_FIRST: readonly CountrySortKey[] = ['country', 'cpc', 'cpa'];
+type QsSortKey = 'keyword' | 'qs' | 'qsAd' | 'qsLp' | 'qsCtr' | 'cost' | 'ctr' | 'culprit';
+const QS_ASC_FIRST: readonly QsSortKey[] = ['keyword', 'qs', 'qsAd', 'qsLp', 'qsCtr', 'culprit'];
+type BidSortKey = 'campaign' | 'strategy' | 'target' | 'cpa' | 'cpi' | 'cost';
+const BID_ASC_FIRST: readonly BidSortKey[] = ['campaign', 'strategy', 'target', 'cpa', 'cpi'];
+
+/** Nhãn QS của Google thành số để sắp: dưới TB 0, TB 1, trên TB 2, trống null. */
+function qsRank(value: string): number | null {
+  const v = value.toUpperCase();
+  if (!v) return null;
+  if (v === 'BELOW_AVERAGE') return 0;
+  if (v === 'ABOVE_AVERAGE') return 2;
+  return 1;
+}
 
 function Section({
   title,
@@ -159,33 +180,79 @@ export function GoogleAdsDeepSections() {
   const pickBid = (v: BidFilter) => setBidFilter((cur) => (cur === v ? 'all' : v));
   const pickCountry = (v: CountryFilter) => setCountryFilter((cur) => (cur === v ? 'all' : v));
   const [countryFilter, setCountryFilter] = useState<CountryFilter>('spending');
+  const countrySort = useTableSort<CountrySortKey>('cost', { ascFirst: COUNTRY_ASC_FIRST });
+  const qsSort = useTableSort<QsSortKey>('cost', { ascFirst: QS_ASC_FIRST });
+  const bidSort = useTableSort<BidSortKey>('cost', { ascFirst: BID_ASC_FIRST });
 
   const countryRows = useMemo<GadsCountryRow[]>(() => {
     const rs = deep.country?.rows ?? [];
-    switch (countryFilter) {
-      case 'all': return rs;
-      case 'excluded': return rs.filter((r) => r.excluded);
-      case 'restricted': return rs.filter((r) => r.restricted);
-      case 'uncapped': return rs.filter((r) => r.costUsd > 0 && r.capUsd === null);
-      case 'no-revenue':
-        return rs.filter((r) => r.costUsd > 0 && (r.valuePerInstall === null || r.valuePerInstall <= 0));
-      default: return rs.filter((r) => r.costUsd > 0);
-    }
-  }, [deep.country, countryFilter]);
+    const list = (() => {
+      switch (countryFilter) {
+        case 'all': return rs;
+        case 'excluded': return rs.filter((r) => r.excluded);
+        case 'restricted': return rs.filter((r) => r.restricted);
+        case 'uncapped': return rs.filter((r) => r.costUsd > 0 && r.capUsd === null);
+        case 'no-revenue':
+          return rs.filter((r) => r.costUsd > 0 && (r.valuePerInstall === null || r.valuePerInstall <= 0));
+        default: return rs.filter((r) => r.costUsd > 0);
+      }
+    })();
+    return countrySort.sortRows(list, (r, key) => {
+      switch (key) {
+        case 'country': return r.country;
+        case 'cost': return r.costUsd;
+        case 'clicks': return r.clicks;
+        case 'ctr': return r.ctr;
+        case 'cpc': return r.cpcUsd;
+        case 'cpa': return r.cpaUsd;
+        case 'cap': return r.capUsd;
+        case 'value': return r.valuePerInstall;
+        case 'campaigns': return r.campaigns;
+      }
+    });
+  }, [deep.country, countryFilter, countrySort]);
 
   const qsRows = useMemo<GadsKeywordRow[]>(() => {
     const rs = deep.quality?.rows ?? [];
-    if (qsFilter === 'low-qs') return rs.filter((r) => r.qs !== null && r.qs < 5);
-    if (qsFilter === 'weak') return rs.filter((r) => r.weakParts.length > 0 || (r.qs !== null && r.qs < 5));
-    return rs;
-  }, [deep.quality, qsFilter]);
+    const list =
+      qsFilter === 'low-qs'
+        ? rs.filter((r) => r.qs !== null && r.qs < 5)
+        : qsFilter === 'weak'
+          ? rs.filter((r) => r.weakParts.length > 0 || (r.qs !== null && r.qs < 5))
+          : rs;
+    return qsSort.sortRows(list, (r, key) => {
+      switch (key) {
+        case 'keyword': return r.keyword;
+        case 'qs': return r.qs;
+        case 'qsAd': return qsRank(r.qsAd);
+        case 'qsLp': return qsRank(r.qsLp);
+        case 'qsCtr': return qsRank(r.qsCtr);
+        case 'cost': return r.costUsd;
+        case 'ctr': return r.ctr;
+        case 'culprit': return r.weakParts.length === 0 ? null : CULPRIT_LABEL[r.culprit];
+      }
+    });
+  }, [deep.quality, qsFilter, qsSort]);
 
   const bidRows = useMemo(() => {
     const rs = deep.bidding?.rows ?? [];
-    if (bidFilter === 'over-target') return rs.filter((r) => r.vsTarget !== null && r.vsTarget > 0);
-    if (bidFilter === 'no-target') return rs.filter((r) => r.targetCpaUsd === null && r.costUsd > 0);
-    return rs;
-  }, [deep.bidding, bidFilter]);
+    const list =
+      bidFilter === 'over-target'
+        ? rs.filter((r) => r.vsTarget !== null && r.vsTarget > 0)
+        : bidFilter === 'no-target'
+          ? rs.filter((r) => r.targetCpaUsd === null && r.costUsd > 0)
+          : rs;
+    return bidSort.sortRows(list, (r, key) => {
+      switch (key) {
+        case 'campaign': return r.campaignName;
+        case 'strategy': return r.bidStrategy;
+        case 'target': return r.targetCpaUsd;
+        case 'cpa': return r.actualCpaUsd;
+        case 'cpi': return r.actualCpiUsd;
+        case 'cost': return r.costUsd;
+      }
+    });
+  }, [deep.bidding, bidFilter, bidSort]);
 
   if (!deep.country && !deep.quality && !deep.bidding && deep.devices.length === 0 && !deep.assets) {
     return null;
@@ -258,22 +325,29 @@ export function GoogleAdsDeepSections() {
             <table className="w-full text-xs">
               <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
                 <tr>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">Nước</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Chi</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Clicks</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">CTR</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">CPC</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium" title="Google conversions — gồm cả page view, KHÔNG phải install">
-                    Cost / conv
-                  </th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Trần CPI</th>
-                  <th
-                    className="whitespace-nowrap px-2 py-1.5 text-right font-medium"
+                  <SortableTh col="country" {...countrySort} onSort={countrySort.toggle} align="left" className="whitespace-nowrap px-2 py-1.5" label="Nước" />
+                  <SortableTh col="cost" {...countrySort} onSort={countrySort.toggle} className="whitespace-nowrap px-2 py-1.5" label="Chi" />
+                  <SortableTh col="clicks" {...countrySort} onSort={countrySort.toggle} className="whitespace-nowrap px-2 py-1.5" label="Clicks" />
+                  <SortableTh col="ctr" {...countrySort} onSort={countrySort.toggle} className="whitespace-nowrap px-2 py-1.5" label="CTR" />
+                  <SortableTh col="cpc" {...countrySort} onSort={countrySort.toggle} className="whitespace-nowrap px-2 py-1.5" label="CPC" />
+                  <SortableTh
+                    col="cpa"
+                    {...countrySort}
+                    onSort={countrySort.toggle}
+                    className="whitespace-nowrap px-2 py-1.5"
+                    title="Google conversions — gồm cả page view, KHÔNG phải install"
+                    label="Cost / conv"
+                  />
+                  <SortableTh col="cap" {...countrySort} onSort={countrySort.toggle} className="whitespace-nowrap px-2 py-1.5" label="Trần CPI" />
+                  <SortableTh
+                    col="value"
+                    {...countrySort}
+                    onSort={countrySort.toggle}
+                    className="whitespace-nowrap px-2 py-1.5"
                     title="Doanh thu ÷ install ở nước đó — kênh nào đưa người dùng tới không làm thay đổi giá trị của họ"
-                  >
-                    Giá trị 1 ins
-                  </th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">Camp</th>
+                    label="Giá trị 1 ins"
+                  />
+                  <SortableTh col="campaigns" {...countrySort} onSort={countrySort.toggle} align="left" className="whitespace-nowrap px-2 py-1.5" title="Số camp Google chi vào nước này" label="Camp" />
                 </tr>
               </thead>
               <tbody>
@@ -439,14 +513,14 @@ export function GoogleAdsDeepSections() {
             <table className="w-full text-xs">
               <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
                 <tr>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">Keyword</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">QS</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-center font-medium">Ad</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-center font-medium">Landing</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-center font-medium">CTR</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Chi</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">CTR thực</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">Sửa gì trước</th>
+                  <SortableTh col="keyword" {...qsSort} onSort={qsSort.toggle} align="left" className="whitespace-nowrap px-2 py-1.5" label="Keyword" />
+                  <SortableTh col="qs" {...qsSort} onSort={qsSort.toggle} className="whitespace-nowrap px-2 py-1.5" label="QS" />
+                  <SortableTh col="qsAd" {...qsSort} onSort={qsSort.toggle} align="center" className="whitespace-nowrap px-2 py-1.5" label="Ad" />
+                  <SortableTh col="qsLp" {...qsSort} onSort={qsSort.toggle} align="center" className="whitespace-nowrap px-2 py-1.5" label="Landing" />
+                  <SortableTh col="qsCtr" {...qsSort} onSort={qsSort.toggle} align="center" className="whitespace-nowrap px-2 py-1.5" label="CTR" />
+                  <SortableTh col="cost" {...qsSort} onSort={qsSort.toggle} className="whitespace-nowrap px-2 py-1.5" label="Chi" />
+                  <SortableTh col="ctr" {...qsSort} onSort={qsSort.toggle} className="whitespace-nowrap px-2 py-1.5" label="CTR thực" />
+                  <SortableTh col="culprit" {...qsSort} onSort={qsSort.toggle} align="left" className="whitespace-nowrap px-2 py-1.5" label="Sửa gì trước" />
                 </tr>
               </thead>
               <tbody>
@@ -529,16 +603,12 @@ export function GoogleAdsDeepSections() {
             <table className="w-full text-xs">
               <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
                 <tr>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">Campaign</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">Chiến lược</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Target CPA</th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium" title="Google conversions (gồm page view)">
-                    CPA thực
-                  </th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium" title="Chỉ tính conversion action là install">
-                    CPI thực
-                  </th>
-                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Chi</th>
+                  <SortableTh col="campaign" {...bidSort} onSort={bidSort.toggle} align="left" className="whitespace-nowrap px-2 py-1.5" label="Campaign" />
+                  <SortableTh col="strategy" {...bidSort} onSort={bidSort.toggle} align="left" className="whitespace-nowrap px-2 py-1.5" label="Chiến lược" />
+                  <SortableTh col="target" {...bidSort} onSort={bidSort.toggle} className="whitespace-nowrap px-2 py-1.5" label="Target CPA" />
+                  <SortableTh col="cpa" {...bidSort} onSort={bidSort.toggle} className="whitespace-nowrap px-2 py-1.5" title="Google conversions (gồm page view)" label="CPA thực" />
+                  <SortableTh col="cpi" {...bidSort} onSort={bidSort.toggle} className="whitespace-nowrap px-2 py-1.5" title="Chỉ tính conversion action là install" label="CPI thực" />
+                  <SortableTh col="cost" {...bidSort} onSort={bidSort.toggle} className="whitespace-nowrap px-2 py-1.5" label="Chi" />
                 </tr>
               </thead>
               <tbody>

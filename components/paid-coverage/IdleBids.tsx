@@ -26,6 +26,8 @@ import { KeywordCountryNotes } from '@/components/shared/KeywordCountryNotes';
 import { KeywordCampsList } from '@/components/shared/KeywordCampsList';
 import { useNotesStore } from '@/lib/store/notesStore';
 import { KEYWORD_NOTE_SCOPE, KEYWORD_PIN_SCOPE, keywordNoteId, keywordNoteKeys, readKeywordNote, readPinnedCamps, togglePinnedCamp } from '@/lib/store/keywordNotes';
+import { useTableSort } from '@/lib/hooks/useTableSort';
+import { SortableTh } from '@/components/shared/SortableTh';
 
 // Keyword đang bid mà không ai bấm — mặt trái của bảng chính. Xem
 // lib/market/idleBids.ts cho lý do chia ba nhóm.
@@ -57,14 +59,14 @@ const GROUP_META: Record<IdleGroup, { label: string; tone: string; help: string;
   },
 };
 
-type Sort = 'signal' | 'value' | 'bid' | 'impressions' | 'camps';
-const SORTS: { id: Sort; label: string; hint: string }[] = [
-  { id: 'signal', label: 'Bằng chứng', hint: 'Install paid, users organic, users paid, impression — gộp lại' },
-  { id: 'value', label: 'Value', hint: 'Net value một install của keyword (tab Net value per install, YTD, mọi nước, mọi kênh)' },
-  { id: 'bid', label: 'Bid', hint: 'Bid cao nhất đang đặt — nhìn ra bid lạc như $53' },
-  { id: 'impressions', label: 'Hiển thị', hint: 'Impression trong export Shopify Ads' },
-  { id: 'camps', label: 'Số camp', hint: 'Keyword nằm ở nhiều camp chưa tắt' },
-];
+// Sắp theo cột: bấm tiêu đề (useTableSort). 'signal' là khoá mặc định ẩn
+// (bằng chứng gộp: install paid, users organic, users paid, impression) — không
+// có tiêu đề riêng, bấm cột nào thì cột đó thay. Luôn xếp nhóm trước (có nhu
+// cầu → yếu → không có gì) rồi mới tới cột đang chọn; chỉ khi sắp cột Nhóm thì
+// đảo chiều mới đảo thứ tự nhóm.
+type SortKey = 'signal' | 'keyword' | 'group' | 'organic' | 'paid' | 'impressions' | 'value' | 'bid' | 'camps';
+const ASC_FIRST: readonly SortKey[] = ['keyword', 'group'];
+const GROUP_ORDER: Record<IdleGroup, number> = { demand: 0, weak: 1, none: 2 };
 
 const money = (n: number | null | undefined) => (n && n > 0 ? `$${n.toFixed(2)}` : '—');
 
@@ -74,7 +76,7 @@ export function IdleBids() {
   const [win, setWin] = useState<IdleWindow>('L90');
   const [category, setCategory] = useState<string>(ALL);
   const [groups, setGroups] = useState<Set<IdleGroup>>(() => new Set<IdleGroup>(['demand', 'weak']));
-  const [sort, setSort] = useState<Sort>('signal');
+  const { sortKey, sortDir, toggle, sortRows } = useTableSort<SortKey>('signal', { ascFirst: ASC_FIRST });
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(100);
   const [onlyNoted, setOnlyNoted] = useState(false);
@@ -124,23 +126,35 @@ export function IdleBids() {
       if (query.empty) return true;
       return matchKeywordQuery(`${r.keyword} ${r.camps.map((c) => c.camp).join(' ')}`, query);
     });
-    const key = (r: IdleBidRow): number => {
-      switch (sort) {
+    // Hoà: bằng chứng giảm rồi chữ — thứ tự hôm nay, và là nền để đảo chiều
+    // một cột vẫn ổn định.
+    const base = [...list].sort((a, b) => signalOf(b) - signalOf(a) || a.keyword.localeCompare(b.keyword));
+    const get = (r: IdleBidRow, key: SortKey): number | string | null => {
+      switch (key) {
         case 'signal':
           return signalOf(r);
-        case 'value':
-          return nvOf(r.keyword)?.netPerInstall ?? -1;
-        case 'bid':
-          return r.bidMax ?? 0;
+        case 'keyword':
+          return r.keyword;
+        case 'group':
+          return GROUP_ORDER[r.group];
+        case 'organic':
+          return r.organicUsers;
+        case 'paid':
+          return r.paidUsers;
         case 'impressions':
           return r.exportImpressions;
+        case 'value':
+          return nvOf(r.keyword)?.netPerInstall ?? null;
+        case 'bid':
+          return r.bidMax;
         case 'camps':
           return r.camps.length;
       }
     };
-    const order: Record<IdleGroup, number> = { demand: 0, weak: 1, none: 2 };
-    return [...list].sort((a, b) => order[a.group] - order[b.group] || key(b) - key(a) || a.keyword.localeCompare(b.keyword));
-  }, [inCategory, groups, q, sort, onlyNoted, notes, nvByKw]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (sortKey === 'group') return sortRows(base, get);
+    // Nhóm trước, cột đang chọn trong từng nhóm.
+    return IDLE_GROUPS.flatMap((g) => sortRows(base.filter((r) => r.group === g), get));
+  }, [inCategory, groups, q, sortKey, sortRows, onlyNoted, notes, nvByKw]); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = useMemo(() => filtered.slice(0, limit), [filtered, limit]);
   const notedCount = useMemo(
     () => inCategory.reduce((n, r) => n + (readKeywordNote(notes, r.keyword).trim() ? 1 : 0), 0),
@@ -242,23 +256,6 @@ export function IdleBids() {
                 </button>
               ))}
             </div>
-            <div className="inline-flex overflow-hidden rounded-md border border-slate-200 text-[11px]">
-              {SORTS.map((s, i) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setSort(s.id)}
-                  title={s.hint}
-                  className={cn(
-                    'px-2 py-0.5 font-medium transition',
-                    i > 0 && 'border-l border-slate-200',
-                    sort === s.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
-                  )}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
             <KeywordSearchBox value={q} onChange={setQ} placeholder="Tìm keyword / camp — vd: profit -whale" />
             <label className="inline-flex items-center gap-1 text-[11px] text-slate-600" title="Chỉ hiện keyword đã có ghi chú (ghi ở đây hoặc ở Underbid — cùng một note).">
               <input type="checkbox" checked={onlyNoted} onChange={(e) => setOnlyNoted(e.target.checked)} className="h-3 w-3" />
@@ -275,32 +272,32 @@ export function IdleBids() {
             <table className="w-full text-xs">
               <thead className="bg-slate-50 text-slate-600">
                 <tr className="align-bottom">
-                  <th className="px-2 py-1 text-left font-medium">Keyword</th>
-                  <th className="px-2 py-1 text-left font-medium">Nhóm</th>
-                  <th className="px-2 py-1 text-right font-medium" title="Người tìm thấy app qua kết quả tự nhiên (không phải quảng cáo) và bấm vào listing, rồi bao nhiêu người trong đó cài. Có organic mà paid không hiện = đang thua đấu giá.">
+                  <SortableTh col="keyword" sortKey={sortKey} sortDir={sortDir} onSort={toggle} align="left" className="px-2 py-1" label="Keyword" />
+                  <SortableTh col="group" sortKey={sortKey} sortDir={sortDir} onSort={toggle} align="left" className="px-2 py-1" title="Nhóm bằng chứng: có nhu cầu → tín hiệu yếu → không có gì" label="Nhóm" />
+                  <SortableTh col="organic" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" title="Người tìm thấy app qua kết quả tự nhiên (không phải quảng cáo) và bấm vào listing, rồi bao nhiêu người trong đó cài. Có organic mà paid không hiện = đang thua đấu giá.">
                     Organic {report.historyWindow}
                     <div className="text-[9px] font-normal text-slate-400">users · install, không qua ads</div>
-                  </th>
-                  <th className="px-2 py-1 text-right font-medium" title={`Người bấm vào quảng cáo của keyword này trong ${report.historyWindow}, và bao nhiêu người cài. Có số ở đây mà ${win} = 0 nghĩa là từng hiện rồi mất.`}>
+                  </SortableTh>
+                  <SortableTh col="paid" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" title={`Người bấm vào quảng cáo của keyword này trong ${report.historyWindow}, và bao nhiêu người cài. Có số ở đây mà ${win} = 0 nghĩa là từng hiện rồi mất.`}>
                     Paid {report.historyWindow}
                     <div className="text-[9px] font-normal text-slate-400">users · install qua ads, cả năm</div>
-                  </th>
-                  <th className="px-2 py-1 text-right font-medium text-slate-500" title="Từ file export Shopify Ads (tab Search_Term_Unbidded): quảng cáo của keyword này hiện ra bao nhiêu lần và được bấm bao nhiêu lần. GA4 không thấy lượt hiện, chỉ export mới có. Trống = export không có keyword này.">
+                  </SortableTh>
+                  <SortableTh col="impressions" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1 text-slate-500" title="Từ file export Shopify Ads (tab Search_Term_Unbidded): quảng cáo của keyword này hiện ra bao nhiêu lần và được bấm bao nhiêu lần. GA4 không thấy lượt hiện, chỉ export mới có. Trống = export không có keyword này.">
                     Export Shopify Ads
                     <div className="text-[9px] font-normal text-slate-400">lượt hiện · click</div>
-                  </th>
-                  <th className="px-2 py-1 text-right font-medium" title="Net value một install của keyword = (doanh thu − phí Shopify) ÷ install, tab 'Net value per install' (YTD, mọi nước, mọi kênh). Dòng nhỏ: tổng net value · install · shop trả tiền. 'mỏng' = dưới 3 shop trả tiền, chưa nên bid theo. Trống = keyword chưa có install nào truy được.">
+                  </SortableTh>
+                  <SortableTh col="value" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" title="Net value một install của keyword = (doanh thu − phí Shopify) ÷ install, tab 'Net value per install' (YTD, mọi nước, mọi kênh). Dòng nhỏ: tổng net value · install · shop trả tiền. 'mỏng' = dưới 3 shop trả tiền, chưa nên bid theo. Trống = keyword chưa có install nào truy được.">
                     Value
                     <div className="text-[9px] font-normal text-slate-400">$/install · tổng · shop</div>
-                  </th>
-                  <th className="px-2 py-1 text-right font-medium" title="Bid max đang đặt cho keyword này. Keyword nằm ở nhiều camp thì mỗi camp một bid, nên ghi cao nhất – thấp nhất.">
+                  </SortableTh>
+                  <SortableTh col="bid" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" title="Bid max đang đặt cho keyword này. Keyword nằm ở nhiều camp thì mỗi camp một bid, nên ghi cao nhất – thấp nhất.">
                     Bid đang đặt
                     <div className="text-[9px] font-normal text-slate-400">cao nhất – thấp nhất</div>
-                  </th>
-                  <th className="border-l border-slate-200 px-2 py-1 text-left font-medium" title="Camp chưa tắt đang chứa keyword, kèm bid ở camp đó. Bấm +N để xem các camp còn lại.">
+                  </SortableTh>
+                  <SortableTh col="camps" sortKey={sortKey} sortDir={sortDir} onSort={toggle} align="left" className="border-l border-slate-200 px-2 py-1" title="Camp chưa tắt đang chứa keyword, kèm bid ở camp đó. Bấm +N để xem các camp còn lại. Sắp theo số camp.">
                     Camp đang bid
                     <div className="text-[9px] font-normal text-slate-400">tên camp · bid ở camp đó</div>
-                  </th>
+                  </SortableTh>
                   <th className="px-2 py-1 text-left font-medium" title="Ghi chú theo keyword, lưu vào App_Notes. Cùng một note với cột Ghi chú ở tab Underbid và trend sheet: ghi ở đâu cũng thấy ở mọi nơi.">
                     Ghi chú
                     <div className="text-[9px] font-normal text-slate-400">chung với Underbid</div>

@@ -17,6 +17,8 @@ import {
   type PaidTermWin,
 } from '@/lib/market/paidSearchTerms';
 import { cn } from '@/lib/utils';
+import { useTableSort } from '@/lib/hooks/useTableSort';
+import { SortableTh } from '@/components/shared/SortableTh';
 
 // Câu người dùng gõ trên kênh paid mà mình chưa bid — nguồn GA4, tự cập nhật
 // mỗi ngày. Vì sao GA4 chứ không phải export Shopify: xem lib/market/
@@ -26,14 +28,10 @@ import { cn } from '@/lib/utils';
 // Đứng riêng chứ không trộn vào bảng chính, vì grain khác hẳn: đây là CÂU
 // NGƯỜI TA GÕ lọt qua broad match, còn bảng trên là keyword.
 
-type Sort = 'installs' | 'users' | 'impressions' | 'spend';
-
-const SORTS: { id: Sort; label: string; hint: string }[] = [
-  { id: 'installs', label: 'Install', hint: 'Câu đã ra install thật (GA4) — bằng chứng mạnh nhất' },
-  { id: 'users', label: 'Users', hint: 'Câu có nhiều người bấm vào (GA4)' },
-  { id: 'impressions', label: 'Hiển thị', hint: 'Nhu cầu lớn nhưng chưa chắc ra install — chỉ có khi export Shopify có câu này' },
-  { id: 'spend', label: 'Chi phí', hint: 'Câu đang tiêu tiền qua broad match — chỉ có khi export Shopify có câu này' },
-];
+// Sắp theo cột: bấm tiêu đề (useTableSort). Chữ, nước, keyword bắt được và
+// vị trí mặc định tăng; số mặc định giảm. Mặc định vào bảng: Install giảm.
+type SortKey = 'term' | 'country' | 'users' | 'installs' | 'cr' | 'pos' | 'matched' | 'impressions' | 'spend';
+const ASC_FIRST: readonly SortKey[] = ['term', 'country', 'pos', 'matched'];
 
 const money = (n: number | null | undefined) => (n && n > 0 ? `$${n.toFixed(2)}` : '—');
 
@@ -41,7 +39,7 @@ export function UnbiddedSearchTerms() {
   const { data } = useSheetData();
   const [open, setOpen] = useState(true);
   const [win, setWin] = useState<PaidTermWin>('l30');
-  const [sort, setSort] = useState<Sort>('installs');
+  const { sortKey, sortDir, toggle, sortRows } = useTableSort<SortKey>('installs', { ascFirst: ASC_FIRST });
   const [hidePaused, setHidePaused] = useState(false);
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(50);
@@ -75,27 +73,36 @@ export function UnbiddedSearchTerms() {
       const hay = `${t.term} ${t.english} ${t.export?.matchedKeywords.join(' ') ?? ''}`;
       return matchKeywordQuery(hay, query);
     });
-    const key = (t: PaidSearchTerm): number => {
-      const s = paidTermStat(t, win);
-      switch (sort) {
-        case 'installs':
-          return s.installs;
-        case 'users':
-          return s.users;
-        case 'impressions':
-          return t.export?.impressions ?? 0;
-        case 'spend':
-          return t.export?.spend ?? 0;
-      }
-    };
-    return [...list].sort((a, b) => {
-      const d = key(b) - key(a);
-      if (d !== 0) return d;
+    // Hoà: install → users → chữ, để đảo chiều một cột vẫn ra thứ tự ổn định.
+    const base = [...list].sort((a, b) => {
       const sa = paidTermStat(a, win);
       const sb = paidTermStat(b, win);
       return sb.installs - sa.installs || sb.users - sa.users || a.term.localeCompare(b.term);
     });
-  }, [terms, q, sort, win, hidePaused]);
+    return sortRows(base, (t: PaidSearchTerm, key) => {
+      const s = paidTermStat(t, win);
+      switch (key) {
+        case 'term':
+          return t.term;
+        case 'country':
+          return t.countriesByWin[win]?.[0]?.name ?? null;
+        case 'users':
+          return s.users;
+        case 'installs':
+          return s.installs;
+        case 'cr':
+          return s.cr;
+        case 'pos':
+          return s.pos;
+        case 'matched':
+          return t.export?.matchedKeywords[0] ?? null;
+        case 'impressions':
+          return t.export ? t.export.impressions : null;
+        case 'spend':
+          return t.export ? t.export.spend : null;
+      }
+    });
+  }, [terms, q, win, hidePaused, sortRows]);
   const shown = useMemo(() => filtered.slice(0, limit), [filtered, limit]);
 
   if (!data || report.paidTermsTotal === 0) return null;
@@ -165,23 +172,6 @@ export function UnbiddedSearchTerms() {
                 </button>
               ))}
             </div>
-            <div className="inline-flex overflow-hidden rounded-md border border-slate-200 text-[11px]">
-              {SORTS.map((s, i) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setSort(s.id)}
-                  title={s.hint}
-                  className={cn(
-                    'px-2 py-0.5 font-medium transition',
-                    i > 0 && 'border-l border-slate-200',
-                    sort === s.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
-                  )}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
             <label className="inline-flex items-center gap-1 text-[11px] text-slate-600" title="Câu chỉ từng được bid ở camp đã tắt (Paused_camp). Ẩn đi nếu chỉ muốn câu chưa bao giờ bid.">
               <input
                 type="checkbox"
@@ -206,34 +196,33 @@ export function UnbiddedSearchTerms() {
             <table className="w-full text-xs">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
-                  <th className="px-2 py-1 text-left font-medium">Câu tìm kiếm</th>
-                  <th className="px-2 py-1 text-left font-medium" title="Nước có phiên paid cho câu này trong cửa sổ, xếp theo install rồi users">
-                    Nước
-                  </th>
-                  <th className="px-2 py-1 text-right font-medium" title={`Người bấm vào quảng cáo (GA4, ${PAID_TERM_WIN_LABEL[win]})`}>
-                    Users
-                  </th>
-                  <th className="px-2 py-1 text-right font-medium" title={`Install (GA4 GetApp, ${PAID_TERM_WIN_LABEL[win]})`}>
-                    Install
-                  </th>
-                  <th className="px-2 py-1 text-right font-medium" title="Install ÷ users">
-                    CR
-                  </th>
-                  <th className="px-2 py-1 text-right font-medium" title="Vị trí tốt nhất ghi nhận (1 = trên cùng)">
-                    Pos
-                  </th>
-                  <th
-                    className="border-l border-slate-200 px-2 py-1 text-left font-medium text-slate-500"
+                  <SortableTh col="term" sortKey={sortKey} sortDir={sortDir} onSort={toggle} align="left" className="px-2 py-1" label="Câu tìm kiếm" />
+                  <SortableTh
+                    col="country"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggle}
+                    align="left"
+                    className="px-2 py-1"
+                    title="Nước có phiên paid cho câu này trong cửa sổ, xếp theo install rồi users"
+                    label="Nước"
+                  />
+                  <SortableTh col="users" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" title={`Người bấm vào quảng cáo (GA4, ${PAID_TERM_WIN_LABEL[win]})`} label="Users" />
+                  <SortableTh col="installs" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" title={`Install (GA4 GetApp, ${PAID_TERM_WIN_LABEL[win]})`} label="Install" />
+                  <SortableTh col="cr" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" title="Install ÷ users" label="CR" />
+                  <SortableTh col="pos" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" title="Vị trí tốt nhất ghi nhận (1 = trên cùng)" label="Pos" />
+                  <SortableTh
+                    col="matched"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggle}
+                    align="left"
+                    className="border-l border-slate-200 px-2 py-1 text-slate-500"
                     title="Từ export Shopify Ads: keyword broad/phrase đã bắt được câu này, kèm camp. Trống khi export không có câu này."
-                  >
-                    Keyword bắt được
-                  </th>
-                  <th className="px-2 py-1 text-right font-medium text-slate-500" title="Impression từ export Shopify Ads (cả kỳ export)">
-                    Hiển thị
-                  </th>
-                  <th className="px-2 py-1 text-right font-medium text-slate-500" title="Chi phí từ export Shopify Ads (cả kỳ export)">
-                    Chi
-                  </th>
+                    label="Keyword bắt được"
+                  />
+                  <SortableTh col="impressions" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1 text-slate-500" title="Impression từ export Shopify Ads (cả kỳ export)" label="Hiển thị" />
+                  <SortableTh col="spend" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1 text-slate-500" title="Chi phí từ export Shopify Ads (cả kỳ export)" label="Chi" />
                 </tr>
               </thead>
               <tbody>

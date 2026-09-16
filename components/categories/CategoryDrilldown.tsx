@@ -16,6 +16,8 @@ import { KeywordLink } from '@/components/shared/KeywordLink';
 import { PaidStatusBadge } from '@/components/shared/PaidStatusBadge';
 import { SurfaceIcon } from '@/components/shared/SurfaceIcon';
 import { formatDeltaPct, formatNumber, formatPercent, formatPos, deltaTone } from '@/lib/utils/format';
+import { useTableSort } from '@/lib/hooks/useTableSort';
+import { SortableTh } from '@/components/shared/SortableTh';
 import { cn } from '@/lib/utils';
 import type {
   Category,
@@ -282,6 +284,34 @@ function windowMetric(
   return m ? { users: m.usersL, install: m.getAppL, pos: m.posL } : null;
 }
 
+// Cột sắp được của bảng Search Terms. Cột window sắp theo users của đúng
+// window đó (dòng không có window → cuối bảng, dù chiều nào).
+type SortKey = 'category' | 'keyword' | MetricWindow | 'value' | 'status';
+const TEXT_COLS: readonly SortKey[] = ['category', 'keyword', 'status'];
+
+function statusLabel(r: PaidStatus): string | null {
+  // Cùng thứ tự nhãn với PaidStatusBadge; negative không có badge → null (cuối).
+  if (r.negative) return null;
+  if (r.paused) return 'Paused camp';
+  if (!r.inPaid) return 'Not in Paid';
+  return r.source === 'manual' ? 'Added (manual)' : 'In Paid';
+}
+
+function sortValue(r: KeywordSummary, key: SortKey): number | string | null {
+  switch (key) {
+    case 'category':
+      return r.category;
+    case 'keyword':
+      return r.searchTerm;
+    case 'value':
+      return r.nv?.netPerInstall ?? null;
+    case 'status':
+      return statusLabel(r);
+    default:
+      return windowMetric(r, key)?.users ?? null;
+  }
+}
+
 export function CategoryDrilldown({ category }: { category?: string }) {
   // No category prop → flat "all categories" view with a category filter.
   const allMode = !category;
@@ -350,8 +380,10 @@ export function CategoryDrilldown({ category }: { category?: string }) {
     return byCat;
   }, [summaries]);
 
-  const [sortBy, setSortBy] = useState<'users' | 'value'>('users');
-  const [valueDir, setValueDir] = useState<'desc' | 'asc'>('desc');
+  // Mặc định: users của window đang chọn, giảm — khớp thứ tự buildSummaries
+  // trả về (users giảm, keyword chưa hiển thị xuống cuối vì không có số).
+  const sort = useTableSort<SortKey>(metricWindow, { ascFirst: TEXT_COLS });
+  const thProps = { sortKey: sort.sortKey, sortDir: sort.sortDir, onSort: sort.toggle };
 
   const silentCount = useMemo(() => summaries.filter((r) => r.noImpressions).length, [summaries]);
 
@@ -377,7 +409,7 @@ export function CategoryDrilldown({ category }: { category?: string }) {
     const minU = minUsers.trim() === '' ? null : Number(minUsers);
     const minG = minInstall.trim() === '' ? null : Number(minInstall);
     const maxP = maxPos.trim() === '' ? null : Number(maxPos);
-    let list = summaries.filter((r) => {
+    return summaries.filter((r) => {
       if (allMode && categoryFilter !== 'all' && r.category !== categoryFilter) return false;
       if (shownFilter === 'shown' && r.noImpressions) return false;
       if (shownFilter === 'silent' && !r.noImpressions) return false;
@@ -407,21 +439,11 @@ export function CategoryDrilldown({ category }: { category?: string }) {
       }
       return true;
     });
-    if (sortBy === 'value') {
-      // buildSummaries đã sắp theo users; chỉ đảo lại khi chọn sắp theo giá
-      // trị. Không có giá trị → cuối bảng, giữ thứ tự users giữa chúng.
-      // Không có giá trị → luôn cuối bảng, dù chiều nào.
-      list = list.slice().sort((a, b) => {
-        const av = a.nv?.netPerInstall ?? null;
-        const bv = b.nv?.netPerInstall ?? null;
-        if (av === null && bv === null) return 0;
-        if (av === null) return 1;
-        if (bv === null) return -1;
-        return valueDir === 'desc' ? bv - av : av - bv;
-      });
-    }
-    return list;
-  }, [summaries, shownFilter, search, allMode, categoryFilter, surfaceFilter, paidFilter, countryFilter, metricWindow, minUsers, minInstall, maxPos, sortBy, valueDir]);
+  }, [summaries, shownFilter, search, allMode, categoryFilter, surfaceFilter, paidFilter, countryFilter, metricWindow, minUsers, minInstall, maxPos]);
+
+  // Sắp SAU khi lọc, trước khi render. Sort ổn định nên các dòng bằng nhau giữ
+  // thứ tự buildSummaries (users giảm rồi tên).
+  const sorted = useMemo(() => sort.sortRows(filtered, sortValue), [filtered, sort]);
 
   // Dòng tổng của nhóm đang lọc — gõ "cost" là thấy cả nhóm cộng lại. Mỗi dòng
   // là keyword × kênh với giá trị của đúng kênh đó, nên cộng thẳng không trùng.
@@ -621,15 +643,6 @@ export function CategoryDrilldown({ category }: { category?: string }) {
               <option value="l365">L365</option>
             </select>
           </div>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'users' | 'value')}
-            className="h-7 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            title="Thứ tự bảng"
-          >
-            <option value="users">Sắp: Users</option>
-            <option value="value">Sắp: Value/install</option>
-          </select>
           {dirty && (
             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={resetAll}>
               <X className="h-3 w-3" />
@@ -637,7 +650,7 @@ export function CategoryDrilldown({ category }: { category?: string }) {
             </Button>
           )}
           <CopyKeywordsButton
-            keywords={filtered.map((r) => r.searchTerm)}
+            keywords={sorted.map((r) => r.searchTerm)}
             label={paidFilter === 'not_in_paid' ? 'Copy Not-in-Paid kw' : 'Copy keywords'}
             className="ml-auto"
           />
@@ -737,32 +750,24 @@ export function CategoryDrilldown({ category }: { category?: string }) {
           <table className="w-full text-xs">
             <thead className="bg-slate-50 text-slate-600 sticky top-0 z-10 shadow-sm [&_th]:bg-slate-50">
               <tr>
-                {allMode && <th className="px-3 py-2 text-left font-medium min-w-[7rem]">Category</th>}
-                <th className="whitespace-nowrap px-3 py-2 text-left font-medium">Keyword</th>
-                <th className="px-2 py-2 text-left font-medium">L7</th>
-                <th className="px-2 py-2 text-left font-medium">L30</th>
-                <th className="px-2 py-2 text-left font-medium">L90</th>
-                <th className="px-2 py-2 text-left font-medium">L365</th>
-                <th
-                  onClick={() => {
-                    if (sortBy !== 'value') {
-                      setSortBy('value');
-                      setValueDir('desc');
-                    } else {
-                      setValueDir((d) => (d === 'desc' ? 'asc' : 'desc'));
-                    }
-                  }}
-                  className={cn('cursor-pointer select-none px-2 py-2 text-right font-medium hover:text-slate-900', sortBy === 'value' && 'text-indigo-700')}
-                  title={`Một install của keyword này trên kênh của dòng (organic / paid) đáng bao nhiêu: net value ÷ installs, gộp mọi nước. Nguồn: tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}. 'mỏng' = dưới 3 shop trả tiền. Bấm để sắp, bấm lại để đảo chiều; không có giá trị luôn ở cuối.`}
-                >
-                  Value/install
-                  {sortBy === 'value' && <span className="ml-0.5 text-[9px]">{valueDir === 'desc' ? '▼' : '▲'}</span>}
-                </th>
-                <th className="px-2 py-2 text-left font-medium">Status</th>
+                {allMode && <SortableTh col="category" {...thProps} align="left" className="px-3 py-2 min-w-[7rem]" label="Category" />}
+                <SortableTh col="keyword" {...thProps} align="left" className="whitespace-nowrap px-3 py-2" label="Keyword" />
+                <SortableTh col="l7" {...thProps} align="left" className="px-2 py-2" title="Sắp theo Users L7" label="L7" />
+                <SortableTh col="l30" {...thProps} align="left" className="px-2 py-2" title="Sắp theo Users L30" label="L30" />
+                <SortableTh col="l90" {...thProps} align="left" className="px-2 py-2" title="Sắp theo Users L90" label="L90" />
+                <SortableTh col="l365" {...thProps} align="left" className="px-2 py-2" title="Sắp theo Users L365" label="L365" />
+                <SortableTh
+                  col="value"
+                  {...thProps}
+                  className="px-2 py-2"
+                  title={`Một install của keyword này trên kênh của dòng (organic / paid) đáng bao nhiêu: net value ÷ installs, gộp mọi nước. Nguồn: tab Net value per install${data?.netValueScope ? ` — ${data.netValueScope}` : ''}. 'mỏng' = dưới 3 shop trả tiền; không có giá trị luôn ở cuối`}
+                  label="Value/install"
+                />
+                <SortableTh col="status" {...thProps} align="left" className="px-2 py-2" label="Status" />
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => {
+              {sorted.map((row) => {
                 // First NON-EMPTY english across windows (|| not ??: an empty
                 // string on L7 must fall through to L30/L90/L365).
                 const english = pickEnglish(

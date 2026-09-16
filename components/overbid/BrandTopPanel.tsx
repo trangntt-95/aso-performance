@@ -7,6 +7,8 @@ import { NoteCell } from '@/components/shared/NoteCell';
 import { useNotesStore } from '@/lib/store/notesStore';
 import { CAMP_NOTE_SCOPE, buildCampNoteResolver, type CampNoteResolver } from '@/lib/store/campNotes';
 import { findBrandTopCamps, type BrandTopRow, type BrandTopVerdict } from '@/lib/market/brandTop';
+import { useTableSort } from '@/lib/hooks/useTableSort';
+import { SortableTh } from '@/components/shared/SortableTh';
 import type { SheetPayload } from '@/lib/sheets/types';
 import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
@@ -27,6 +29,33 @@ const VERDICT: Record<BrandTopVerdict, { label: string; cls: string }> = {
   'low-data': { label: 'Ít impressions', cls: 'bg-slate-50 text-slate-400' },
   'no-position': { label: 'Không có vị trí', cls: 'bg-slate-50 text-slate-400' },
 };
+
+// Kết luận sắp theo mức cần xử lý (đã top → sát top → còn xa → ít data → không
+// vị trí), cùng thứ tự findBrandTopCamps trả về — không theo chữ, vì nhãn bắt
+// đầu bằng emoji nên A→Z chẳng nói gì.
+const VERDICT_RANK: Record<BrandTopVerdict, number> = { top: 0, watch: 1, ok: 2, 'low-data': 3, 'no-position': 4 };
+
+// Cột ghép (Vị trí · Vis, Imp · Inst · Spend, Bid nay / max bid) sắp theo số đầu.
+type SortCol = 'camp' | 'country' | 'position' | 'impressions' | 'bidNow' | 'organicPos' | 'verdict';
+
+function sortValue(r: BrandTopRow, key: SortCol): number | string | null {
+  switch (key) {
+    case 'camp':
+      return r.camp;
+    case 'country':
+      return r.countryLabel;
+    case 'position':
+      return r.position;
+    case 'impressions':
+      return r.impressions;
+    case 'bidNow':
+      return r.bidNow;
+    case 'organicPos':
+      return r.organicPos;
+    case 'verdict':
+      return VERDICT_RANK[r.verdict];
+  }
+}
 
 export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
   const [days, setDays] = useState<7 | 14 | 30>(14);
@@ -62,22 +91,34 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
     );
   }, [data, days, maxPos, minImp]);
 
+  // Lọc (ẩn camp đã note, chỉ camp cần xử lý) trước, sắp sau — trong useMemo
+  // để hook sort đứng trên mọi early return.
+  const { hiddenUntil, hiddenCount, flagged, shown } = useMemo(() => {
+    const hiddenUntil = new Map<string, number>();
+    const rowsAll = result?.rows ?? [];
+    if (noteSnapshot) {
+      const now = Date.now();
+      for (const r of rowsAll) {
+        const at = noteIds.noteAt(noteSnapshot, r.camp);
+        if (at === null) continue;
+        const until = at + HIDE_DAYS * 86_400_000;
+        if (until > now) hiddenUntil.set(r.camp, until);
+      }
+    }
+    const flaggedAll = rowsAll.filter((r) => r.verdict === 'top' || r.verdict === 'watch');
+    const hiddenCount = flaggedAll.filter((r) => hiddenUntil.has(r.camp)).length;
+    const flagged = showHidden ? flaggedAll : flaggedAll.filter((r) => !hiddenUntil.has(r.camp));
+    const shown = showAll ? rowsAll : flagged;
+    return { hiddenUntil, hiddenCount, flagged, shown };
+  }, [result, noteSnapshot, noteIds, showHidden, showAll]);
+
+  // Mặc định như trước: theo kết luận (đã top trước), trong cùng kết luận giữ
+  // thứ tự spend rồi impressions giảm mà findBrandTopCamps đã xếp (sort ổn định).
+  const sort = useTableSort<SortCol>('verdict', { ascFirst: ['camp', 'country', 'position', 'organicPos', 'verdict'] });
+  const sorted = useMemo(() => sort.sortRows(shown, sortValue), [shown, sort]);
+
   if (!result) return null;
 
-  const hiddenUntil = new Map<string, number>();
-  if (noteSnapshot) {
-    const now = Date.now();
-    for (const r of result.rows) {
-      const at = noteIds.noteAt(noteSnapshot, r.camp);
-      if (at === null) continue;
-      const until = at + HIDE_DAYS * 86_400_000;
-      if (until > now) hiddenUntil.set(r.camp, until);
-    }
-  }
-  const flaggedAll = result.rows.filter((r) => r.verdict === 'top' || r.verdict === 'watch');
-  const hiddenCount = flaggedAll.filter((r) => hiddenUntil.has(r.camp)).length;
-  const flagged = showHidden ? flaggedAll : flaggedAll.filter((r) => !hiddenUntil.has(r.camp));
-  const shown = showAll ? result.rows : flagged;
   const topSpend = result.rows.filter((r) => r.verdict === 'top').reduce((s, r) => s + r.spend, 0);
   const dmy = (iso: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
 
@@ -146,18 +187,18 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
           <table className="w-full text-xs">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <th className="px-3 py-1.5 text-left font-medium">Camp brand</th>
-                <th className="px-2 py-1.5 text-left font-medium" title="Nước camp target theo Geo trong Camp_Links">Nước</th>
-                <th className="px-2 py-1.5 text-right font-medium" title={`Average Position trung bình gia quyền theo impressions, ${days} ngày · Visibility = tỷ lệ phiên tìm kiếm có hiển thị`}>Vị trí · Vis</th>
-                <th className="px-2 py-1.5 text-right font-medium" title="Impressions / Installs / Spend trong cửa sổ">Imp · Inst · Spend</th>
-                <th className="px-2 py-1.5 text-right font-medium" title="Bid hiện tại = median 'Bid (max)' của keyword trong camp (Master KW Lookup) · Max bid = trần CPI × CR: trần CPI là trung bình Bid Rec ⭐ của ô Brand × nước target ('Max bid cap', tiền cho 1 install), CR là của camp khi đủ 10 click, không thì CR paid của brand ở các nước đó (Country_L30), không nữa thì CR paid brand toàn cục. Ví dụ trần $40 × CR 50% = max bid $20.">Bid nay / max bid</th>
-                <th className="px-2 py-1.5 text-right font-medium" title="Vị trí ORGANIC của brand ở các nước đó (Country_L30). Organic đã #1 mà paid cũng #1 = đang trả tiền cho chỗ mình vốn có.">Organic pos</th>
-                <th className="px-2 py-1.5 text-left font-medium">Kết luận</th>
+                <SortableTh<SortCol> col="camp" sortKey={sort.sortKey} sortDir={sort.sortDir} onSort={sort.toggle} align="left" className="px-3 py-1.5" label="Camp brand" />
+                <SortableTh<SortCol> col="country" sortKey={sort.sortKey} sortDir={sort.sortDir} onSort={sort.toggle} align="left" className="px-2 py-1.5" title="Nước camp target theo Geo trong Camp_Links" label="Nước" />
+                <SortableTh<SortCol> col="position" sortKey={sort.sortKey} sortDir={sort.sortDir} onSort={sort.toggle} className="px-2 py-1.5" title={`Average Position trung bình gia quyền theo impressions, ${days} ngày · Visibility = tỷ lệ phiên tìm kiếm có hiển thị · sắp theo vị trí`} label="Vị trí · Vis" />
+                <SortableTh<SortCol> col="impressions" sortKey={sort.sortKey} sortDir={sort.sortDir} onSort={sort.toggle} className="px-2 py-1.5" title="Impressions / Installs / Spend trong cửa sổ · sắp theo impressions" label="Imp · Inst · Spend" />
+                <SortableTh<SortCol> col="bidNow" sortKey={sort.sortKey} sortDir={sort.sortDir} onSort={sort.toggle} className="px-2 py-1.5" title="Bid hiện tại = median 'Bid (max)' của keyword trong camp (Master KW Lookup) · Max bid = trần CPI × CR: trần CPI là trung bình Bid Rec ⭐ của ô Brand × nước target ('Max bid cap', tiền cho 1 install), CR là của camp khi đủ 10 click, không thì CR paid của brand ở các nước đó (Country_L30), không nữa thì CR paid brand toàn cục. Ví dụ trần $40 × CR 50% = max bid $20. Sắp theo bid hiện tại." label="Bid nay / max bid" />
+                <SortableTh<SortCol> col="organicPos" sortKey={sort.sortKey} sortDir={sort.sortDir} onSort={sort.toggle} className="px-2 py-1.5" title="Vị trí ORGANIC của brand ở các nước đó (Country_L30). Organic đã #1 mà paid cũng #1 = đang trả tiền cho chỗ mình vốn có." label="Organic pos" />
+                <SortableTh<SortCol> col="verdict" sortKey={sort.sortKey} sortDir={sort.sortDir} onSort={sort.toggle} align="left" className="px-2 py-1.5" title="Sắp theo mức cần xử lý: đã top → sát top → còn xa → ít data → không vị trí" label="Kết luận" />
                 <th className="px-2 py-1.5 text-left font-medium min-w-[9rem]">Note</th>
               </tr>
             </thead>
             <tbody>
-              {shown.map((r) => (
+              {sorted.map((r) => (
                 <BrandRow key={r.camp} r={r} noteIds={noteIds} hiddenUntil={hiddenUntil.get(r.camp)} />
               ))}
             </tbody>

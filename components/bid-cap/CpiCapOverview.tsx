@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
-import { buildCpiCapOverview, type CapVerdict } from '@/lib/market/cpiCapOverview';
+import { buildCpiCapOverview, type CapVerdict, type CountryCapRow } from '@/lib/market/cpiCapOverview';
+import { useTableSort } from '@/lib/hooks/useTableSort';
+import { SortableTh } from '@/components/shared/SortableTh';
 import {
-  CapHead,
   CapSection,
   CapStat,
   CpiCell,
@@ -56,6 +57,11 @@ const VERDICT: Record<CapVerdict, { label: string; tone: CapTone }> = {
 
 type Lens = 'all' | 'over' | 'no-value' | 'tier1-silent' | 'no-bid';
 
+// Cột sắp được: khóa trùng với `key` của COUNTRY_CAP_COLS. Cột tên sắp theo
+// thứ hạng nước (#, hiện trong ô) vì đó là thứ tự mặc định của bảng; 'cap' là ô
+// giá trị 1 install (Countries performance), 'value' là net value per install.
+type SortCol = 'name' | 'bid' | 'installs' | 'sheetcap' | 'cap' | 'value' | 'gap' | 'verdict';
+
 const LENS_LABEL: Record<Lens, string> = {
   all: 'Tất cả nước trong tier',
   over: 'Trần cao hơn giá trị 1 install',
@@ -89,6 +95,33 @@ export function CpiCapOverview() {
         return r;
     }
   }, [overview, lens]);
+
+  // Mặc định như trước: theo thứ hạng nước tăng (rows đã sắp theo rank, không rank cuối).
+  const sort = useTableSort<SortCol>('name', { ascFirst: ['name', 'verdict'] });
+  const sorted = useMemo(
+    () =>
+      sort.sortRows(rows, (r: CountryCapRow, key: SortCol) => {
+        switch (key) {
+          case 'name':
+            return r.rank;
+          case 'bid':
+            return r.bidRec;
+          case 'installs':
+            return r.installs;
+          case 'sheetcap':
+            return r.sheetCpiCap;
+          case 'cap':
+            return r.valuePerInstall;
+          case 'value':
+            return netValueByCountry.get(r.country.trim().toLowerCase())?.netPerInstall ?? null;
+          case 'gap':
+            return r.vsCapPct;
+          case 'verdict':
+            return VERDICT[r.verdict].label;
+        }
+      }),
+    [rows, sort, netValueByCountry],
+  );
 
   if (isLoading || !overview || overview.rows.length === 0) return null;
   const t = overview.totals;
@@ -163,9 +196,25 @@ export function CpiCapOverview() {
       ) : (
         <div className="max-h-[46vh] overflow-auto rounded border border-slate-200">
           <table className="w-full text-xs">
-            <CapHead nameLabel="Nước" cols={COUNTRY_CAP_COLS} />
+            <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
+              <tr>
+                {COUNTRY_CAP_COLS.map((c) => (
+                  <SortableTh<SortCol>
+                    key={c.key}
+                    col={c.key as SortCol}
+                    sortKey={sort.sortKey}
+                    sortDir={sort.sortDir}
+                    onSort={sort.toggle}
+                    align={c.align}
+                    title={c.key === 'name' ? 'Sắp theo thứ hạng nước (#)' : c.title}
+                    label={c.key === 'name' ? 'Nước' : c.label}
+                    className="whitespace-nowrap px-2 py-1.5"
+                  />
+                ))}
+              </tr>
+            </thead>
             <tbody>
-              {rows.map((r) => {
+              {sorted.map((r) => {
                 const over = r.verdict === 'over';
                 const nv = netValueByCountry.get(r.country.trim().toLowerCase()) ?? null;
                 return (

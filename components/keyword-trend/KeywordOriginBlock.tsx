@@ -3,7 +3,9 @@
 import { useMemo } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
-import { buildKeywordCampIndex, keywordCountryOrigin } from '@/lib/market/installOrigin';
+import { buildKeywordCampIndex, keywordCountryOrigin, type KeywordCountryOrigin } from '@/lib/market/installOrigin';
+import { useTableSort } from '@/lib/hooks/useTableSort';
+import { SortableTh } from '@/components/shared/SortableTh';
 import { formatPercent } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 
@@ -14,6 +16,23 @@ import { cn } from '@/lib/utils';
 // The dashboard stays a dashboard — this is the same join asked one keyword at a
 // time, so a click on a keyword doesn't require leaving the panel to find out
 // where its installs came from.
+
+type SortCol = 'country' | 'position' | 'users' | 'installs' | 'cr';
+
+function sortValue(c: KeywordCountryOrigin, key: SortCol): number | string | null {
+  switch (key) {
+    case 'country':
+      return c.country;
+    case 'position':
+      return c.position;
+    case 'users':
+      return c.users;
+    case 'installs':
+      return c.installs;
+    case 'cr':
+      return c.cr;
+  }
+}
 
 function posTone(pos: number | null): string {
   if (pos === null) return 'text-slate-300';
@@ -28,6 +47,9 @@ export function KeywordOriginBlock({ keyword }: { keyword: string }) {
   const campIndex = useMemo(() => buildKeywordCampIndex(data), [data]);
   const camps = useMemo(() => campIndex.get(keyword), [campIndex, keyword]);
   const countries = useMemo(() => keywordCountryOrigin(data, keyword), [data, keyword]);
+  // Mặc định như trước: install giảm (rows đã sắp installs rồi users giảm; sort ổn định giữ tie-break).
+  const sort = useTableSort<SortCol>('installs', { ascFirst: ['country', 'position'] });
+  const sortedCountries = useMemo(() => sort.sortRows(countries, sortValue), [countries, sort]);
 
   const withInstalls = countries.filter((c) => c.installs > 0);
   const nothing = camps.unknown && camps.paused.length === 0 && countries.length === 0;
@@ -120,17 +142,15 @@ export function KeywordOriginBlock({ keyword }: { keyword: string }) {
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 [&_th]:bg-slate-50">
               <tr>
-                <th className="whitespace-nowrap px-2 py-1 text-left font-medium">Nước</th>
-                <th className="whitespace-nowrap px-2 py-1 text-right font-medium" title="Vị trí trung bình — nhỏ hơn là tốt hơn">
-                  Vị trí
-                </th>
-                <th className="whitespace-nowrap px-2 py-1 text-right font-medium">Users</th>
-                <th className="whitespace-nowrap px-2 py-1 text-right font-medium">Install</th>
-                <th className="whitespace-nowrap px-2 py-1 text-right font-medium">CR</th>
+                <SortableTh<SortCol> col="country" sortKey={sort.sortKey} sortDir={sort.sortDir} onSort={sort.toggle} align="left" className="whitespace-nowrap px-2 py-1" label="Nước" />
+                <SortableTh<SortCol> col="position" sortKey={sort.sortKey} sortDir={sort.sortDir} onSort={sort.toggle} className="whitespace-nowrap px-2 py-1" title="Vị trí trung bình — nhỏ hơn là tốt hơn" label="Vị trí" />
+                <SortableTh<SortCol> col="users" sortKey={sort.sortKey} sortDir={sort.sortDir} onSort={sort.toggle} className="whitespace-nowrap px-2 py-1" label="Users" />
+                <SortableTh<SortCol> col="installs" sortKey={sort.sortKey} sortDir={sort.sortDir} onSort={sort.toggle} className="whitespace-nowrap px-2 py-1" label="Install" />
+                <SortableTh<SortCol> col="cr" sortKey={sort.sortKey} sortDir={sort.sortDir} onSort={sort.toggle} className="whitespace-nowrap px-2 py-1" label="CR" />
               </tr>
             </thead>
             <tbody>
-              {countries.map((c) => (
+              {sortedCountries.map((c) => (
                 <tr
                   key={c.country}
                   className={cn('border-t border-slate-100', c.installs > 0 ? 'bg-emerald-50/40' : undefined)}

@@ -6,6 +6,8 @@ import { brandDemand } from '@/lib/market/crossChannel';
 import { formatNumber, formatPercent } from '@/lib/utils/format';
 import { FX_NOTE } from '@/lib/config/fx';
 import { cn } from '@/lib/utils';
+import { useTableSort } from '@/lib/hooks/useTableSort';
+import { SortableTh } from '@/components/shared/SortableTh';
 
 // The same phrase, bought on two different surfaces.
 //
@@ -17,15 +19,42 @@ import { cn } from '@/lib/utils';
 // strong App Store organic traffic is demand already arriving for free on that
 // surface, which changes what the Google spend on it is actually buying.
 
+// Sắp theo cột: bấm tiêu đề dòng dưới (useTableSort). Mặc định chi Google
+// giảm — đúng thứ tự brandDemand() trả về. Cụm từ tăng A→Z; CPC rẻ hơn lên trước.
+type SortKey = 'term' | 'gCost' | 'gClicks' | 'cpc' | 'paidUsers' | 'paidInstalls' | 'organicUsers' | 'organicInstalls';
+const ASC_FIRST: readonly SortKey[] = ['term', 'cpc'];
+
 export function BrandDemandTable() {
   const { data } = useSheetData();
   const demand = useMemo(() => brandDemand(data), [data]);
   const [onlyPaidGoogle, setOnlyPaidGoogle] = useState(true);
 
+  const { sortKey, sortDir, toggle, sortRows } = useTableSort<SortKey>('gCost', { ascFirst: ASC_FIRST });
+
   const rows = useMemo(() => {
     if (!demand) return [];
-    return onlyPaidGoogle ? demand.rows.filter((r) => r.gCostNative > 0) : demand.rows;
-  }, [demand, onlyPaidGoogle]);
+    const list = onlyPaidGoogle ? demand.rows.filter((r) => r.gCostNative > 0) : demand.rows;
+    return sortRows(list, (r, key) => {
+      switch (key) {
+        case 'term':
+          return r.term;
+        case 'gCost':
+          return r.gCostNative;
+        case 'gClicks':
+          return r.gClicks;
+        case 'cpc':
+          return r.gClicks > 0 ? r.gCostNative / r.gClicks : null;
+        case 'paidUsers':
+          return r.asoPaidUsers;
+        case 'paidInstalls':
+          return r.asoPaidInstalls;
+        case 'organicUsers':
+          return r.asoOrganicUsers;
+        case 'organicInstalls':
+          return r.asoOrganicInstalls;
+      }
+    });
+  }, [demand, onlyPaidGoogle, sortRows]);
 
   if (!demand || demand.rows.length === 0) return null;
 
@@ -65,8 +94,27 @@ export function BrandDemandTable() {
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
             <tr>
-              <th rowSpan={2} className="whitespace-nowrap border-r px-3 py-2 text-left font-medium">
-                Cụm từ
+              {/* rowSpan=2 nên không dùng SortableTh (không có prop rowSpan); nút bên trong
+                  cư xử giống hệt: bấm để sắp, bấm lại đảo chiều, ▲/▼ khi đang sắp. */}
+              <th
+                rowSpan={2}
+                aria-sort={sortKey === 'term' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="whitespace-nowrap border-r px-3 py-2 text-left font-medium"
+              >
+                <button
+                  type="button"
+                  onClick={() => toggle('term')}
+                  title="Bấm để sắp theo cột này, bấm lại để đảo chiều"
+                  className={cn(
+                    'inline-flex cursor-pointer select-none items-start gap-0.5 font-medium hover:text-slate-900',
+                    sortKey === 'term' && 'text-indigo-700',
+                  )}
+                >
+                  <span>Cụm từ</span>
+                  <span className="w-2 text-[9px] leading-4 text-indigo-600">
+                    {sortKey === 'term' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                  </span>
+                </button>
               </th>
               <th colSpan={3} className="border-r px-2 py-1 text-center font-medium text-indigo-700">
                 Google (web search)
@@ -79,13 +127,13 @@ export function BrandDemandTable() {
               </th>
             </tr>
             <tr className="text-[10px]">
-              <th className="px-2 py-1 text-right font-medium">Chi phí</th>
-              <th className="px-2 py-1 text-right font-medium">Clicks</th>
-              <th className="border-r px-2 py-1 text-right font-medium">CPC</th>
-              <th className="px-2 py-1 text-right font-medium">Users</th>
-              <th className="border-r px-2 py-1 text-right font-medium">Install</th>
-              <th className="px-2 py-1 text-right font-medium">Users</th>
-              <th className="px-2 py-1 text-right font-medium">Install</th>
+              <SortableTh col="gCost" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" label="Chi phí" />
+              <SortableTh col="gClicks" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" label="Clicks" />
+              <SortableTh col="cpc" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="border-r px-2 py-1" label="CPC" />
+              <SortableTh col="paidUsers" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" label="Users" />
+              <SortableTh col="paidInstalls" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="border-r px-2 py-1" label="Install" />
+              <SortableTh col="organicUsers" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" label="Users" />
+              <SortableTh col="organicInstalls" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" label="Install" />
             </tr>
           </thead>
           <tbody>

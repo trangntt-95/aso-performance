@@ -5,6 +5,8 @@ import { AlertTriangle, ChevronDown, ExternalLink } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { buildWasteReport, type WasteKeywordRow, type WasteWindow } from '@/lib/market/wasteKeywords';
 import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
+import { useTableSort } from '@/lib/hooks/useTableSort';
+import { SortableTh } from '@/components/shared/SortableTh';
 import { cn } from '@/lib/utils';
 
 // Paid keywords pulling traffic and returning no installs, that are STILL bid.
@@ -14,6 +16,26 @@ import { cn } from '@/lib/utils';
 
 const THRESHOLDS = [3, 5, 10];
 const WINDOWS: WasteWindow[] = ['L30', 'L90'];
+
+type SortKey = 'keyword' | 'users' | 'install' | 'organic' | 'bid' | 'camp';
+const TH = 'whitespace-nowrap px-2 py-1.5';
+
+function sortValue(r: WasteKeywordRow, key: SortKey): number | string | null {
+  switch (key) {
+    case 'keyword':
+      return r.keyword;
+    case 'users':
+      return r.users;
+    case 'install':
+      return 0; // cột này luôn 0 theo định nghĩa của bảng
+    case 'organic':
+      return r.organicUsers;
+    case 'bid':
+      return r.bidMax;
+    case 'camp':
+      return r.camps[0]?.camp ?? null;
+  }
+}
 
 function CampList({ row }: { row: WasteKeywordRow }) {
   const [open, setOpen] = useState(false);
@@ -84,6 +106,11 @@ export function WasteKeywordsPanel() {
     [data, threshold, window],
   );
 
+  // Mặc định users giảm — đúng thứ tự buildWasteReport trả về.
+  const sort = useTableSort<SortKey>('users', { ascFirst: ['keyword', 'camp'] });
+  const sortedRows = useMemo(() => sort.sortRows(report?.rows ?? [], sortValue), [report, sort]);
+  const thProps = { sortKey: sort.sortKey, sortDir: sort.sortDir, onSort: sort.toggle };
+
   if (!report) return null;
 
   return (
@@ -148,26 +175,28 @@ export function WasteKeywordsPanel() {
                 <table className="w-full text-xs">
                   <thead className="bg-slate-50 text-slate-600">
                     <tr>
-                      <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">Keyword</th>
-                      <th
-                        className="whitespace-nowrap px-2 py-1.5 text-right font-medium"
+                      <SortableTh col="keyword" {...thProps} align="left" className={TH} label="Keyword" />
+                      <SortableTh
+                        col="users"
+                        {...thProps}
+                        className={TH}
                         title="Người vào listing từ lượt bấm quảng cáo. App Store Ads không báo click hay chi phí ở mức keyword."
-                      >
-                        Users paid
-                      </th>
-                      <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Install</th>
-                      <th
-                        className="whitespace-nowrap px-2 py-1.5 text-right font-medium"
+                        label="Users paid"
+                      />
+                      <SortableTh col="install" {...thProps} className={TH} label="Install" />
+                      <SortableTh
+                        col="organic"
+                        {...thProps}
+                        className={TH}
                         title="Cùng keyword nhưng từ organic — nếu organic vẫn ra install thì cắt paid không mất gì"
-                      >
-                        Organic
-                      </th>
-                      <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">Bid</th>
-                      <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">Camp đang bid</th>
+                        label="Organic"
+                      />
+                      <SortableTh col="bid" {...thProps} className={TH} label="Bid" />
+                      <SortableTh col="camp" {...thProps} align="left" className={TH} label="Camp đang bid" />
                     </tr>
                   </thead>
                   <tbody>
-                    {report.rows.map((r) => (
+                    {sortedRows.map((r) => (
                       <tr key={r.keyword} className="border-t border-slate-100 align-top hover:bg-slate-50">
                         <td className="whitespace-nowrap px-2 py-1.5">
                           <button
