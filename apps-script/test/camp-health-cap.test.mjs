@@ -42,6 +42,20 @@ eq('B: CPI $30 < trần $45, đang lên → rising', by.B.bucket, 'rising');
 eq('C: CPI $8 < nửa trần $45 → scale', by.C.bucket, 'scale');
 eq('D: không có trần → so trung vị, $30 không gấp 1,5 trung vị → không pricey', by.D.bucket === 'pricey', false);
 
+// Camp có dòng trong export nhưng $0 cả hai kỳ (chỉ vài impression, 0 click):
+// trước 16/09/2026 bị `continue` và cũng không được xếp 'silent' vì đã có mặt
+// trong export → biến mất khỏi bảng (Ordermetrics). Giờ phải là 'silent'.
+{
+  const quiet = [...rows];
+  for (let d = 1; d <= 14; d++) quiet.push(day(`2026-09-${String(d).padStart(2, '0')}`, 'E', d === 3 || d === 12 ? 1 : 0, 0, 0, 0));
+  const rq = analyseCampHealth(quiet, { windowDays: 7, capOf: (c) => cap[c] ?? null, knownCamps: ['E', 'F'] });
+  const byQ = Object.fromEntries(rq.rows.map((x) => [x.camp, x]));
+  eq('E: có impression, 0 click, $0 cả hai kỳ → silent, không biến mất', byQ.E?.bucket, 'silent');
+  eq('E: lý do nêu số impression', /1 lượt hiển thị/.test(byQ.E?.reason ?? ''), true);
+  eq('F: không có dòng nào trong export → silent như cũ', byQ.F?.bucket, 'silent');
+  eq('A vẫn pricey, không bị ảnh hưởng', byQ.A.bucket, 'pricey');
+}
+
 // Không truyền capOf → hành vi cũ theo trung vị.
 const old = analyseCampHealth(rows, { windowDays: 7 });
 const byOld = Object.fromEntries(old.rows.map((x) => [x.camp, x]));

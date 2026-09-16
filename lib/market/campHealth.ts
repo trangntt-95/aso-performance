@@ -18,7 +18,7 @@ export type HealthBucket =
   | 'losing-imp' // impressions collapsing vs prior period → losing the auction
   | 'paused' // listed in Paused_camp → genuinely switched off
   | 'idle' // spent last period, nothing now, but NOT in Paused_camp → check
-  | 'silent' // in Camp_Links / Master, not paused, yet NO row in the export window → never shown; forgotten or bid too low
+  | 'silent' // not paused, yet $0 in both windows: no export row at all, or a few impressions and 0 clicks → forgotten or bid too low
   | 'pricey' // converting, but CPI above the allowed ceiling (NPI×90%; median when no cap)
   | 'rising' // impressions AND installs both up vs the prior period → push it
   | 'scale' // cheap CPI with steady installs → room to push
@@ -255,7 +255,31 @@ export function analyseCampHealth(
     const cur = a.cur, prev = a.prev;
     const spentNow = cur.spend >= minSpend;
     const spentBefore = prev.spend >= minSpend;
-    if (!spentNow && !spentBefore) continue;
+    if (!spentNow && !spentBefore) {
+      // Có dòng trong export nhưng $0 cả hai kỳ: trước 16/09/2026 dòng này là
+      // `continue`, và vì camp đã "có mặt" trong export nên cũng không được
+      // xếp 'silent' bên dưới — nó biến mất khỏi bảng. Ordermetrics: 13 lượt
+      // hiển thị từ tháng 3, 0 click, $0, không tìm thấy ở đâu. Camp như vậy
+      // là "không hiển thị" theo đúng nghĩa: bid quá thấp để có click.
+      const imp = Math.round(cur.impressions);
+      out.push({
+        camp: a.camp,
+        bucket: 'silent',
+        cur,
+        prev,
+        impDelta: null,
+        installDelta: null,
+        spendDelta: null,
+        atRisk: 0,
+        reason: imp > 0
+          ? `Có ${imp.toLocaleString()} lượt hiển thị trong ${win} ngày nhưng 0 click, $0 — bid quá thấp để lên chỗ người ta bấm. Kỳ trước cũng $0.`
+          : `Có trong export nhưng ${win} ngày qua và kỳ trước đều 0 hiển thị, $0 — camp đang chạy trên danh nghĩa.`,
+        reliable: false,
+        lastActive: a.lastActive,
+        series: a.series.sort((x, y) => x.t - y.t),
+      });
+      continue;
+    }
 
     const impDelta = prev.impPerDay > 0 ? (cur.impPerDay - prev.impPerDay) / prev.impPerDay : null;
     const installDelta = prev.installs > 0 ? (cur.installs - prev.installs) / prev.installs : null;
@@ -531,7 +555,7 @@ export const BUCKET_META: Record<
   silent: {
     label: '🔇 Không hiển thị', short: 'Không hiển thị',
     tone: 'warn',
-    help: 'Camp có trong Camp_Links / Master KW Lookup và không nằm trong Paused_camp, nhưng export Shopify không có một dòng nào trong kỳ — tức không có lượt hiển thị nào. Đây là camp bị bỏ quên: hoặc bid quá thấp để lên, hoặc đã tắt trên Shopify mà chưa ghi vào Paused_camp. Không có số để xếp hạng, nên nằm cuối bảng.',
+    help: 'Camp không nằm trong Paused_camp nhưng không tiêu một đồng nào ở cả kỳ này và kỳ trước: hoặc export Shopify không có dòng nào (không có lượt hiển thị), hoặc có vài lượt hiển thị mà 0 click. Đây là camp bị bỏ quên: bid quá thấp để lên chỗ người ta bấm, hoặc đã tắt trên Shopify mà chưa ghi vào Paused_camp. Không có số để xếp hạng, nên nằm cuối bảng.',
   },
   idle: {
     label: '⏹ Ngừng chi', short: 'Ngừng chi',
