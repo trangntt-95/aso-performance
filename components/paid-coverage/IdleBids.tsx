@@ -18,8 +18,11 @@ import {
   type IdleGroup,
   type IdleWindow,
 } from '@/lib/market/idleBids';
+import { buildKeywordNetValueByPick, type NetValueAgg } from '@/lib/market/keywordNetValue';
+import { normKw } from '@/lib/sheets/kwNorm';
 import { cn } from '@/lib/utils';
 import { NoteCell } from '@/components/shared/NoteCell';
+import { KeywordCountryNotes } from '@/components/shared/KeywordCountryNotes';
 import { KeywordCampsList } from '@/components/shared/KeywordCampsList';
 import { useNotesStore } from '@/lib/store/notesStore';
 import { KEYWORD_NOTE_SCOPE, KEYWORD_PIN_SCOPE, keywordNoteId, keywordNoteKeys, readKeywordNote, readPinnedCamps, togglePinnedCamp } from '@/lib/store/keywordNotes';
@@ -27,13 +30,11 @@ import { KEYWORD_NOTE_SCOPE, KEYWORD_PIN_SCOPE, keywordNoteId, keywordNoteKeys, 
 // Keyword đang bid mà không ai bấm — mặt trái của bảng chính. Xem
 // lib/market/idleBids.ts cho lý do chia ba nhóm.
 //
-// Mặc định lọc Competitor vì đó là câu hỏi mở ra bảng này (920/945 keyword
-// Competitor không có users paid L90, 16/09/2026), và vì Language/Test có
-// hàng nghìn keyword chết đã biết — mở mặc định "tất cả" thì 8.000 dòng che
-// mất 50 dòng đáng làm.
+// Mặc định mọi category (Trang, 16/09/2026); nhóm "Không có gì" tắt sẵn nên
+// 8.000 keyword chết không che 460 dòng đáng làm. Có bộ chọn category để thu
+// hẹp khi cần.
 
 const ALL = '__all__';
-const DEFAULT_CATEGORY = 'Competitor';
 
 const GROUP_META: Record<IdleGroup, { label: string; tone: string; help: string; action: string }> = {
   demand: {
@@ -56,9 +57,10 @@ const GROUP_META: Record<IdleGroup, { label: string; tone: string; help: string;
   },
 };
 
-type Sort = 'signal' | 'bid' | 'impressions' | 'camps';
+type Sort = 'signal' | 'value' | 'bid' | 'impressions' | 'camps';
 const SORTS: { id: Sort; label: string; hint: string }[] = [
   { id: 'signal', label: 'Bằng chứng', hint: 'Install paid, users organic, users paid, impression — gộp lại' },
+  { id: 'value', label: 'Value', hint: 'Net value một install của keyword (tab Net value per install, YTD, mọi nước, mọi kênh)' },
   { id: 'bid', label: 'Bid', hint: 'Bid cao nhất đang đặt — nhìn ra bid lạc như $53' },
   { id: 'impressions', label: 'Hiển thị', hint: 'Impression trong export Shopify Ads' },
   { id: 'camps', label: 'Số camp', hint: 'Keyword nằm ở nhiều camp chưa tắt' },
@@ -70,7 +72,7 @@ export function IdleBids() {
   const { data } = useSheetData();
   const [open, setOpen] = useState(true);
   const [win, setWin] = useState<IdleWindow>('L90');
-  const [category, setCategory] = useState<string | null>(null); // null = chưa chọn → mặc định
+  const [category, setCategory] = useState<string>(ALL);
   const [groups, setGroups] = useState<Set<IdleGroup>>(() => new Set<IdleGroup>(['demand', 'weak']));
   const [sort, setSort] = useState<Sort>('signal');
   const [q, setQ] = useState('');
@@ -92,11 +94,10 @@ export function IdleBids() {
   const report = useMemo(() => buildIdleBidsReport(data, win), [data, win]);
   const winRange = data?.windowDates?.[win];
 
-  const categoryChoice = useMemo(() => {
-    if (!report) return ALL;
-    if (category !== null) return category;
-    return report.categories.some((c) => c.category === DEFAULT_CATEGORY) ? DEFAULT_CATEGORY : ALL;
-  }, [report, category]);
+  const categoryChoice = category;
+  // Giá trị keyword (tab Net value per install): $/install, tổng, số shop.
+  const nvByKw = useMemo(() => buildKeywordNetValueByPick(data), [data]);
+  const nvOf = (keyword: string): NetValueAgg | null => nvByKw.get(normKw(keyword))?.all ?? null;
 
   // Dòng của category đang chọn, trước khi lọc nhóm — để đếm từng nhóm.
   const inCategory = useMemo(() => {
@@ -127,6 +128,8 @@ export function IdleBids() {
       switch (sort) {
         case 'signal':
           return signalOf(r);
+        case 'value':
+          return nvOf(r.keyword)?.netPerInstall ?? -1;
         case 'bid':
           return r.bidMax ?? 0;
         case 'impressions':
@@ -137,7 +140,7 @@ export function IdleBids() {
     };
     const order: Record<IdleGroup, number> = { demand: 0, weak: 1, none: 2 };
     return [...list].sort((a, b) => order[a.group] - order[b.group] || key(b) - key(a) || a.keyword.localeCompare(b.keyword));
-  }, [inCategory, groups, q, sort, onlyNoted, notes]);
+  }, [inCategory, groups, q, sort, onlyNoted, notes, nvByKw]); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = useMemo(() => filtered.slice(0, limit), [filtered, limit]);
   const notedCount = useMemo(
     () => inCategory.reduce((n, r) => n + (readKeywordNote(notes, r.keyword).trim() ? 1 : 0), 0),
@@ -286,6 +289,10 @@ export function IdleBids() {
                     Export Shopify Ads
                     <div className="text-[9px] font-normal text-slate-400">lượt hiện · click</div>
                   </th>
+                  <th className="px-2 py-1 text-right font-medium" title="Net value một install của keyword = (doanh thu − phí Shopify) ÷ install, tab 'Net value per install' (YTD, mọi nước, mọi kênh). Dòng nhỏ: tổng net value · install · shop trả tiền. 'mỏng' = dưới 3 shop trả tiền, chưa nên bid theo. Trống = keyword chưa có install nào truy được.">
+                    Value
+                    <div className="text-[9px] font-normal text-slate-400">$/install · tổng · shop</div>
+                  </th>
                   <th className="px-2 py-1 text-right font-medium" title="Bid max đang đặt cho keyword này. Keyword nằm ở nhiều camp thì mỗi camp một bid, nên ghi cao nhất – thấp nhất.">
                     Bid đang đặt
                     <div className="text-[9px] font-normal text-slate-400">cao nhất – thấp nhất</div>
@@ -347,6 +354,23 @@ export function IdleBids() {
                       )}
                     </td>
                     <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">
+                      {(() => {
+                        const nv = nvOf(r.keyword);
+                        if (!nv || nv.netPerInstall === null) return <span className="text-slate-300">—</span>;
+                        return (
+                          <div className="leading-tight" title={`$${Math.round(nv.netValue).toLocaleString()} net từ ${nv.installs} install, ${nv.payingShops} shop trả tiền${nv.thin ? ` — ${nv.thinReason}` : ''}`}>
+                            <span className={nv.thin ? 'text-amber-700' : 'font-medium text-slate-800'}>
+                              ${nv.netPerInstall.toFixed(0)}
+                              {nv.thin && <span className="ml-0.5 text-[9px]">mỏng</span>}
+                            </span>
+                            <div className="text-[9px] text-slate-400">
+                              ${Math.round(nv.netValue).toLocaleString()} · {nv.installs}i · {nv.payingShops}s
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">
                       {r.bidMax !== null && r.bidMin !== null && r.bidMax !== r.bidMin ? `${money(r.bidMax)} – ${money(r.bidMin)}` : money(r.bidMax)}
                     </td>
                     <td className="border-l border-slate-200 px-2 py-1">
@@ -357,12 +381,13 @@ export function IdleBids() {
                       noteId={keywordNoteKeys(r.keyword).id}
                       fallbackKeys={keywordNoteKeys(r.keyword).legacy}
                       className="px-2 py-1 align-top"
+                      extra={<KeywordCountryNotes keyword={r.keyword} />}
                     />
                   </tr>
                 ))}
                 {shown.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-2 py-3 text-center text-[11px] text-slate-500">
+                    <td colSpan={9} className="px-2 py-3 text-center text-[11px] text-slate-500">
                       Không có keyword nào khớp bộ lọc — bật thêm nhóm hoặc xoá ô tìm.
                     </td>
                   </tr>
@@ -382,7 +407,9 @@ export function IdleBids() {
           <p className="text-[10px] leading-relaxed text-slate-400">
             <b>Đọc cột:</b> Ghi chú là note theo keyword, cùng một ô với tab Underbid và trend sheet — ghi &ldquo;đã tăng
             bid lên $X ngày …&rdquo; ở đây thì Underbid thấy ngay, và Impact bid ở đó đo từ mốc này. Hai cột Organic / Paid là lịch sử cả năm của keyword, để biết có ai tìm không; cột Export
-            là lượt quảng cáo hiện ra theo file export Shopify (GA4 không đo được lượt hiện); Bid là bid max đang đặt,
+            là lượt quảng cáo hiện ra theo file export Shopify (GA4 không đo được lượt hiện); Value là net value một
+            install keyword từng mang về (tab Net value per install, YTD) — keyword có nhu cầu mà $/install cao là chỗ
+            tăng bid trước; Bid là bid max đang đặt,
             keyword ở nhiều camp thì ghi cao nhất – thấp nhất. Không có users paid ≠ không có impression: GA4 chỉ thấy keyword khi có người bấm vào listing. Keyword hiện
             ra mà không ai bấm sẽ chỉ có ở cột Export (khi export Shopify có nó). Nhóm chia theo{' '}
             {report.historyWindow}; đổi {win} chỉ đổi điều kiện &ldquo;0 users paid&rdquo;.

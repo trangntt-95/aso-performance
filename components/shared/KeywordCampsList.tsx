@@ -42,6 +42,7 @@ export function KeywordCampsList({
   rank,
   pinned,
   onTogglePin,
+  pinnedElsewhere,
   emptyLabel = '—',
 }: {
   camps: OriginCamp[];
@@ -49,14 +50,19 @@ export function KeywordCampsList({
   /** Tên camp đã ghim cho keyword này. */
   pinned?: string[];
   onTogglePin?: (camp: string) => void;
+  /** Ghim ở lớp khác (vd. ghim theo keyword của Underbid khi bảng này ghim theo
+   *  keyword × nước): hiện nhãn, xếp ngay sau ghim ở đây, không tính là ghim ở đây. */
+  pinnedElsewhere?: { camps: string[]; label: string };
   emptyLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   if (camps.length === 0) return <span className="text-[11px] text-slate-400">{emptyLabel}</span>;
   const pinnedSet = new Set((pinned ?? []).map((p) => p.toLowerCase()));
   const isPinned = (c: OriginCamp) => pinnedSet.has(c.camp.toLowerCase());
-  // Ghim lên trước mọi hạng geo; trong cùng hạng giữ thứ tự bid giảm dần của campIndex.
-  const rankOf = (c: OriginCamp) => (isPinned(c) ? -1 : rank ? rank(c) : 1);
+  const elsewhereSet = new Set((pinnedElsewhere?.camps ?? []).map((p) => p.toLowerCase()));
+  const isElsewhere = (c: OriginCamp) => !isPinned(c) && elsewhereSet.has(c.camp.toLowerCase());
+  // Ghim ở đây lên trước, rồi ghim ở lớp khác, rồi hạng geo; cùng hạng giữ thứ tự bid giảm dần.
+  const rankOf = (c: OriginCamp) => (isPinned(c) ? -2 : isElsewhere(c) ? -1 : rank ? rank(c) : 1);
   const ordered = camps.map((c, i) => ({ c, i })).sort((a, b) => rankOf(a.c) - rankOf(b.c) || a.i - b.i).map((x) => x.c);
   const isDim = (c: OriginCamp) => rankOf(c) >= 2;
   // Có ghim → hiện sẵn mọi camp đã ghim; chưa ghim → hiện camp đầu.
@@ -67,6 +73,13 @@ export function KeywordCampsList({
   // Ghim trỏ tới camp không còn chạy (đổi tên, tắt) — báo thay vì lặng lẽ mất.
   const stale = (pinned ?? []).filter((p) => !camps.some((c) => c.camp.toLowerCase() === p.toLowerCase()));
 
+  const Elsewhere = ({ c }: { c: OriginCamp }) =>
+    isElsewhere(c) && pinnedElsewhere ? (
+      <span className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1 text-[9px] text-slate-500" title={`Đã ghim ở ${pinnedElsewhere.label} (theo keyword, không theo nước)`}>
+        <Pin className="h-2.5 w-2.5" />
+        {pinnedElsewhere.label}
+      </span>
+    ) : null;
   const PinBtn = ({ c }: { c: OriginCamp }) =>
     onTogglePin ? (
       <button
@@ -84,6 +97,7 @@ export function KeywordCampsList({
       {head.map((c, idx) => (
         <div key={c.camp} className={cn('flex items-baseline gap-1', idx > 0 && 'mt-0.5')}>
           <CampName camp={c} dim={isDim(c)} isPinned={isPinned(c)} />
+          <Elsewhere c={c} />
           <PinBtn c={c} />
           {idx === head.length - 1 && rest.length > 0 && (
             <button
@@ -103,6 +117,7 @@ export function KeywordCampsList({
           {rest.map((c) => (
             <li key={c.camp} className="flex items-baseline gap-1">
               <CampName camp={c} dim={isDim(c)} isPinned={isPinned(c)} />
+              <Elsewhere c={c} />
               <PinBtn c={c} />
             </li>
           ))}

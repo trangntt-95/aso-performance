@@ -6,7 +6,7 @@
 import { buildAndLoad } from './build.mjs';
 
 const load = buildAndLoad();
-const { keywordNoteKeys, readKeywordNote, readKeywordNoteAt, KEYWORD_NOTE_SCOPE, KEYWORD_PIN_SCOPE, keywordPinKeys, readPinnedCamps, togglePinnedCamp } = await load('store/keywordNotes.js');
+const { keywordNoteKeys, readKeywordNote, readKeywordNoteAt, KEYWORD_NOTE_SCOPE, KEYWORD_PIN_SCOPE, keywordPinKeys, readPinnedCamps, togglePinnedCamp, keywordCountryId, readKeywordCountryNotes } = await load('store/keywordNotes.js');
 
 let pass = 0, fail = 0;
 const eq = (name, got, want) => {
@@ -47,6 +47,22 @@ eq('hợp khoá chuẩn + khoá thô, bỏ trùng, giữ thứ tự', readPinned
 eq('không ghim → rỗng', readPinnedCamps(pins, 'mida'), []);
 eq('bật ghim thêm vào cuối', togglePinnedCamp(['A'], 'B'), 'A\nB');
 eq('tắt ghim bỏ đúng camp, không phân biệt hoa thường', togglePinnedCamp(['A', 'B'], 'a'), 'B');
+
+console.log('\nNote / ghim theo keyword × nước (Vị trí keyword)');
+eq('khoá = keyword chuẩn hoá | nước', keywordCountryId('Profit ', 'Australia'), 'profit|Australia');
+const cn = {
+  'kw-country||profit|Australia': 'tăng bid AU lên $9 ngày 16/09',
+  'kw-country-camp||profit|Australia': 'TP - Profit - Exact 01 - Tier 1 Premium - AU',
+  'kw-country-camp||profit|Spain': 'TP - Profit - Exact 01 - Tier 1 - ES\nTP - Profit - Exact 01 - Excl 3 tiers',
+  'kw-country||profit tracker|Australia': 'keyword khác, không lẫn',
+  'underbid||profit': 'note keyword chung',
+};
+eq('gộp note + ghim theo nước, xếp theo tên nước, không lẫn keyword khác', readKeywordCountryNotes(cn, 'PROFIT'), [
+  { country: 'Australia', note: 'tăng bid AU lên $9 ngày 16/09', pins: ['TP - Profit - Exact 01 - Tier 1 Premium - AU'] },
+  { country: 'Spain', note: '', pins: ['TP - Profit - Exact 01 - Tier 1 - ES', 'TP - Profit - Exact 01 - Excl 3 tiers'] },
+]);
+eq('keyword không có note nước → rỗng', readKeywordCountryNotes(cn, 'mida'), []);
+eq('note keyword chung không bị note nước ghi lên', readKeywordNote(cn, 'profit'), 'note keyword chung');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

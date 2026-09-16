@@ -17,7 +17,8 @@ import { KeywordOriginBlock } from './KeywordOriginBlock';
 import { useKeywordTrendStore } from '@/lib/store/keywordTrendStore';
 import { useStatusStore } from '@/lib/store/statusStore';
 import { useNotesStore } from '@/lib/store/notesStore';
-import { readKeywordNote, readKeywordNoteAt } from '@/lib/store/keywordNotes';
+import { readKeywordNote, readKeywordNoteAt, readKeywordCountryNotes } from '@/lib/store/keywordNotes';
+import { KeywordCountryNotes } from '@/components/shared/KeywordCountryNotes';
 import { keywordPaidShare, summarizeImpact, type ImpactPoint } from '@/lib/market/noteImpact';
 import { buildKeywordCountryNetValue, sumNetValueAggs, type NetValueAgg } from '@/lib/market/keywordNetValue';
 import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
@@ -272,6 +273,7 @@ export function KeywordTrendSheet() {
   // đọc dự phòng khoá tên thô. Xem lib/store/keywordNotes.ts.
   const ubNote = useNotesStore((s) => (keyword ? readKeywordNote(s.notes, keyword) || undefined : undefined));
   const ubNoteAt = useNotesStore((s) => (keyword ? readKeywordNoteAt(s.updatedAt, keyword) : undefined));
+  const countryNotesCount = useNotesStore((s) => (keyword ? readKeywordCountryNotes(s.notes, keyword).length : 0));
 
   const bidImpact = useMemo(() => {
     if (!keyword || !data || !ubNoteAt) return null;
@@ -662,6 +664,21 @@ export function KeywordTrendSheet() {
                   )}
                   {' '}Hai nguồn không khớp tuyệt đối vì GA4 ẩn dòng volume thấp khác nhau ở mỗi độ mịn.
                 </div>
+              </section>
+            )}
+
+            {/* Ghi chú: note keyword (Underbid / Paid Coverage) + note theo nước (Vị trí
+                keyword), đọc-chỉ — sửa ở bảng có số tương ứng. */}
+            {(ubNote?.trim() || countryNotesCount > 0) && (
+              <section className="space-y-1 rounded-lg border border-slate-200 bg-white p-3">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Ghi chú</h3>
+                {ubNote?.trim() && (
+                  <div className="text-[11px] leading-snug text-slate-700">
+                    <span className="text-[10px] font-medium text-slate-400">Keyword (Underbid):</span>{' '}
+                    <span className="italic whitespace-pre-line">“{ubNote.trim()}”</span>
+                  </div>
+                )}
+                {keyword && <KeywordCountryNotes keyword={keyword} highlight={country ?? undefined} className="mt-0 border-t-0 pt-0" />}
               </section>
             )}
 

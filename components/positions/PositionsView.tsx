@@ -22,7 +22,15 @@ import { normalizeCampName } from '@/lib/sheets/campName';
 import { KeywordCampsList } from '@/components/shared/KeywordCampsList';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { useNotesStore } from '@/lib/store/notesStore';
-import { KEYWORD_NOTE_SCOPE, KEYWORD_PIN_SCOPE, keywordNoteId, keywordNoteKeys, readPinnedCamps, togglePinnedCamp } from '@/lib/store/keywordNotes';
+import {
+  KEYWORD_COUNTRY_NOTE_SCOPE,
+  KEYWORD_COUNTRY_PIN_SCOPE,
+  keywordCountryId,
+  readKeywordNote,
+  readPinnedCamps,
+  togglePinnedCamp,
+} from '@/lib/store/keywordNotes';
+import { noteKeyOf } from '@/lib/store/notesStore';
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -228,11 +236,16 @@ export function PositionsView() {
   useEffect(() => {
     if (!notesLoaded) loadNotes();
   }, [notesLoaded, loadNotes]);
-  // Ghim camp theo keyword (scope 'underbid-camp'), dùng chung với Underbid:
-  // ghim ở đây là Underbid đo Impact theo đúng camp đó và ngược lại.
-  const pinnedOf = (keyword: string) => readPinnedCamps(allNotes, keyword);
-  const togglePin = (keyword: string, camp: string) =>
-    setNote(KEYWORD_PIN_SCOPE, keywordNoteId(keyword), togglePinnedCamp(pinnedOf(keyword), camp));
+  // Dòng ở đây là keyword × NƯỚC, nên note và ghim khoá theo cả nước
+  // (scope 'kw-country' / 'kw-country-camp'): "profit ở Úc" khác "profit ở Tây
+  // Ban Nha". Note keyword chung (Underbid) và ghim theo keyword vẫn hiện
+  // đọc-chỉ để biết đã có gì, không ghi lên nhau.
+  const splitPins = (v: string | undefined) => (v || '').split('\n').map((x) => x.trim()).filter(Boolean);
+  const countryPinsOf = (keyword: string, country: string) =>
+    splitPins(allNotes[noteKeyOf(KEYWORD_COUNTRY_PIN_SCOPE, keywordCountryId(keyword, country))]);
+  const toggleCountryPin = (keyword: string, country: string, camp: string) =>
+    setNote(KEYWORD_COUNTRY_PIN_SCOPE, keywordCountryId(keyword, country), togglePinnedCamp(countryPinsOf(keyword, country), camp));
+  const keywordPinsOf = (keyword: string) => readPinnedCamps(allNotes, keyword);
 
   if (error) {
     return (
@@ -392,13 +405,13 @@ export function PositionsView() {
                 <th className="px-2 py-2 text-left font-medium min-w-[12rem]" title={`Keyword Brand có vị trí PAID ≤ ${BRAND_TOP_POS} ở cửa sổ đang sắp (GA4) → đã top; kèm camp brand đang phủ nước đó (Geo Camp_Links) với spend và vị trí camp 14 ngày từ export Shopify. Không có spend theo keyword nên cờ chỉ ra CAMP để hạ bid.`}>
                   Cảnh báo
                 </th>
-                <th className="px-2 py-2 text-left font-medium" title="Camp chưa tắt đang bid keyword này (Master KW Lookup trừ Paused_camp), kèm bid ở camp đó. Xếp: camp đã ghim trước, rồi camp có Geo ghi rõ nước này, rồi Geo trống, cuối là camp không phủ nước (mờ). Bấm 'ghim' ở camp mình thật sự chỉnh bid — ghim dùng chung với Underbid (Impact bid đo theo camp đã ghim). Bấm +N để xem hết.">
+                <th className="px-2 py-2 text-left font-medium" title="Camp chưa tắt đang bid keyword này (Master KW Lookup trừ Paused_camp), kèm bid ở camp đó. Ghim theo KEYWORD × NƯỚC: 'profit ở Úc' ghim camp AU, 'profit ở Tây Ban Nha' ghim camp ES. Xếp: ghim ở đây trước, rồi camp đã ghim ở Underbid (nhãn, theo keyword), rồi camp có Geo ghi rõ nước này, Geo trống, cuối là camp không phủ nước (mờ). Bấm +N để xem hết.">
                   Camp đang bid
-                  <div className="text-[9px] font-normal text-slate-400">📌 ghim = camp đang theo dõi, chung với Underbid · Geo đúng nước trước · mờ = không phủ</div>
+                  <div className="text-[9px] font-normal text-slate-400">📌 ghim theo keyword × nước · nhãn Underbid = ghim theo keyword · mờ = không phủ</div>
                 </th>
-                <th className="px-2 py-2 text-left font-medium" title="Ghi chú theo KEYWORD (một note cho mọi nước), lưu vào App_Notes. Cùng một ô với tab Underbid, Paid Coverage và trend sheet — ghi ở đâu cũng thấy ở mọi nơi.">
+                <th className="px-2 py-2 text-left font-medium" title="Ghi chú theo KEYWORD × NƯỚC (dòng này), lưu vào App_Notes. Underbid, Paid Coverage và trend sheet hiện note này đọc-chỉ dưới note keyword của họ; note keyword chung (Underbid) hiện đọc-chỉ dưới ô này.">
                   Ghi chú
-                  <div className="text-[9px] font-normal text-slate-400">theo keyword · chung mọi tab</div>
+                  <div className="text-[9px] font-normal text-slate-400">theo keyword × nước · các tab khác thấy đọc-chỉ</div>
                 </th>
               </tr>
             </thead>
@@ -492,16 +505,26 @@ export function PositionsView() {
                     <KeywordCampsList
                       camps={campIndex.get(r.keyword).live}
                       rank={geoRank(r.country)}
-                      pinned={pinnedOf(r.keyword)}
-                      onTogglePin={(camp) => togglePin(r.keyword, camp)}
+                      pinned={countryPinsOf(r.keyword, r.country)}
+                      onTogglePin={(camp) => toggleCountryPin(r.keyword, r.country, camp)}
+                      pinnedElsewhere={{ camps: keywordPinsOf(r.keyword), label: 'Underbid' }}
                       emptyLabel="chưa bid"
                     />
                   </td>
                   <NoteCell
-                    scope={KEYWORD_NOTE_SCOPE}
-                    noteId={keywordNoteKeys(r.keyword).id}
-                    fallbackKeys={keywordNoteKeys(r.keyword).legacy}
+                    scope={KEYWORD_COUNTRY_NOTE_SCOPE}
+                    noteId={keywordCountryId(r.keyword, r.country)}
                     className="px-2 py-1.5 align-top"
+                    extra={(() => {
+                      const kwNote = readKeywordNote(allNotes, r.keyword).trim();
+                      if (!kwNote) return null;
+                      return (
+                        <div className="mt-1 max-w-[12rem] border-t border-slate-100 pt-1 text-[10px] leading-snug text-slate-500" title="Note theo keyword (mọi nước), sửa ở Underbid hoặc Paid Coverage">
+                          <span className="font-medium text-slate-400">Note keyword (Underbid):</span>{' '}
+                          <span className="italic whitespace-pre-line">“{kwNote}”</span>
+                        </div>
+                      );
+                    })()}
                   />
                 </tr>
               ))}
@@ -516,8 +539,8 @@ export function PositionsView() {
             traffic ở cửa sổ đó · tier nước theo Max bid cap · bấm keyword để mở drill ·{' '}
             <b>Cảnh báo 🏁</b> = keyword Brand có vị trí paid ≤ {BRAND_TOP_POS} ở cửa sổ đang sắp (GA4), kèm camp brand đang phủ nước đó
             với spend / vị trí 14 ngày từ export Shopify Ads — hạ bid ở camp đó; spend theo riêng keyword không có trong dữ liệu ·{' '}
-            <b>Camp đang bid</b> = camp chưa tắt có keyword này trong Master, bid ở camp đó; camp mờ = Geo không phủ nước của dòng; <b>ghim</b> = camp mình đang theo dõi / chỉnh bid cho keyword, dùng chung với Underbid (ở đó Impact bid đo theo camp đã ghim) ·{' '}
-            <b>Ghi chú</b> theo keyword (chung cho mọi nước), cùng một note với Underbid, Paid Coverage và trend sheet.
+            <b>Camp đang bid</b> = camp chưa tắt có keyword này trong Master, bid ở camp đó; camp mờ = Geo không phủ nước của dòng; <b>ghim</b> theo keyword × nước = camp mình theo dõi cho keyword ở đúng nước đó; nhãn &ldquo;Underbid&rdquo; = camp đã ghim theo keyword ở tab Underbid ·{' '}
+            <b>Ghi chú</b> theo keyword × nước; Underbid, Paid Coverage và trend sheet hiện đọc-chỉ, còn note keyword chung của Underbid hiện đọc-chỉ dưới ô này.
           </div>
         </div>
       )}

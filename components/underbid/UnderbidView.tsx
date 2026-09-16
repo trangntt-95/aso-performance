@@ -5,6 +5,7 @@ import { Pin, AlertCircle, X, ExternalLink, AlertTriangle, ChevronDown } from 'l
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { useNotesStore } from '@/lib/store/notesStore';
+import { KeywordCountryNotes } from '@/components/shared/KeywordCountryNotes';
 import { KEYWORD_NOTE_SCOPE, KEYWORD_PIN_SCOPE, keywordNoteId, keywordNoteKeys, readKeywordNoteAt, readPinnedCamps, togglePinnedCamp } from '@/lib/store/keywordNotes';
 import { Input } from '@/components/ui/input';
 import { KeywordSearchBox } from '@/components/shared/KeywordSearchBox';
@@ -69,6 +70,16 @@ type RowWithValue = import('@/lib/market/underbid').UnderbidRow & {
   ceil: KeywordCeiling;
 };
 
+/**
+ * Tiềm năng của keyword nếu paid ăn được lượng install như organic đang có
+ * trong cửa sổ: organic install × net value một install. Đây là cỡ của miếng
+ * bánh, không phải dự báo — paid không bao giờ lấy hết organic, nhưng keyword
+ * organic 40 install ở $30/install đáng đẩy hơn keyword 3 install ở $60.
+ * null khi chưa có $/install.
+ */
+const potentialOf = (r: RowWithValue): number | null =>
+  r.nv?.netPerInstall == null || r.organicInstalls <= 0 ? null : r.organicInstalls * r.nv.netPerInstall;
+
 const VERDICT_TAG: Record<CeilingVerdict, { label: string; cls: string; title: string }> = {
   room: {
     label: 'còn chỗ nâng',
@@ -106,6 +117,8 @@ type SortKey =
   | 'paidPosL30'
   | 'paidShare'
   | 'netPerInstall'
+  | 'netValue'
+  | 'potential'
   | 'breakeven'
   | 'bidNow'
   | 'score';
@@ -129,6 +142,8 @@ const SORT_COLS: Record<
   paidPosL30: { kind: 'num', get: (r) => r.paidPosL30 },
   paidShare: { kind: 'num', get: (r) => r.paidShare },
   netPerInstall: { kind: 'num', get: (r) => r.nv?.netPerInstall ?? null },
+  netValue: { kind: 'num', get: (r) => r.nv?.netValue ?? null },
+  potential: { kind: 'num', get: (r) => potentialOf(r) },
   // Sắp theo trần THẤP nhất trong các camp — camp chật chỗ nhất là camp cần đọc.
   breakeven: { kind: 'num', get: (r) => r.ceil.ceilingMin },
   bidNow: { kind: 'num', get: (r) => r.ceil.bidNow },
@@ -774,6 +789,15 @@ export function UnderbidView() {
                   title="Net value một install của keyword này = (doanh thu − phí Shopify) ÷ install, gộp mọi nước. Nguồn: tab 'Net value per install'. Xếp giảm dần để thấy keyword volume thấp nhưng đáng tiền."
                 />
                 <SortHead
+                  label="Value"
+                  col="potential"
+                  align="right"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={toggleSort}
+                  title="Dòng trên: tổng net value keyword đã mang về (YTD, mọi nước, mọi kênh) · số install · số shop trả tiền. Dòng dưới: TIỀM NĂNG = organic install trong cửa sổ × $/install — cỡ miếng bánh nếu paid ăn được như organic. Sort theo tiềm năng."
+                />
+                <SortHead
                   label="Trần bid"
                   col="breakeven"
                   align="right"
@@ -912,6 +936,23 @@ export function UnderbidView() {
                         </span>
                       )}
                     </td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap font-mono text-[11px]">
+                      {r.nv == null ? (
+                        <span className="text-slate-300" title="Chưa có dòng nào trong tab 'Net value per install'">—</span>
+                      ) : (
+                        <div className="leading-tight">
+                          <div className={r.nv.thin ? 'text-amber-700' : 'text-slate-800'} title={`Tổng net value YTD: $${Math.round(r.nv.netValue).toLocaleString()} từ ${r.nv.installs} install, ${r.nv.payingShops} shop trả tiền${r.nv.thin ? ` — ${r.nv.thinReason}` : ''}`}>
+                            ${Math.round(r.nv.netValue).toLocaleString()}
+                            <span className="ml-1 text-[9px] text-slate-400">{r.nv.installs}i · {r.nv.payingShops}s</span>
+                          </div>
+                          {potentialOf(r) !== null && (
+                            <div className="text-[10px] text-indigo-600" title={`Tiềm năng = ${r.organicInstalls} organic install × $${r.nv.netPerInstall!.toFixed(0)}/install`}>
+                              ≈ ${Math.round(potentialOf(r)!).toLocaleString()} <span className="text-[9px] text-slate-400">tiềm năng</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <CeilingCells ceil={r.ceil} />
                     <CampCell
                       camps={r.camps}
@@ -930,7 +971,12 @@ export function UnderbidView() {
                     )}
                     {/* Note keyword dùng chung với Paid Coverage / trend sheet: khoá
                         chuẩn hoá, đọc dự phòng khoá tên thô. Xem lib/store/keywordNotes.ts. */}
-                    <NoteCell scope={KEYWORD_NOTE_SCOPE} noteId={keywordNoteKeys(r.term).id} fallbackKeys={keywordNoteKeys(r.term).legacy} />
+                    <NoteCell
+                      scope={KEYWORD_NOTE_SCOPE}
+                      noteId={keywordNoteKeys(r.term).id}
+                      fallbackKeys={keywordNoteKeys(r.term).legacy}
+                      extra={<KeywordCountryNotes keyword={r.term} />}
+                    />
                   </tr>
                 );
               })}

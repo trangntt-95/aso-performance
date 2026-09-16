@@ -92,6 +92,52 @@ export function togglePinnedCamp(current: string[], camp: string): string {
   return next.join('\n');
 }
 
+// ── Note và ghim theo KEYWORD × NƯỚC ──────────────────────────────────────────
+//
+// Vị trí keyword có dòng là keyword × nước; "profit ở Úc" và "profit ở Tây Ban
+// Nha" là hai việc khác nhau (camp khác, bid khác), nên note và ghim ở tab đó
+// khoá theo cả nước. Note keyword (không nước) vẫn là của Underbid; hai lớp
+// đọc chéo nhau nhưng không ghi lên nhau: tab theo nước hiện note keyword
+// đọc-chỉ, tab theo keyword hiện danh sách note theo nước đọc-chỉ.
+// Khoá: '<keyword chuẩn hoá>|<tên nước như Country_L*>'.
+
+export const KEYWORD_COUNTRY_NOTE_SCOPE = 'kw-country';
+export const KEYWORD_COUNTRY_PIN_SCOPE = 'kw-country-camp';
+const COUNTRY_SEP = '|';
+
+export function keywordCountryId(term: string, country: string): string {
+  return `${keywordNoteId(term)}${COUNTRY_SEP}${country.trim()}`;
+}
+
+export interface KeywordCountryNote {
+  country: string;
+  note: string;
+  pins: string[];
+}
+
+/** Mọi note / ghim theo nước của một keyword, xếp theo tên nước. */
+export function readKeywordCountryNotes(notes: Record<string, string>, term: string): KeywordCountryNote[] {
+  const notePrefix = noteKeyOf(KEYWORD_COUNTRY_NOTE_SCOPE, keywordNoteId(term)) + COUNTRY_SEP;
+  const pinPrefix = noteKeyOf(KEYWORD_COUNTRY_PIN_SCOPE, keywordNoteId(term)) + COUNTRY_SEP;
+  const byCountry = new Map<string, KeywordCountryNote>();
+  const get = (country: string) => {
+    let e = byCountry.get(country);
+    if (!e) {
+      e = { country, note: '', pins: [] };
+      byCountry.set(country, e);
+    }
+    return e;
+  };
+  for (const [key, value] of Object.entries(notes)) {
+    if (!value) continue;
+    if (key.startsWith(notePrefix)) get(key.slice(notePrefix.length)).note = value.trim();
+    else if (key.startsWith(pinPrefix)) get(key.slice(pinPrefix.length)).pins = splitPins(value);
+  }
+  return Array.from(byCountry.values())
+    .filter((e) => e.note || e.pins.length > 0)
+    .sort((a, b) => a.country.localeCompare(b.country));
+}
+
 /**
  * Lần ghi note mới nhất trên mọi khoá của keyword, ISO string — mốc đo
  * trước/sau của Impact bid. Lấy MỚI NHẤT chứ không lấy theo thứ tự khoá, để
