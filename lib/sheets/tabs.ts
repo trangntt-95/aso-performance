@@ -33,6 +33,7 @@ export const TABS = [
   // duy nhất trên toàn workbook trả lời "một install của keyword này đáng bao
   // nhiêu tiền", thay vì chỉ đáng bao nhiêu ở nước nào.
   'Net value per install',
+  'Countries_performance_auto',
   // Export search term của Shopify Ads, đã lọc 'Bid Status = Chưa bid'. Từ
   // 15/09/2026 chỉ còn là LỚP BỔ SUNG (impression, spend, keyword bắt được)
   // cho bảng câu paid chưa bid — nguồn chính là dòng search_ad trong All_L*

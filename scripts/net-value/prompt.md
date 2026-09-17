@@ -71,3 +71,52 @@ Bước 6 — Xác nhận: chạy Bash
 Scope phải chứa ngày hôm qua.
 
 Kết thúc bằng đúng một dòng tóm tắt: ngày, số dòng, install, net value, và OK hay lỗi ở bước nào.
+
+Bước 7 — Doanh thu theo nước (khối Core market). Gọi `mcp__claude_ai_TrueProfit_DA__run_query` với max_rows 500 và SQL sau (nguyên văn; kỳ = 4 tháng gần nhất đã kết thúc, tự tính trong SQL):
+
+WITH w AS (
+  SELECT DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 4 MONTH), MONTH) AS win_from,
+         LAST_DAY(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH)) AS win_to
+),
+installed AS (
+  SELECT e.shop_id, MIN(TIMESTAMP_ADD(e.occurred_at, INTERVAL 7 HOUR)) AS installed_at
+  FROM `trueda.trueprofit.partner_events` e
+  CROSS JOIN w
+  LEFT JOIN `trueda.trueprofit.testing_shops` t ON t.shop_id = e.shop_id
+  WHERE e.type IN ('RELATIONSHIP_INSTALLED','RELATIONSHIP_REACTIVATED') AND t.shop_id IS NULL
+    AND DATE(TIMESTAMP_ADD(e.occurred_at, INTERVAL 7 HOUR)) BETWEEN w.win_from AND w.win_to
+  GROUP BY e.shop_id
+),
+rev AS (
+  SELECT i.shop_id,
+    SUM(IF(TIMESTAMP_ADD(t.created_at, INTERVAL 7 HOUR) >= i.installed_at, t.gross_amount, 0)) AS gross,
+    SUM(IF(TIMESTAMP_ADD(t.created_at, INTERVAL 7 HOUR) >= i.installed_at, t.net_amount, 0)) AS net,
+    COUNTIF(TIMESTAMP_ADD(t.created_at, INTERVAL 7 HOUR) >= i.installed_at AND t.kind = 'AppSubscriptionSale' AND t.gross_amount > 0) AS paid_tx
+  FROM installed i JOIN `trueda.trueprofit.partner_transactions` t ON t.shop_id = i.shop_id
+  CROSS JOIN w
+  WHERE DATE(TIMESTAMP_ADD(t.created_at, INTERVAL 7 HOUR)) >= w.win_from
+  GROUP BY i.shop_id
+)
+SELECT (SELECT CAST(win_from AS STRING) FROM w) AS win_from, (SELECT CAST(win_to AS STRING) FROM w) AS win_to,
+  IFNULL(NULLIF(TRIM(s.CountryName), ''), '(unknown)') AS country,
+  COUNT(DISTINCT i.shop_id) AS installs,
+  COUNT(DISTINCT IF(r.paid_tx > 0, i.shop_id, NULL)) AS first_paid,
+  ROUND(SUM(IFNULL(r.gross,0)),2) AS gross, ROUND(SUM(IFNULL(r.net,0)),2) AS net
+FROM installed i
+LEFT JOIN `trueda.trueprofit.shops` s ON CAST(s.ID AS STRING) = i.shop_id
+LEFT JOIN rev r ON r.shop_id = i.shop_id
+GROUP BY 3 ORDER BY gross DESC
+
+Kết quả khoảng 120 dòng, thường trả thẳng trong chat. Dùng tool Write ghi NGUYÊN JSON kết quả (cả object {rows:[...]} hoặc chỉ mảng rows) vào `.net-value-run/countries.json`. Nếu tool báo đã lưu ra file .txt thì dùng đường dẫn đó thay cho countries.json.
+
+Bước 8 — Dựng và đẩy: chạy Bash
+`node scripts/net-value/build-countries.mjs .net-value-run/countries.json .net-value-run/countries-body.json`
+Kỳ vọng countries>=60 và installs>=2000. Nhỏ hơn thì dừng, báo lỗi, KHÔNG đẩy. Rồi
+`node scripts/net-value/push-countries.mjs .net-value-run/countries-body.json`
+Kỳ vọng `200 {"ok":true,...}`.
+
+Bước 9 — Xác nhận: chạy Bash
+`curl -s -m 120 https://appstore-performance.vercel.app/api/sheets | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);const q=p.data??p;console.log(q.perGeoRevenuePeriod, q.perGeoRevenue.length)})"`
+perGeoRevenuePeriod phải chứa kỳ 4 tháng (ví dụ "01/05/2026 → 31/08/2026").
+
+Dòng tóm tắt cuối bổ sung thêm: số nước, install và gross của khối doanh thu, OK hay lỗi.

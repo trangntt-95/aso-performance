@@ -11,6 +11,7 @@ import {
   parseMarketTiers,
   parsePerGeoCpiCap,
   parsePerGeoRevenue,
+  parseCountriesAuto,
   parseNetValuePerInstall,
   parseSearchTermUnbidded,
   parseHistory,
@@ -104,7 +105,12 @@ export async function GET() {
     const masterKwLookup = parseMasterKw(raw['Master KW Lookup'] ?? []);
 
     // Parsed once: the revenue block yields both the rows and the period label.
-    const perGeoRevenue = parsePerGeoRevenue(raw['Countries performance'] ?? []);
+    // Khối doanh thu theo nước: tab tự động từ BigQuery (4 tháng gần nhất đã
+    // kết thúc, ghi mỗi sáng) khi có đủ nước; không thì khối dán tay theo quý ở
+    // 'Countries performance' như trước. Cấu hình trần CPI / Excluded / Tier vẫn
+    // đọc từ tab cũ.
+    const perGeoAuto = parseCountriesAuto(raw['Countries_performance_auto'] ?? []);
+    const perGeoRevenue = perGeoAuto.rows.length >= 20 ? perGeoAuto : parsePerGeoRevenue(raw['Countries performance'] ?? []);
     const netValueSheet = parseNetValuePerInstall(raw['Net value per install'] ?? []);
     // Net value tự động từ GA4 + BigQuery (lib/bq/netValue.ts) khi đã cấp quyền
     // và đặt env; tab sheet là đường lùi. Cluster lấy từ tab cũ để cột không

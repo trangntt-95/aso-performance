@@ -1697,3 +1697,68 @@ export function parseSearchTermUnbidded(rows: string[][]): {
   }
   return { rows: out, from, to };
 }
+
+/**
+ * Tab 'Countries_performance_auto' — khối doanh thu theo nước do pipeline BigQuery
+ * ghi mỗi sáng (scripts/net-value, /api/countries/upload). Layout: dòng 1 là kỳ
+ * (thành perGeoRevenuePeriod), dòng tiêu đề có 'Country' và 'Revenue'. Cùng
+ * kiểu dữ liệu với khối dán tay để mọi bảng đọc như cũ. Revenue = GROSS theo
+ * quyết định của Trang 17/09/2026 (net value per install thì dùng net).
+ */
+export function parseCountriesAuto(rows: string[][]): { rows: PerGeoRevenueRow[]; period: string } {
+  const empty = { rows: [] as PerGeoRevenueRow[], period: '' };
+  if (!rows || rows.length < 3) return empty;
+  const norm = (c: unknown): string => str(c).trim().toLowerCase().replace(/\s+/g, ' ');
+  const at = (row: string[], i: number): unknown => (i >= 0 ? row[i] : undefined);
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const r = (rows[i] ?? []).map(norm);
+    if (r.some((h) => h === 'country') && r.some((h) => h.startsWith('revenue'))) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return empty;
+  const header = (rows[headerIdx] ?? []).map(norm);
+  const find = (...cands: string[]): number => {
+    for (const c of cands) {
+      const i = header.findIndex((h) => h.startsWith(c));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const ci = {
+    rank: find('rank'),
+    country: find('country'),
+    installs: find('installs'),
+    revenue: find('revenue (gross', 'revenue'),
+  };
+  // 'First paid' và 'First paid CR (%)' cùng tiền tố — so bằng để lấy đúng cột đếm.
+  const firstPaidIdx = header.findIndex((h) => h === 'first paid');
+  if (ci.country < 0 || ci.revenue < 0) return empty;
+  let period = '';
+  for (let i = 0; i < headerIdx; i++) {
+    const v = str((rows[i] ?? [])[0]).trim();
+    if (v) { period = v; break; }
+  }
+  const out: PerGeoRevenueRow[] = [];
+  for (const r of rows.slice(headerIdx + 1)) {
+    const country = canonCountry(str(at(r, ci.country)).trim());
+    if (!country) continue;
+    const installs = num(at(r, ci.installs));
+    const firstPaid = firstPaidIdx >= 0 ? num(at(r, firstPaidIdx)) : 0;
+    const revenue = num(at(r, ci.revenue));
+    const rank = ci.rank >= 0 ? num(at(r, ci.rank)) : out.length + 1;
+    out.push({
+      rank: rank > 0 ? rank : out.length + 1,
+      country,
+      installs,
+      firstPaid,
+      firstPaidCr: installs > 0 ? firstPaid / installs : null,
+      arppu: firstPaid > 0 ? revenue / firstPaid : null,
+      revenue,
+      valuePerInstall: installs > 0 ? revenue / installs : null,
+    });
+  }
+  return { rows: out, period };
+}
