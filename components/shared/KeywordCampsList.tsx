@@ -20,17 +20,17 @@ import { cn } from '@/lib/utils';
 
 const money = (n: number | null | undefined) => (n && n > 0 ? `$${n.toFixed(2)}` : '—');
 
-function CampName({ camp, dim, isPinned }: { camp: OriginCamp; dim: boolean; isPinned: boolean }) {
+function CampName({ camp, dim, isPinned, maxW }: { camp: OriginCamp; dim: boolean; isPinned: boolean; maxW: string }) {
   return (
     <span className={cn('flex items-baseline gap-1 whitespace-nowrap', dim && 'opacity-50')} title={dim ? `${camp.camp} — Geo không phủ nước này` : camp.camp}>
       {isPinned && <Pin className="h-3 w-3 shrink-0 self-center text-indigo-500" />}
       {camp.url ? (
-        <a href={camp.url} target="_blank" rel="noopener noreferrer" className={cn('inline-flex max-w-[16rem] items-baseline gap-1 truncate text-[11px] text-indigo-600 hover:underline', isPinned && 'font-medium')}>
+        <a href={camp.url} target="_blank" rel="noopener noreferrer" className={cn('inline-flex items-baseline gap-1 truncate text-[11px] text-indigo-600 hover:underline', maxW, isPinned && 'font-medium')}>
           <span className="truncate">{camp.camp}</span>
           <ExternalLink className="h-2.5 w-2.5 shrink-0 self-center" />
         </a>
       ) : (
-        <span className={cn('max-w-[16rem] truncate text-[11px] text-slate-700', isPinned && 'font-medium')}>{camp.camp}</span>
+        <span className={cn('truncate text-[11px] text-slate-700', maxW, isPinned && 'font-medium')}>{camp.camp}</span>
       )}
       <span className="text-[10px] text-slate-400">{money(camp.bidMax)}</span>
     </span>
@@ -44,6 +44,7 @@ export function KeywordCampsList({
   onTogglePin,
   pinnedElsewhere,
   emptyLabel = '—',
+  nameMaxClass = 'max-w-[16rem]',
 }: {
   camps: OriginCamp[];
   rank?: (camp: OriginCamp) => 0 | 1 | 2;
@@ -54,6 +55,8 @@ export function KeywordCampsList({
    *  keyword × nước): hiện nhãn, xếp ngay sau ghim ở đây, không tính là ghim ở đây. */
   pinnedElsewhere?: { camps: string[]; label: string };
   emptyLabel?: string;
+  /** Lớp max-width cho tên camp (mặc định 16rem); bảng nhiều cột dùng hẹp hơn. */
+  nameMaxClass?: string;
 }) {
   const [open, setOpen] = useState(false);
   if (camps.length === 0) return <span className="text-[11px] text-slate-400">{emptyLabel}</span>;
@@ -96,7 +99,7 @@ export function KeywordCampsList({
     <div className="min-w-0">
       {head.map((c, idx) => (
         <div key={c.camp} className={cn('flex items-baseline gap-1', idx > 0 && 'mt-0.5')}>
-          <CampName camp={c} dim={isDim(c)} isPinned={isPinned(c)} />
+          <CampName camp={c} dim={isDim(c)} isPinned={isPinned(c)} maxW={nameMaxClass} />
           <Elsewhere c={c} />
           <PinBtn c={c} />
           {idx === head.length - 1 && rest.length > 0 && (
@@ -116,7 +119,7 @@ export function KeywordCampsList({
         <ul className="mt-1 space-y-0.5 border-l border-slate-200 pl-2">
           {rest.map((c) => (
             <li key={c.camp} className="flex items-baseline gap-1">
-              <CampName camp={c} dim={isDim(c)} isPinned={isPinned(c)} />
+              <CampName camp={c} dim={isDim(c)} isPinned={isPinned(c)} maxW={nameMaxClass} />
               <Elsewhere c={c} />
               <PinBtn c={c} />
             </li>

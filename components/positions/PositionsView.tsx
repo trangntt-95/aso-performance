@@ -191,7 +191,7 @@ export function PositionsView() {
   const Arrow = ({ k }: { k: SortKey }) =>
     sortKey === k ? <span className="ml-0.5 text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null;
   const thCls = (k: SortKey, right = true) =>
-    cn('cursor-pointer select-none px-2 py-2 font-medium hover:text-slate-900', right ? 'text-right' : 'text-left', sortKey === k && 'text-indigo-700');
+    cn('cursor-pointer select-none px-1.5 py-2 font-medium hover:text-slate-900', right ? 'text-right' : 'text-left', sortKey === k && 'text-indigo-700');
 
   const topCount = useMemo(
     () => rows.filter((r) => brandTopFlag(r, sortWin, brandCamps)).length,
@@ -376,7 +376,7 @@ export function PositionsView() {
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm [&_th]:bg-slate-50">
               <tr>
-                <th onClick={() => toggleSort('keyword')} className={cn(thCls('keyword', false), 'px-3')} title="Bấm để sắp theo keyword A→Z / Z→A">
+                <th onClick={() => toggleSort('keyword')} className={cn(thCls('keyword', false), 'px-2 w-[11rem]')} title="Bấm để sắp theo keyword A→Z / Z→A">
                   Keyword<Arrow k="keyword" />
                 </th>
                 <th onClick={() => toggleSort('country')} className={thCls('country', false)} title="Tier theo Max bid cap · số tím = một install ở nước đó đáng bao nhiêu (tab Net value per install, YTD, theo kênh đang chọn); * = dưới 3 shop trả tiền · bấm để sắp theo nước">
@@ -402,7 +402,7 @@ export function PositionsView() {
                 <th onClick={() => toggleSort('users')} className={thCls('users')} title="Tổng users mọi cửa sổ, mọi kênh · bấm để sắp">
                   Users<Arrow k="users" />
                 </th>
-                <th className="px-2 py-2 text-left font-medium min-w-[12rem]" title={`Keyword Brand có vị trí PAID ≤ ${BRAND_TOP_POS} ở cửa sổ đang sắp (GA4) → đã top; kèm camp brand đang phủ nước đó (Geo Camp_Links) với spend và vị trí camp 14 ngày từ export Shopify. Không có spend theo keyword nên cờ chỉ ra CAMP để hạ bid.`}>
+                <th className="px-1.5 py-2 text-left font-medium" title={`Keyword Brand có vị trí PAID ≤ ${BRAND_TOP_POS} ở cửa sổ đang sắp (GA4) → đã top; kèm camp brand đang phủ nước đó (Geo Camp_Links) với spend và vị trí camp 14 ngày từ export Shopify. Không có spend theo keyword nên cờ chỉ ra CAMP để hạ bid.`}>
                   Cảnh báo
                 </th>
                 <th className="px-2 py-2 text-left font-medium" title="Camp chưa tắt đang bid keyword này (Master KW Lookup trừ Paused_camp), kèm bid ở camp đó. Ghim theo KEYWORD × NƯỚC: 'profit ở Úc' ghim camp AU, 'profit ở Tây Ban Nha' ghim camp ES. Xếp: ghim ở đây trước, rồi camp đã ghim ở Underbid (nhãn, theo keyword), rồi camp có Geo ghi rõ nước này, Geo trống, cuối là camp không phủ nước (mờ). Bấm +N để xem hết.">
@@ -418,10 +418,10 @@ export function PositionsView() {
             <tbody>
               {filtered.map((r) => (
                 <tr key={`${r.keyword}|${r.country}`} className="border-t align-top hover:bg-slate-50">
-                  <td className="px-3 py-1.5">
-                    <div className="flex items-center gap-1.5">
+                  <td className="max-w-[11rem] px-2 py-1.5">
+                    <div className="flex min-w-0 items-center gap-1.5" title={r.keyword}>
                       <CategoryChip category={r.category as Category} compact />
-                      <KeywordLink keyword={r.keyword} country={r.country} className="truncate font-medium text-sm" />
+                      <KeywordLink keyword={r.keyword} country={r.country} className="block min-w-0 truncate text-[12px] font-medium" />
                     </div>
                     {shouldShowTranslation(r.keyword, r.english, r.category) && (
                       <div className="mt-0.5 truncate text-[10px] italic text-slate-500">→ {r.english}</div>
@@ -450,7 +450,7 @@ export function PositionsView() {
                   {POSITION_WINDOWS.map((w) => (
                     <PosCell key={w} row={r} w={w} surface={surface} />
                   ))}
-                  <td className="px-2 py-1.5 text-right font-mono text-[11px] whitespace-nowrap">
+                  <td className="px-1.5 py-1.5 text-right font-mono text-[11px] whitespace-nowrap">
                     {(() => {
                       const inst = cellInstalls(r, sortWin, surface);
                       const c = cellPos(r, sortWin, surface);
@@ -463,7 +463,7 @@ export function PositionsView() {
                       );
                     })()}
                   </td>
-                  <td className="px-2 py-1.5 text-right font-mono text-[11px] text-slate-500">{r.users}</td>
+                  <td className="px-1.5 py-1.5 text-right font-mono text-[11px] text-slate-500">{r.users}</td>
                   <td className="px-2 py-1.5">
                     {(() => {
                       const f = brandTopFlag(r, sortWin, brandCamps);
@@ -480,12 +480,12 @@ export function PositionsView() {
                               {f.camps.slice(0, 3).map((c) => (
                                 <div key={c.camp} className="flex items-center gap-1 text-slate-600">
                                   {c.url ? (
-                                    <a href={c.url} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-[11rem] items-center gap-0.5 truncate text-indigo-600 hover:underline" title={c.camp}>
+                                    <a href={c.url} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-[9rem] items-center gap-0.5 truncate text-indigo-600 hover:underline" title={c.camp}>
                                       <span className="truncate">{c.camp}</span>
                                       <ExternalLink className="h-2.5 w-2.5 shrink-0" />
                                     </a>
                                   ) : (
-                                    <span className="max-w-[11rem] truncate" title={c.camp}>{c.camp}</span>
+                                    <span className="max-w-[9rem] truncate" title={c.camp}>{c.camp}</span>
                                   )}
                                   <span className="whitespace-nowrap font-mono text-slate-500" title="spend 14 ngày · vị trí camp · bid hiện tại (Master)">
                                     ${c.spend.toFixed(0)}
@@ -501,7 +501,7 @@ export function PositionsView() {
                       );
                     })()}
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td className="px-1.5 py-1.5">
                     <KeywordCampsList
                       camps={campIndex.get(r.keyword).live}
                       rank={geoRank(r.country)}
@@ -509,17 +509,19 @@ export function PositionsView() {
                       onTogglePin={(camp) => toggleCountryPin(r.keyword, r.country, camp)}
                       pinnedElsewhere={{ camps: keywordPinsOf(r.keyword), label: 'Underbid' }}
                       emptyLabel="chưa bid"
+                      nameMaxClass="max-w-[11rem]"
                     />
                   </td>
                   <NoteCell
                     scope={KEYWORD_COUNTRY_NOTE_SCOPE}
                     noteId={keywordCountryId(r.keyword, r.country)}
-                    className="px-2 py-1.5 align-top"
+                    className="px-1.5 py-1.5 align-top"
+                    inputClassName="w-32 min-w-[7rem]"
                     extra={(() => {
                       const kwNote = readKeywordNote(allNotes, r.keyword).trim();
                       if (!kwNote) return null;
                       return (
-                        <div className="mt-1 max-w-[12rem] border-t border-slate-100 pt-1 text-[10px] leading-snug text-slate-500" title="Note theo keyword (mọi nước), sửa ở Underbid hoặc Paid Coverage">
+                        <div className="mt-1 max-w-[8rem] border-t border-slate-100 pt-1 text-[10px] leading-snug text-slate-500" title="Note theo keyword (mọi nước), sửa ở Underbid hoặc Paid Coverage">
                           <span className="font-medium text-slate-400">Note keyword (Underbid):</span>{' '}
                           <span className="italic whitespace-pre-line">“{kwNote}”</span>
                         </div>
@@ -550,13 +552,13 @@ export function PositionsView() {
 
 function PosCell({ row, w, surface }: { row: PositionRow; w: PositionWindow; surface: SurfacePick }) {
   const c = cellPos(row, w, surface);
-  if (!c) return <td className="px-2 py-1.5 text-right font-mono text-[11px] text-slate-200"> </td>;
+  if (!c) return <td className="px-1.5 py-1.5 text-right font-mono text-[11px] text-slate-200"> </td>;
   const org = row.cells[w]?.organic;
   const paid = row.cells[w]?.paid;
   const delta = c.pos !== null && c.posPrev !== null ? c.pos - c.posPrev : null;
   return (
     <td
-      className="px-2 py-1.5 text-right font-mono text-[11px] whitespace-nowrap"
+      className="px-1.5 py-1.5 text-right font-mono text-[11px] whitespace-nowrap"
       title={
         `${w} · ${c.users} users` +
         (org ? ` · organic ${fmtPos(org.pos)} (${org.users} u)` : '') +

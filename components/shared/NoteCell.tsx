@@ -13,6 +13,7 @@ export function NoteCell({
   className,
   fallbackKeys,
   extra,
+  inputClassName,
 }: {
   scope: string;
   noteId: string;
@@ -24,6 +25,8 @@ export function NoteCell({
   /** Rendered under the textarea — used to surface related notes that must stay
    *  read-only (a keyword note can't be edited from a campaign row). */
   extra?: React.ReactNode;
+  /** Lớp kích cỡ cho textarea, thay mặc định w-40 — bảng nhiều cột dùng ô hẹp hơn. */
+  inputClassName?: string;
 }) {
   const composite = noteKeyOf(scope, noteId);
   const note = useNotesStore((s) => {
@@ -43,7 +46,7 @@ export function NoteCell({
         onChange={(e) => setNote(scope, noteId, e.target.value)}
         placeholder="Ghi chú…"
         rows={2}
-        className="w-40 min-w-[9rem] resize-y rounded border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        className={`${inputClassName ?? 'w-40 min-w-[9rem]'} resize-y rounded border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500`}
       />
       {saving && <span className="text-[9px] text-slate-400">lưu…</span>}
       {extra}
