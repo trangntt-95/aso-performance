@@ -44,6 +44,11 @@ export function CountryWeightSection({ data: dataProp }: { data?: SheetPayload |
           <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
             <Scale className="h-4 w-4 text-indigo-600" />
             Trọng số quốc gia
+            {weights.period && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-normal text-slate-600" title="Kỳ của khối doanh thu trong tab Countries performance — cập nhật theo quý, không đổi theo cửa sổ ở nửa trên">
+                📅 doanh thu {weights.period} · users L90
+              </span>
+            )}
           </h2>
           <p className="text-[11px] leading-snug text-slate-500">
             {basis === 'revenue' ? (

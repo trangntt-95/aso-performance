@@ -8,10 +8,10 @@ import type { DataSourceKey } from '@/lib/market/dataGaps';
 // explicitly rather than inferred: a source left out simply goes unreported,
 // which is safer than a note claiming data the page never touches.
 const SOURCES: readonly DataSourceKey[] = [
-  'marketIndex',
-  'allTabs',
+  'historyDaily',
+  'shopifyDaily',
+  'googleAds',
   'countryTabs',
-  'perGeoCpiCap',
   'perGeoRevenue',
   'marketTiers',
 ];
@@ -20,14 +20,13 @@ export default function MarketIndexPage() {
   return (
     <div className="space-y-4">
       <PageIntro>
-        <b>Sức khoẻ thị trường</b> — thị trường đang lên hay xuống, trước khi đi vào từng keyword.
-        Trang chia làm hai nửa. <b>Nửa trên</b> (executive summary, WoW, verdict theo window,
-        funnel, top keyword) là <b>toàn thị trường, không cân</b> — mỗi user tính như nhau, số do
-        Apps Script tính trong tab <code>Market_Index</code> cộng tổng từ <code>All_Lx</code>.{' '}
-        <b>Nửa dưới</b> (Trọng số quốc gia) mới cân, và cho chọn <b>cân theo doanh thu</b> hay{' '}
-        <b>cân theo user</b> — kèm cảnh báo nước nhiều traffic ít tiền và nước nhiều tiền ít
-        traffic. → “lên hay xuống” là câu hỏi về cả thị trường; “nước nào đáng nặng” là câu hỏi
-        khác, nên hai câu để riêng.
+        <b>Sức khoẻ thị trường</b> — hai câu hỏi mà tab khác không trả lời. <b>Nửa trên:</b> cầu của thị
+        trường đang lên hay xuống — users và install <b>theo ngày</b>, tách organic / paid, kỳ đang chọn so
+        với kỳ liền trước cùng độ dài (nguồn GA4 History_Daily, đếm khi khách bấm vào listing); và install
+        paid có đúng nhịp target không — <b>Shopify Ads cộng Google Ads</b> cùng kỳ so với target tháng.
+        Toàn thị trường, không cân. <b>Nửa dưới:</b> nước nào đáng nặng — cân theo doanh thu (kỳ ghi trên
+        tiêu đề) hay theo users L90, kèm nước nhiều traffic ít tiền và ngược lại. Overview cho ảnh chụp hôm
+        nay; tab này cho hướng đi và nhịp.
       </PageIntro>
       <MarketIndexCards />
       <DataGapNote sources={SOURCES} />

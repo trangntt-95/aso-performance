@@ -19,7 +19,7 @@ Dữ liệu nguồn nằm ở Google Sheets. App **chỉ đọc** các tab data 
 | Trang | Route | Mục đích |
 |-------|-------|----------|
 | **Overview** | `/` | KPI tổng (Users · Install · CR · Ads Target), channel mix Organic/Paid, App Store Ads vs Google Ads, market performance, daily trend, top country/keyword, volume movers, chi phí paid theo category. Lọc đa chiều theo window / surface / country / keyword / category / khoảng ngày. |
-| **Market Health** | `/market-index` | Verdict theo từng window (L3→L90), funnel breakdown, so sánh WoW, narrative + bằng chứng data; trọng số quốc gia theo doanh thu hoặc user. |
+| **Market Health** | `/market-index` | Cầu thị trường theo ngày (GA4 History_Daily): users và install organic / paid, kỳ đang chọn so kỳ trước; pacing install paid Shopify Ads + Google Ads so target tháng; trọng số quốc gia theo doanh thu hay users. |
 | **Search Terms** | `/categories` | Bảng tra cứu mọi keyword × kênh: category, trạng thái paid, metric theo L7/L30/L90/L365, value/install, bản dịch; cảnh báo keyword paid đốt tiền không ra install. |
 | **Vị trí keyword** | `/positions` | Vị trí keyword theo nước qua L3→L90, mặc định Brand + top Profit ở Tier 2–3; cờ brand đã top mà vẫn đang mua. |
 | **Paid Coverage** | `/paid-coverage` | Keyword có traffic nhưng chưa được bid (gồm gap theo quốc gia), câu tìm kiếm paid GA4 chưa có keyword riêng, và chiều ngược lại: keyword đang bid mà 0 users paid, chia nhóm có nhu cầu / tín hiệu yếu / không có gì. |

@@ -39,6 +39,9 @@
     "../../lib/market/installOrigin.ts",
     "../../lib/sheets/campUrl.ts",
     "../../lib/store/keywordNotes.ts",
-    "../../lib/store/notesStore.ts"
+    "../../lib/store/notesStore.ts",
+    "../../lib/market/marketHealth.ts",
+    "../../lib/market/googleAdsReport.ts",
+    "../../lib/config/ads-targets.ts"
   ]
 }
