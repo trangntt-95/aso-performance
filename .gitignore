@@ -43,3 +43,8 @@ service-account-key.json
 next-env.d.ts
 
 .vercel
+
+# net value pipeline (token + file tạm + log)
+scripts/net-value/.token
+.net-value-run/
+logs/
