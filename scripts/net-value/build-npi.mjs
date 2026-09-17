@@ -92,7 +92,7 @@ const out = data.map((r) => {
   if (cn90 !== null && cn90 < npi90) capBinding++;
   let bid = cr !== null ? eff * cr : null;
   if (bid !== null && tierCeil !== null) bid = Math.min(bid, tierCeil);
-  row[7] = fmt$(npi, 0) + (got.src === 'global' ? '*' : '');
+  row[7] = fmt$(npi, 0); // không thêm dấu * — parseBidCap đọc số, ký hiệu lạ thành 0
   row[8] = fmt$(npi90, 1);
   row[9] = cn90 !== null ? fmt$(cn90, 1) : '';
   row[10] = fmt$(eff, 1);
