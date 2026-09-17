@@ -148,3 +148,8 @@ Cách bật, dùng đúng service account đang đọc Google Sheets (`GOOGLE_SE
 4. Mở `/api/net-value` để kiểm tra (`configured`, `rows`, `stats`); `?refresh=1` làm mới cache.
 
 Thiếu env hay lỗi quyền → dashboard rơi về tab sheet như cũ, chỉ ghi log server.
+
+Cùng pipeline (17/09/2026) ghi thêm tab **Countries_performance_auto**: doanh thu theo nước cho 4 tháng gần nhất đã kết thúc
+(install trong kỳ, first paid, ARPPU, revenue gross, value/install, kèm net), kỳ in ở dòng 1. `/api/sheets` ưu tiên tab này
+khi có ≥ 20 nước, không thì đọc khối dán tay cột I–P của Countries performance. Trần CPI, Excluded Countries, khối Tier vẫn ở tab cũ.
+Chạy hằng ngày bằng Task Scheduler "ASO net value daily" → `scripts/net-value/daily.ps1` → Claude Code headless (`scripts/net-value/prompt.md`).
