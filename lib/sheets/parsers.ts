@@ -1,4 +1,20 @@
 import { normalizeCampName } from './campName';
+import { normCountryToken } from './campGeo';
+
+// Tên nước về đúng cách viết của Country_L* (GA4) ngay khi đọc sheet, vì mọi
+// bảng ghép theo tên nước bằng chuỗi thô. Đo 17/09/2026: Countries performance,
+// Max bid cap, Net value, khối Tier đều ghi 'Turkey' còn GA4 ghi 'Türkiye' —
+// Türkiye (66 users, 8 install L90) không có tier, không có NPI, không có
+// value/install ở Vị trí keyword, không vào trần Underbid/Overbid, mà không
+// một lỗi nào. Sửa ở nguồn để không phải nhớ ở từng chỗ ghép.
+const canonCountry = (v: string): string => normCountryToken(v) ?? v;
+
+/** Ô trong khối Tier có phải tên nước không. Khối này có thêm cột net value,
+ *  mũi tên ↑↓, nhãn '$30-40', 'Net value', 'paid CR thấp' — trước đây đều bị
+ *  đọc thành "nước" (đo 17/09/2026: 70 ô rác trong 4 tier). */
+const looksLikeCountry = (v: string): boolean =>
+  /^[A-Za-zÀ-ỹ][A-Za-zÀ-ỹ .,'’&()-]*$/.test(v) && !/^net value$/i.test(v) && !/\bcr\b|thấp|\bvol\b/i.test(v);
+
 import type {
   NetValueRow,
   SearchTermRow,
@@ -657,7 +673,7 @@ export function parsePerGeoCpiCap(rows: string[][]): PerGeoCpiCapRow[] {
   const seen = new Set<string>();
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const r = rows[i] ?? [];
-    const country = str(r[ci.country]).trim();
+    const country = canonCountry(str(r[ci.country]).trim());
     if (!country) continue;
     const key = country.toLowerCase();
     if (seen.has(key)) continue;
@@ -763,7 +779,7 @@ export function parsePerGeoRevenue(rows: string[][]): {
   const seen = new Set<string>();
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const r = rows[i] ?? [];
-    const country = str(r[ci.country]).trim();
+    const country = canonCountry(str(r[ci.country]).trim());
     if (!country) continue;
     const key = country.toLowerCase();
     if (seen.has(key)) continue;
@@ -829,7 +845,7 @@ export function parseExcludedCountries(rows: string[][]): ExcludedCountryRow[] {
     const raw = str((rows[i] ?? [])[col]).trim();
     if (!raw) continue;
     const m = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(raw);
-    const country = (m ? m[1] : raw).trim();
+    const country = canonCountry((m ? m[1] : raw).trim());
     if (!country) continue;
     const note = m ? m[2].trim() : '';
     const key = country.toLowerCase();
@@ -912,7 +928,8 @@ export function parseMarketTiers(rows: string[][]): MarketTierRow[] {
           const dash = /^(.*?)\s+-\s+(.*)$/.exec(raw);
           if (dash) { country = dash[1].trim(); note = dash[2].trim(); }
         }
-        if (!country) continue;
+        if (!country || !looksLikeCountry(country)) continue;
+        country = canonCountry(country);
         const key = country.toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
@@ -1019,7 +1036,7 @@ export function parseBidCap(rows: string[][]): BidCapRow[] {
   return rows
     .slice(headerIdx + 1)
     .map((row): BidCapRow | null => {
-      const country = str(at(row, ci.country)).trim();
+      const country = canonCountry(str(at(row, ci.country)).trim());
       const category = str(at(row, ci.category)).trim();
       if (!country || !category) return null;
       return {
@@ -1547,7 +1564,7 @@ export function parseNetValuePerInstall(rows: string[][]): {
       keyword,
       keywordDecoded: str(at(row, ci.keywordDecoded)).trim(),
       cluster: str(at(row, ci.cluster)).trim(),
-      country: str(at(row, ci.country)).trim(),
+      country: canonCountry(str(at(row, ci.country)).trim()),
       installs,
       payingShops: num(at(row, ci.payingShops)),
       netValue,

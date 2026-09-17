@@ -355,52 +355,7 @@ export function analyseCampHealth(
     });
   }
 
-  // Camps the account knows about that left no trace in the export at all.
-  // Paused_camp names are known camps too: before 16/09/2026 a paused camp
-  // with no export row was skipped here AND had no row above → 80 camps in
-  // Paused_camp appeared nowhere. They now sit in 'paused' so every camp the
-  // sheets mention has exactly one row in this table.
-  const seenKeys = new Set(Array.from(byCamp.keys()));
-  const silentKeys = new Set<string>();
-  for (const name of [...(opts.knownCamps ?? []), ...(opts.pausedCamps ?? [])]) {
-    if (!name) continue;
-    const key = grouper.key(name);
-    if (!key || seenKeys.has(key) || silentKeys.has(key)) continue;
-    silentKeys.add(key);
-    if (pausedKeys.has(key)) {
-      out.push({
-        camp: name.trim(),
-        bucket: 'paused',
-        cur: empty(),
-        prev: empty(),
-        impDelta: null,
-        installDelta: null,
-        spendDelta: null,
-        atRisk: 0,
-        reason: `Có trong tab Paused_camp và không có dòng nào trong export → đã tắt từ trước kỳ dữ liệu. Không cần làm gì; xoá khỏi Master KW Lookup nếu muốn gọn.`,
-        reliable: false,
-        lastActive: '',
-        series: [],
-      });
-      continue;
-    }
-    out.push({
-      // Tên gốc từ Camp_Links / Master: grouper không có nhãn quan sát cho camp
-      // chưa từng xuất hiện, và key của nó là chữ thường.
-      camp: name.trim(),
-      bucket: 'silent',
-      cur: empty(),
-      prev: empty(),
-      impDelta: null,
-      installDelta: null,
-      spendDelta: null,
-      atRisk: 0,
-      reason: `Có trong Camp_Links / Master KW Lookup, KHÔNG có trong Paused_camp, nhưng không có dòng nào trong export từ ${from} → ${to}: không một lượt hiển thị. Camp bị quên, bid quá thấp, hoặc đã tắt trên Shopify mà chưa ghi vào Paused_camp.`,
-      reliable: false,
-      lastActive: '',
-      series: [],
-    });
-  }
+  appendKnownCamps(out, new Set(Array.from(byCamp.keys())), grouper, pausedKeys, opts, `từ ${from} → ${to}`);
 
   out.sort((x, y) => y.atRisk - x.atRisk || y.cur.spend - x.cur.spend);
   const totalSpend = prepared.reduce((s, a) => s + a.cur.spend, 0);
@@ -416,6 +371,49 @@ export function analyseCampHealth(
  * zero baseline. The result says `periodComparable: false` so the screen can
  * explain the gap instead of looking broken.
  */
+/**
+ * Camp mà sheet biết (Camp_Links / Master / Paused_camp) nhưng export không có
+ * một dòng nào: mỗi camp đúng một dòng, 'paused' nếu trong Paused_camp, còn lại
+ * 'silent'. Dùng chung cho chế độ theo ngày và chế độ tổng, vì 17/09/2026 chế
+ * độ tổng thiếu hẳn khối này — cùng một lỗi "camp không hiện ở đâu" chỉ xuất
+ * hiện khi export không có cột ngày.
+ */
+function appendKnownCamps(
+  out: CampHealthRow[],
+  seenKeys: Set<string>,
+  grouper: ReturnType<typeof buildCampGrouper>,
+  pausedKeys: Set<string>,
+  opts: CampHealthOptions,
+  rangeLabel: string,
+): void {
+  const emitted = new Set<string>();
+  for (const name of [...(opts.knownCamps ?? []), ...(opts.pausedCamps ?? [])]) {
+    if (!name) continue;
+    const key = grouper.key(name);
+    if (!key || seenKeys.has(key) || emitted.has(key)) continue;
+    emitted.add(key);
+    const isPaused = pausedKeys.has(key);
+    out.push({
+      // Tên gốc từ Camp_Links / Master: grouper không có nhãn quan sát cho camp
+      // chưa từng xuất hiện, và key của nó là chữ thường.
+      camp: name.trim(),
+      bucket: isPaused ? 'paused' : 'silent',
+      cur: empty(),
+      prev: empty(),
+      impDelta: null,
+      installDelta: null,
+      spendDelta: null,
+      atRisk: 0,
+      reason: isPaused
+        ? `Có trong tab Paused_camp và không có dòng nào trong export ${rangeLabel} → đã tắt từ trước kỳ dữ liệu. Không cần làm gì; xoá khỏi Master KW Lookup nếu muốn gọn.`
+        : `Có trong Camp_Links / Master KW Lookup, KHÔNG có trong Paused_camp, nhưng không có dòng nào trong export ${rangeLabel}: không một lượt hiển thị. Camp bị quên, bid quá thấp, hoặc đã tắt trên Shopify mà chưa ghi vào Paused_camp.`,
+      reliable: false,
+      lastActive: '',
+      series: [],
+    });
+  }
+}
+
 function analyseFromTotals(
   opts: CampHealthOptions,
   grouper: ReturnType<typeof buildCampGrouper>,
@@ -520,6 +518,8 @@ function analyseFromTotals(
       series: [],
     });
   }
+
+  appendKnownCamps(out, new Set(Array.from(byCamp.keys())), grouper, pausedKeys, opts, opts.aggregateRange ? `trong khoảng ${opts.aggregateRange}` : 'trong export');
 
   out.sort((x, y) => y.atRisk - x.atRisk || y.cur.spend - x.cur.spend);
   const parts = (opts.aggregateRange ?? '').split('→').map((x) => x.trim());
