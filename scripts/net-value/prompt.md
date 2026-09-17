@@ -120,3 +120,15 @@ Bước 9 — Xác nhận: chạy Bash
 perGeoRevenuePeriod phải chứa kỳ 4 tháng (ví dụ "01/05/2026 → 31/08/2026").
 
 Dòng tóm tắt cuối bổ sung thêm: số nước, install và gross của khối doanh thu, OK hay lỗi.
+
+Bước 10 — Tab Max bid cap (NPI, Bid Rec). Đọc tab hiện tại để giữ cấu hình: chạy Bash
+`curl -s -m 120 -H "x-upload-token: $(cat scripts/net-value/.token)" "https://appstore-performance.vercel.app/api/sheets/raw?tab=Max%20bid%20cap&rows=2000" -o .net-value-run/bidcap-raw.json`
+Rồi dựng: `node scripts/net-value/build-npi.mjs .net-value-run/bidcap-raw.json .net-value-run/nv-final.json .net-value-run/countries-body.json .net-value-run/payload.json .net-value-run/bidcap-body.json`
+Kỳ vọng rows>=1300 và active>=400. Nhỏ hơn thì dừng, báo lỗi, KHÔNG đẩy.
+
+Bước 11 — Đẩy: `node scripts/net-value/push-bidcap.mjs .net-value-run/bidcap-body.json` → kỳ vọng `200 {"ok":true,...}`.
+
+Bước 12 — Xác nhận: chạy Bash
+`curl -s -m 120 https://appstore-performance.vercel.app/api/sheets | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);const q=p.data??p;const b=q.bidCap;console.log('bidCap',b.length,'| có NPI',b.filter(r=>r.netValue!=null&&r.netValue>0).length,'| US Brand B1 NPI',b.find(r=>r.country==='United States'&&r.category==='Brand')?.netValue)})"`
+
+Dòng tóm tắt cuối bổ sung: Max bid cap số dòng active/paused, OK hay lỗi.

@@ -30,10 +30,13 @@ const pct = (s) => { const n = money(s); return n === null ? null : n / 100; };
 const catByKw = new Map();
 for (const k of ['allL365', 'allL90', 'allL30', 'allL7']) for (const r of payload[k] ?? []) { const kw = normKw(r.searchTerm); if (kw && !catByKw.has(kw) && r.category) catByKw.set(kw, r.category); }
 const clusterCat = (cl) => (/brand/i.test(cl) ? 'Brand' : /competitor/i.test(cl) ? 'Competitor' : /profit/i.test(cl) ? 'Profit' : /other|long tail/i.test(cl) ? 'Feature' : null);
-const catOfRow = (r) => catByKw.get(normKw(r.kw)) ?? clusterCat(r.cluster ?? '');
+// Category của tab Max bid cap chỉ có 5 nhóm; Others / CPM / Noise / Language của
+// GA4 đều rơi vào cụm 'Test' (dropshipping, thanh toán, vận chuyển, theme…).
+const TAB_CAT = { Brand: 'Brand', Profit: 'Profit', Competitor: 'Competitor', Feature: 'Feature', Others: 'Test', CPM: 'Test', Noise: 'Test', Language: 'Test' };
+const catOfRow = (r) => TAB_CAT[catByKw.get(normKw(r.kw)) ?? clusterCat(r.cluster ?? '') ?? ''] ?? null;
 
-// 2. Gộp theo nước × category và toàn cầu × category.
-const byCC = new Map(), byC = new Map();
+// 2. Gộp theo nước × category, toàn cầu × category, và tổng theo nước.
+const byCC = new Map(), byC = new Map(), byCountry = new Map();
 const bump = (m, k, r) => { const e = m.get(k) ?? { inst: 0, pay: 0, net: 0 }; e.inst += r.inst; e.pay += r.pay; e.net += r.net; m.set(k, e); };
 let unmapped = 0;
 for (const r of nv) {
@@ -41,13 +44,19 @@ for (const r of nv) {
   if (!cat) { unmapped += r.inst; continue; }
   bump(byCC, `${canon(r.country)}|${cat}`, r);
   bump(byC, cat, r);
+  bump(byCountry, canon(r.country), r);
 }
+// Quy tắc tái tạo đúng độ phủ của tab cũ (đo 17/09/2026: 183/193 ô active
+// trùng): nước × category đủ 3 shop trả tiền → NPI riêng; không thì hễ nước có
+// ít nhất một install (bất kỳ category) → NPI category toàn cầu (đánh dấu *);
+// nước không có install nào → để trống, ⛔ PAUSE.
 const MIN_PAYING = 3;
 const npiOf = (country, cat) => {
   const e = byCC.get(`${country}|${cat}`);
   if (e && e.pay >= MIN_PAYING && e.inst > 0) return { npi: e.net / e.inst, src: 'ctry' };
   const g = byC.get(cat);
-  if (e && e.inst >= 3 && g && g.pay >= MIN_PAYING && g.inst > 0) return { npi: g.net / g.inst, src: 'global' };
+  const t = byCountry.get(country);
+  if (t && t.inst >= 1 && g && g.pay >= MIN_PAYING && g.inst > 0) return { npi: g.net / g.inst, src: 'global' };
   return null;
 };
 
@@ -66,7 +75,9 @@ const out = data.map((r) => {
   const country = canon(row[2]), cat = row[4];
   const tierCeil = money(row[11]);
   const cr = pct(row[12]);
-  const got = npiOf(country, cat);
+  // Không có CR used (cluster chưa có click ở nước này) → tab cũ để trống cả
+  // NPI và Bid và đánh ⛔ PAUSE; giữ đúng hành vi đó.
+  const got = cr === null ? null : npiOf(country, cat);
   if (!got) {
     paused++;
     row[7] = ''; row[8] = ''; row[9] = ''; row[10] = ''; row[13] = '';
