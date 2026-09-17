@@ -33,7 +33,8 @@ import {
 } from '@/lib/sheets/parsers';
 import { languageOnlyKeywords, overrideToLanguage } from '@/lib/sheets/languageOverride';
 import { overrideCategoryExact } from '@/lib/sheets/categoryOverride';
-import type { KeywordRow, SheetPayload, SnapshotRow } from '@/lib/sheets/types';
+import type { KeywordRow, NetValueRow, SheetPayload, SnapshotRow } from '@/lib/sheets/types';
+import { getNetValueAuto, netValueAutoConfigured, withClusters } from '@/lib/bq/netValue';
 
 export const revalidate = 600;
 export const dynamic = 'force-dynamic';
@@ -104,7 +105,24 @@ export async function GET() {
 
     // Parsed once: the revenue block yields both the rows and the period label.
     const perGeoRevenue = parsePerGeoRevenue(raw['Countries performance'] ?? []);
-    const netValue = parseNetValuePerInstall(raw['Net value per install'] ?? []);
+    const netValueSheet = parseNetValuePerInstall(raw['Net value per install'] ?? []);
+    // Net value tự động từ GA4 + BigQuery (lib/bq/netValue.ts) khi đã cấp quyền
+    // và đặt env; tab sheet là đường lùi. Cluster lấy từ tab cũ để cột không
+    // trống. Lỗi ở nhánh này chỉ ghi log — không được làm trắng dashboard.
+    let netValue: { rows: NetValueRow[]; scope: string } = netValueSheet;
+    if (netValueAutoConfigured()) {
+      try {
+        const clusterByKw = new Map<string, string>();
+        for (const r of netValueSheet.rows) {
+          const k = (r.keywordDecoded || r.keyword).toLowerCase().trim();
+          if (r.cluster && !clusterByKw.has(k)) clusterByKw.set(k, r.cluster);
+        }
+        const auto = withClusters(await getNetValueAuto(), (kw) => clusterByKw.get(kw.toLowerCase().trim()));
+        if (auto.rows.length > 0) netValue = { rows: auto.rows, scope: auto.scope };
+      } catch (err) {
+        console.error('[net-value] BigQuery/GA4 thất bại, dùng tab sheet:', err instanceof Error ? err.message : err);
+      }
+    }
     const unbidded = parseSearchTermUnbidded(raw['Search_Term_Unbidded'] ?? []);
     const langKws = languageOnlyKeywords(masterKwLookup);
     // Language reclassify, then category fixes (brand, "profit" → Profit, tracker → Feature).

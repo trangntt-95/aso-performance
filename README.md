@@ -135,3 +135,16 @@ Bản gốc `Code.gs` (tracker, `runDailyFull` 9am) và `history_daily_v2.gs` (t
 - **Read-only** trên các tab data — không bao giờ ghi ngược vào `All_*` / `Country_*` / `Market_Index`.
 - **Loại trừ quốc gia:** `Vietnam`, `India` (trong volume movers, top actions).
 - **Ads target:** hardcode trong `lib/config/ads-targets.ts`, cập nhật mỗi quý.
+
+## Net value tự động từ BigQuery + GA4
+
+Từ 17/09/2026, `/api/sheets` có thể tính tab **Net value per install** thẳng từ dữ liệu gốc thay cho bản dán tay theo tháng
+(`lib/bq/netValue.ts` IO, `lib/market/netValueFromBq.ts` logic thuần, cache 24 giờ, cron `vercel.json` làm mới 01:00 UTC).
+Cách bật, dùng đúng service account đang đọc Google Sheets (`GOOGLE_SERVICE_ACCOUNT_EMAIL`):
+
+1. GA4 property **348654457** ("Shopify Store - GA4") → Admin → Property access → thêm email service account, vai **Viewer**.
+2. GCP project **trueda** → IAM → thêm email đó vai **BigQuery Job User**; dataset `trueprofit` → Share → **BigQuery Data Viewer**.
+3. Vercel → Environment Variables: `BQ_PROJECT_ID=trueda`, `GA4_PROPERTY_ID=348654457` (đặt `NET_VALUE_SOURCE=sheet` để tắt).
+4. Mở `/api/net-value` để kiểm tra (`configured`, `rows`, `stats`); `?refresh=1` làm mới cache.
+
+Thiếu env hay lỗi quyền → dashboard rơi về tab sheet như cũ, chỉ ghi log server.

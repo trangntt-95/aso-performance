@@ -42,6 +42,7 @@
     "../../lib/store/notesStore.ts",
     "../../lib/market/marketHealth.ts",
     "../../lib/market/googleAdsReport.ts",
-    "../../lib/config/ads-targets.ts"
+    "../../lib/config/ads-targets.ts",
+    "../../lib/market/netValueFromBq.ts"
   ]
 }
