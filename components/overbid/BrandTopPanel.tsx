@@ -12,6 +12,7 @@ import { SortableTh } from '@/components/shared/SortableTh';
 import type { SheetPayload } from '@/lib/sheets/types';
 import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
+import { NOTE_HIDE_DAYS } from '@/lib/config/notes';
 
 // Camp brand đã đứng top vị trí — hạ bid để khỏi trả tiền cho vị trí đã có.
 //
@@ -62,10 +63,9 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
   const [maxPos, setMaxPos] = useState('1.5');
   const [minImp, setMinImp] = useState('20');
   const [showAll, setShowAll] = useState(false);
-  // Camp vừa note trong 5 ngày thì ẩn, như bảng Overbid: đã hạ bid rồi thì cờ
+  // Camp vừa note trong NOTE_HIDE_DAYS ngày thì ẩn, như bảng Overbid: đã hạ bid rồi thì cờ
   // "hạ bid" chỉ còn là việc trùng. Mốc lấy từ snapshot lúc tải, để camp đang
   // gõ note không biến mất giữa tay; ẩn từ lần mở sau.
-  const HIDE_DAYS = 5;
   const noteTimes = useNotesStore((s) => s.updatedAt);
   const notesLoaded = useNotesStore((s) => s.loaded);
   const [noteSnapshot, setNoteSnapshot] = useState<Record<string, string> | null>(null);
@@ -101,7 +101,7 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
       for (const r of rowsAll) {
         const at = noteIds.noteAt(noteSnapshot, r.camp);
         if (at === null) continue;
-        const until = at + HIDE_DAYS * 86_400_000;
+        const until = at + NOTE_HIDE_DAYS * 86_400_000;
         if (until > now) hiddenUntil.set(r.camp, until);
       }
     }
@@ -157,9 +157,9 @@ export function BrandTopPanel({ data }: { data: SheetPayload | undefined }) {
               type="button"
               onClick={() => setShowHidden((v) => !v)}
               className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:border-slate-400"
-              title={`${hiddenCount} camp đã note (ở đây, Overbid hoặc Camp Health) đang tạm ẩn ${HIDE_DAYS} ngày; tự hiện lại để kiểm tra.`}
+              title={`${hiddenCount} camp đã note (ở đây, Overbid hoặc Camp Health) đang tạm ẩn ${NOTE_HIDE_DAYS} ngày; tự hiện lại để kiểm tra.`}
             >
-              {showHidden ? `Đang hiện ${hiddenCount} camp đã note — ẩn` : `🙈 ${hiddenCount} camp đã note (ẩn ${HIDE_DAYS} ngày) — hiện`}
+              {showHidden ? `Đang hiện ${hiddenCount} camp đã note — ẩn` : `🙈 ${hiddenCount} camp đã note (ẩn ${NOTE_HIDE_DAYS} ngày) — hiện`}
             </button>
           )}
           <button

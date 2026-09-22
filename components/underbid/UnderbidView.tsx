@@ -37,6 +37,7 @@ import {
   type UnderbidWindow,
 } from '@/lib/market/underbid';
 import { cn } from '@/lib/utils';
+import { NOTE_HIDE_DAYS } from '@/lib/config/notes';
 import type { Category } from '@/lib/sheets/types';
 
 const selectCls =
@@ -46,7 +47,7 @@ const selectCls =
 // only shows keywords still needing action. It reappears afterwards so you can
 // re-check the change. Snapshotted at load → the row you're typing into never
 // vanishes mid-edit; the hide kicks in from the next visit.
-const HIDE_DAYS = 5;
+const HIDE_DAYS = NOTE_HIDE_DAYS;
 const DAY_MS = 86_400_000;
 
 const dmy = (ms: number): string => {

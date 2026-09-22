@@ -29,6 +29,7 @@ import {
 import { KeywordNotesForCamp } from '@/components/shared/KeywordNotesForCamp';
 import { useNotesStore } from '@/lib/store/notesStore';
 import { cn } from '@/lib/utils';
+import { NOTE_HIDE_DAYS } from '@/lib/config/notes';
 
 // Where the ad budget leaks. The overbid table asks whether a camp pays more per
 // click than recommended; this asks the blunter question — is the money buying
@@ -98,7 +99,7 @@ const WINDOWS = [7, 14, 30, 60, 90, WHOLE_SPAN];
 // Once a camp is noted it drops out of the working list for this many days so
 // the list only shows what still needs doing — then it comes back so the fix
 // gets checked. Same rule as the Overbid and Underbid tables.
-const HIDE_DAYS = 5;
+const HIDE_DAYS = NOTE_HIDE_DAYS;
 const DAY_MS = 86_400_000;
 
 const dmy = (ms: number) => {

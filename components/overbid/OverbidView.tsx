@@ -24,6 +24,7 @@ import { assessCamps, type CampVerdict, type OverbidRow } from '@/lib/market/ove
 import { buildCountryNetValue } from '@/lib/market/keywordNetValue';
 import { campTotalsFromDaily } from '@/lib/sheets/parsers';
 import { cn } from '@/lib/utils';
+import { NOTE_HIDE_DAYS } from '@/lib/config/notes';
 import type { Category } from '@/lib/sheets/types';
 
 const selectCls =
@@ -36,7 +37,7 @@ const money = (n: number | null): string =>
 // shows camps still needing action. It reappears afterwards so you can re-check
 // the fix. Snapshotted at load → the camp you're typing into never vanishes
 // mid-edit; the hide kicks in from the next visit.
-const HIDE_DAYS = 5;
+const HIDE_DAYS = NOTE_HIDE_DAYS;
 const DAY_MS = 86_400_000;
 
 // Kỳ chấm điểm, chọn được như Camp Health. Mọi luật ở đây là tỷ lệ (CPC, CPI so
