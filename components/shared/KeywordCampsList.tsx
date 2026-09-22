@@ -49,7 +49,7 @@ export function KeywordCampsList({
   nameMaxClass = '',
   hintOf,
   noCoverLabel,
-  missingInMaster,
+  suggested,
 }: {
   camps: OriginCamp[];
   rank?: (camp: OriginCamp) => 0 | 1 | 2;
@@ -68,24 +68,40 @@ export function KeywordCampsList({
   noCoverLabel?: string;
   /** Camp Camp_Links có Geo gồm nước của dòng nhưng Master KW Lookup không có
    *  keyword nào của nó → có thể đang bid keyword này mà dashboard không biết.
-   *  Hiện khi không camp nào ở hạng 0 (không camp nào gọi tên nước rõ). */
-  missingInMaster?: { camps: string[]; label: string };
+   *  Liệt kê như gợi ý thường (tên + URL, nhãn "Geo") khi không camp nào trong
+   *  Master gọi tên nước rõ; không phải cảnh báo. */
+  suggested?: { camps: { camp: string; url: string }[]; hint: string };
 }) {
   const [open, setOpen] = useState(false);
-  const MissingInMaster = ({ show }: { show: boolean }) =>
-    show && missingInMaster && missingInMaster.camps.length > 0 ? (
-      <div
-        className="mb-0.5 text-[10px] text-amber-700"
-        title="Camp_Links ghi Geo gồm nước này, nhưng Master KW Lookup không có dòng keyword nào của camp — dashboard không biết camp bid gì, nên không liệt kê được. Cập nhật Master KW Lookup (xuất keyword các camp mới / đổi tên) để cột này đúng."
-      >
-        ⚠️ {missingInMaster.label}: {missingInMaster.camps.join(', ')}
-      </div>
+  const pinnedLc = new Set((pinned ?? []).map((p) => p.toLowerCase()));
+  const suggestedCamps: OriginCamp[] = (suggested?.camps ?? []).map((x) => ({ camp: x.camp, url: x.url || undefined, bidMax: null, paused: false }));
+  const Suggested = ({ show }: { show: boolean }) =>
+    show && suggested && suggestedCamps.length > 0 ? (
+      <>
+        {suggestedCamps.map((c) => (
+          <div key={`geo-${c.camp}`} className="flex items-baseline gap-1">
+            <CampName camp={c} dim={false} isPinned={pinnedLc.has(c.camp.toLowerCase())} maxW={nameMaxClass} hint={suggested.hint} />
+            <span className="rounded bg-sky-50 px-1 text-[9px] text-sky-700" title={suggested.hint}>
+              Geo
+            </span>
+            {onTogglePin && (
+              <button
+                type="button"
+                onClick={() => onTogglePin(c.camp)}
+                className={cn('rounded px-1 text-[10px]', pinnedLc.has(c.camp.toLowerCase()) ? 'text-indigo-600 hover:bg-indigo-50' : 'text-slate-400 hover:bg-indigo-50 hover:text-indigo-700')}
+              >
+                {pinnedLc.has(c.camp.toLowerCase()) ? 'bỏ ghim' : 'ghim'}
+              </button>
+            )}
+          </div>
+        ))}
+      </>
     ) : null;
   if (camps.length === 0) {
     return (
       <div className="min-w-0">
-        <MissingInMaster show />
-        <span className="text-[11px] text-slate-400">{emptyLabel}</span>
+        <Suggested show />
+        {suggestedCamps.length === 0 && <span className="text-[11px] text-slate-400">{emptyLabel}</span>}
       </div>
     );
   }
@@ -103,7 +119,7 @@ export function KeywordCampsList({
   const head = ordered.slice(0, shownCount);
   const rest = ordered.slice(shownCount);
   // Ghim trỏ tới camp không còn chạy (đổi tên, tắt) — báo thay vì lặng lẽ mất.
-  const stale = (pinned ?? []).filter((p) => !camps.some((c) => c.camp.toLowerCase() === p.toLowerCase()));
+  const stale = (pinned ?? []).filter((p) => !camps.concat(suggestedCamps).some((c) => c.camp.toLowerCase() === p.toLowerCase()));
 
   const Elsewhere = ({ c }: { c: OriginCamp }) =>
     isElsewhere(c) && pinnedElsewhere ? (
@@ -126,11 +142,11 @@ export function KeywordCampsList({
 
   const noneCovers = rank ? ordered.every((c) => !isPinned(c) && rankOf(c) >= 2) : false;
   // Không camp nào gọi tên nước này rõ (Geo hoặc tên) → camp Geo thiếu trong
-  // Master có thể chính là camp thật đang bid.
+  // Master có thể chính là camp thật đang bid: gợi ý nó lên đầu.
   const noneExplicit = rank ? ordered.every((c) => !isPinned(c) && rank(c) !== 0) : false;
   return (
     <div className="min-w-0">
-      <MissingInMaster show={noneExplicit} />
+      <Suggested show={noneExplicit} />
       {noneCovers && noCoverLabel && (
         <div className="mb-0.5 text-[10px] text-amber-700" title="Mọi camp đang bid keyword này đều có Geo hoặc tên không gồm nước của dòng.">
           ⚠️ {noCoverLabel}

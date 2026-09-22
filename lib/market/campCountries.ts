@@ -137,17 +137,22 @@ export function coverRank(t: CampTarget, country: string): CoverRank {
 /**
  * Camp đang chạy mà Camp_Links ghi Geo gồm nước này, nhưng Master KW Lookup
  * không có dòng keyword nào của camp → dashboard không biết camp bid gì, nên
- * cột "Camp đang bid" không thể liệt kê nó dù thực tế nó có thể đang bid
- * keyword của dòng. Đo 22/09/2026: 44 camp Camp_Links như vậy, trong đó
+ * cột "Camp đang bid" liệt kê nó như GỢI Ý theo Geo (tên + URL), không phải
+ * cảnh báo (Trang 22/09: bảng không hiện warning, giải thích để ở chân bảng). Đo 22/09/2026: 44 camp Camp_Links như vậy, trong đó
  * "TP - Brandname - Exact - Tier 3 (31 countries)" và "TP - Profit - Exact 01 -
  * Tier 2 - PT, RO, CO, UY. IT (NEW)" đều phủ Colombia — Trang hỏi vì sao dòng
  * profit × Colombia không thấy chúng.
  */
+export interface GeoCampSuggestion {
+  camp: string;
+  url: string;
+}
+
 export function buildGeoCampsMissingInMaster(
   campLinks: readonly CampLinkRow[],
   pausedKw: readonly MasterKwRow[],
   master: readonly MasterKwRow[],
-): (country: string) => string[] {
+): ((country: string) => GeoCampSuggestion[]) & { all: GeoCampSuggestion[] } {
   const key = (n: string) => looseCampKey(normalizeCampName(n));
   const paused = new Set(pausedKw.map((p) => key(p.camp)));
   const resolver = buildCampNameResolver(campLinks.map((c) => c.camp));
@@ -158,18 +163,23 @@ export function buildGeoCampsMissingInMaster(
     const base = resolver.resolve(m.camp);
     if (base) inMaster.add(key(base));
   }
-  const byCountry = new Map<string, string[]>();
+  const byCountry = new Map<string, GeoCampSuggestion[]>();
+  const all: GeoCampSuggestion[] = [];
   for (const c of campLinks) {
     const k = key(c.camp);
     if (!k || paused.has(k) || inMaster.has(k)) continue;
     const geo = parseCampGeo(c.geoRaw);
     if (geo.mode !== 'include') continue;
+    const item = { camp: c.camp, url: c.url ?? '' };
+    if (!all.some((x) => x.camp === c.camp)) all.push(item);
     for (const country of geo.countries) {
       const arr = byCountry.get(country);
       if (arr) {
-        if (arr.indexOf(c.camp) < 0) arr.push(c.camp);
-      } else byCountry.set(country, [c.camp]);
+        if (!arr.some((x) => x.camp === c.camp)) arr.push(item);
+      } else byCountry.set(country, [item]);
     }
   }
-  return (country: string) => byCountry.get(country) ?? [];
+  const fn = ((country: string) => byCountry.get(country) ?? []) as ((country: string) => GeoCampSuggestion[]) & { all: GeoCampSuggestion[] };
+  fn.all = all;
+  return fn;
 }

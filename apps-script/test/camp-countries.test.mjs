@@ -72,11 +72,12 @@ const master = [
   { category: 'Brand', camp: 'TP - Brandname - Exact - excl 56', keyword: 'trueprofit', bidMax: '3' },
 ];
 const miss = buildGeoCampsMissingInMaster(links, [], master);
-eq('Colombia: 2 camp Geo phủ mà Master không có keyword', miss('Colombia'), ['TP - Brandname - Exact - Tier 3 (31 countries)', 'TP - Profit - Exact 01 - Tier 2 - PT, RO, CO, UY. IT (NEW)']);
+eq('Colombia: 2 camp Geo phủ mà Master không có keyword', miss('Colombia').map((x) => x.camp), ['TP - Brandname - Exact - Tier 3 (31 countries)', 'TP - Profit - Exact 01 - Tier 2 - PT, RO, CO, UY. IT (NEW)']);
+eq('all: mỗi camp một lần, kèm url', miss.all.map((x) => `${x.camp}|${x.url}`), ['TP - Brandname - Exact - Tier 3 (31 countries)|', 'TP - Profit - Exact 01 - Tier 2 - PT, RO, CO, UY. IT (NEW)|']);
 eq('Spain: camp ES có trong Master (qua tên có ghi chú) → không báo', miss('Spain'), []);
 eq('Geo all / exclude không tính', miss('India'), []);
 const miss2 = buildGeoCampsMissingInMaster(links, [{ category: 'Brand', camp: 'TP - Brandname - Exact - Tier 3 (31 countries)', keyword: 'x', bidMax: '' }], master);
-eq('camp paused không báo', miss2('Colombia'), ['TP - Profit - Exact 01 - Tier 2 - PT, RO, CO, UY. IT (NEW)']);
+eq('camp paused không báo', miss2('Colombia').map((x) => x.camp), ['TP - Profit - Exact 01 - Tier 2 - PT, RO, CO, UY. IT (NEW)']);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -401,7 +401,7 @@ export function PositionsView() {
                 <th className="px-1.5 py-2 text-left font-medium" title={`Keyword Brand có vị trí PAID ≤ ${BRAND_TOP_POS} ở cửa sổ đang sắp (GA4) → đã top; kèm camp brand đang phủ nước đó (Geo Camp_Links) với spend và vị trí camp 14 ngày từ export Shopify. Không có spend theo keyword nên cờ chỉ ra CAMP để hạ bid.`}>
                   Cảnh báo
                 </th>
-                <th className="px-2 py-2 text-left font-medium" title="Camp trong Master KW Lookup đang bid keyword này. Nước của camp đọc từ Geo trong Camp_Links; Geo trống thì đọc tên camp (mã nước 'DE, FR', tên nước 'Japan', 'excl' / '(-IN)'; chữ Tier không suy ra nước). Xếp: camp đã ghim, rồi camp gọi tên nước này rõ, rồi camp có thể phủ (Geo trống, không nói), cuối là camp không phủ (mờ). Hover tên camp để thấy vì sao. Cảnh báo vàng: không camp nào phủ nước của dòng, hoặc có camp Geo phủ nước này mà Master chưa có keyword (dashboard không biết nó bid gì). Bấm +N để xem hết.">
+                <th className="px-2 py-2 text-left font-medium" title="Camp trong Master KW Lookup đang bid keyword này. Nước của camp đọc từ Geo trong Camp_Links; Geo trống thì đọc tên camp (mã nước 'DE, FR', tên nước 'Japan', 'excl' / '(-IN)'; chữ Tier không suy ra nước). Xếp: camp đã ghim, rồi camp gọi tên nước này rõ, rồi camp có thể phủ (Geo trống, không nói), cuối là camp không phủ (mờ). Hover tên camp để thấy vì sao. Nhãn 'Geo' = camp Camp_Links có Geo phủ nước này nhưng Master chưa có keyword, gợi ý theo Geo (xem chân bảng). Bấm +N để xem hết.">
                   Camp đang bid
                   <div className="text-[9px] font-normal text-slate-400">📌 ghim theo keyword × nước · đúng nước trước (Geo hoặc tên camp) · mờ = không phủ · nguồn: Master KW Lookup</div>
                 </th>
@@ -506,8 +506,7 @@ export function PositionsView() {
                       pinnedElsewhere={{ camps: keywordPinsOf(r.keyword), label: 'Underbid' }}
                       emptyLabel="chưa bid"
                       hintOf={hintOf}
-                      noCoverLabel={`chưa có camp phủ ${r.country}`}
-                      missingInMaster={{ camps: geoMissingOf(r.country), label: `Geo phủ ${r.country} nhưng Master chưa có keyword` }}
+                      suggested={{ camps: geoMissingOf(r.country), hint: `Gợi ý theo Geo Camp_Links: camp phủ ${r.country} nhưng Master KW Lookup chưa có keyword của camp (xem chân bảng)` }}
                     />
                   </td>
                   <NoteCell
@@ -530,6 +529,18 @@ export function PositionsView() {
               ))}
             </tbody>
           </table>
+          {geoMissingOf.all.length > 0 && (
+            <details className="border-t px-3 py-1.5 text-[10px] text-slate-400">
+              <summary className="cursor-pointer select-none hover:text-slate-600">
+                Nhãn &ldquo;Geo&rdquo; ở cột Camp: {geoMissingOf.all.length} camp có Geo trong Camp_Links nhưng Master KW Lookup chưa có keyword
+              </summary>
+              <div className="mt-1 leading-relaxed">
+                Dashboard đọc &ldquo;camp nào đang bid keyword&rdquo; từ Master KW Lookup; các camp này không có dòng keyword nào ở đó (camp mới
+                hoặc đã đổi tên) nên chỉ gợi ý được theo Geo. Xuất lại keyword vào Master để cột hiện chính xác. Danh sách:{' '}
+                {geoMissingOf.all.map((c) => c.camp).join(' · ')}
+              </div>
+            </details>
+          )}
           <div className="border-t px-3 py-2 text-[10px] text-slate-400">
             Vị trí = <code className="text-[9px]">posL</code> của tab Country_L* (trung bình cửa sổ; GA4 App Store search
             rank) · dòng nhỏ dưới mỗi ô = vị trí cửa sổ liền trước → nay, <span className="text-emerald-600">xanh</span> lên,{' '}
