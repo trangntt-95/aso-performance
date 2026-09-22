@@ -17,7 +17,7 @@ import type { Category } from '@/lib/sheets/types';
 import { buildCountryNetValue } from '@/lib/market/keywordNetValue';
 import { findBrandTopCamps } from '@/lib/market/brandTop';
 import { buildKeywordCampIndex, type OriginCamp } from '@/lib/market/installOrigin';
-import { buildCampTargetResolver, coverRank } from '@/lib/market/campCountries';
+import { buildCampTargetResolver, buildGeoCampsMissingInMaster, coverRank } from '@/lib/market/campCountries';
 import { KeywordCampsList } from '@/components/shared/KeywordCampsList';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { useNotesStore } from '@/lib/store/notesStore';
@@ -210,12 +210,19 @@ export function PositionsView() {
   // camp không phủ nước của dòng. Master không nói camp nào phục vụ nước nào,
   // nên liệt kê hết và để Geo xếp camp đúng nước lên trước.
   const campIndex = useMemo(() => buildKeywordCampIndex(data), [data]);
-  // Nước của camp: Geo Camp_Links trước, tên camp (mã nước / tier / excl) khi
-  // Geo trống — xem lib/market/campCountries.ts. 0 = gọi tên rõ, 1 = có thể,
-  // 2 = không phủ (mờ).
-  const targetOf = useMemo(() => buildCampTargetResolver(data?.campLinks ?? [], data?.marketTiers ?? []), [data?.campLinks, data?.marketTiers]);
+  // Nước của camp: Geo Camp_Links trước, tên camp (mã nước / tên nước / excl)
+  // khi Geo trống — xem lib/market/campCountries.ts. 0 = gọi tên rõ, 1 = có
+  // thể, 2 = không phủ (mờ). Chữ "Tier" không suy ra nước.
+  const targetOf = useMemo(() => buildCampTargetResolver(data?.campLinks ?? []), [data?.campLinks]);
   const geoRank = (country: string) => (c: OriginCamp): 0 | 1 | 2 => coverRank(targetOf(c.camp), country);
   const hintOf = (c: OriginCamp) => targetOf(c.camp).label;
+  // Camp có Geo phủ nước nhưng Master không có keyword → dashboard không thể
+  // biết nó bid keyword này (22/09/2026: profit × Colombia thật ra chạy ở
+  // "Brandname - Exact - Tier 3 (31 countries)", camp vắng trong Master).
+  const geoMissingOf = useMemo(
+    () => buildGeoCampsMissingInMaster(data?.campLinks ?? [], data?.pausedKw ?? [], data?.masterKwLookup ?? []),
+    [data?.campLinks, data?.pausedKw, data?.masterKwLookup],
+  );
 
   // Note keyword dùng chung với Underbid / Paid Coverage / trend sheet (App_Notes).
   const loadNotes = useNotesStore((st) => st.load);
@@ -394,9 +401,9 @@ export function PositionsView() {
                 <th className="px-1.5 py-2 text-left font-medium" title={`Keyword Brand có vị trí PAID ≤ ${BRAND_TOP_POS} ở cửa sổ đang sắp (GA4) → đã top; kèm camp brand đang phủ nước đó (Geo Camp_Links) với spend và vị trí camp 14 ngày từ export Shopify. Không có spend theo keyword nên cờ chỉ ra CAMP để hạ bid.`}>
                   Cảnh báo
                 </th>
-                <th className="px-2 py-2 text-left font-medium" title="Nước của camp đọc từ Geo trong Camp_Links; Geo trống thì đọc tên camp (mã nước 'DE, FR', tier 'Tier 2' theo khối Tier, 'excl' / '(-IN)'). Xếp: camp đã ghim, rồi camp gọi tên nước này rõ, rồi camp có thể phủ (Geo trống, không nói), cuối là camp không phủ (mờ). Hover tên camp để thấy vì sao. Cảnh báo vàng khi không camp nào phủ nước của dòng. Bấm +N để xem hết.">
+                <th className="px-2 py-2 text-left font-medium" title="Camp trong Master KW Lookup đang bid keyword này. Nước của camp đọc từ Geo trong Camp_Links; Geo trống thì đọc tên camp (mã nước 'DE, FR', tên nước 'Japan', 'excl' / '(-IN)'; chữ Tier không suy ra nước). Xếp: camp đã ghim, rồi camp gọi tên nước này rõ, rồi camp có thể phủ (Geo trống, không nói), cuối là camp không phủ (mờ). Hover tên camp để thấy vì sao. Cảnh báo vàng: không camp nào phủ nước của dòng, hoặc có camp Geo phủ nước này mà Master chưa có keyword (dashboard không biết nó bid gì). Bấm +N để xem hết.">
                   Camp đang bid
-                  <div className="text-[9px] font-normal text-slate-400">📌 ghim theo keyword × nước · đúng nước trước (Geo hoặc tên camp) · mờ = không phủ</div>
+                  <div className="text-[9px] font-normal text-slate-400">📌 ghim theo keyword × nước · đúng nước trước (Geo hoặc tên camp) · mờ = không phủ · nguồn: Master KW Lookup</div>
                 </th>
                 <th className="px-2 py-2 text-left font-medium" title="Ghi chú theo KEYWORD × NƯỚC (dòng này), lưu vào App_Notes. Underbid, Paid Coverage và trend sheet hiện note này đọc-chỉ dưới note keyword của họ; note keyword chung (Underbid) hiện đọc-chỉ dưới ô này.">
                   Ghi chú
@@ -500,6 +507,7 @@ export function PositionsView() {
                       emptyLabel="chưa bid"
                       hintOf={hintOf}
                       noCoverLabel={`chưa có camp phủ ${r.country}`}
+                      missingInMaster={{ camps: geoMissingOf(r.country), label: `Geo phủ ${r.country} nhưng Master chưa có keyword` }}
                     />
                   </td>
                   <NoteCell

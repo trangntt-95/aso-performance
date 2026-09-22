@@ -151,6 +151,64 @@ const EN_ALIASES: Record<string, string> = {
   brazil: 'Brazil',
 };
 
+// Mọi cụm chữ chỉ nước mà module này biết (tiếng Việt, alias Anh, tên chuẩn
+// Country_L*) → tên chuẩn. Dài trước ngắn để "New Zealand" ăn trước "Zealand".
+let PHRASES: [string, string][] | null = null;
+function countryPhrases(): [string, string][] {
+  if (PHRASES) return PHRASES;
+  const m = new Map<string, string>();
+  for (const k of Object.keys(VN_TO_EN)) m.set(k, VN_TO_EN[k]);
+  for (const k of Object.keys(EN_ALIASES)) m.set(k, EN_ALIASES[k]);
+  for (const k of Object.keys(CODE_TO_EN)) m.set(CODE_TO_EN[k].toLowerCase(), CODE_TO_EN[k]);
+  PHRASES = Array.from(m.entries()).sort((a, b) => b[0].length - a[0].length);
+  return PHRASES;
+}
+
+const LETTER = /[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]/;
+
+/**
+ * Nước được gọi tên trong một đoạn chữ tự do (tên camp): tên đầy đủ Anh/Việt
+ * ("Japan", "New Zealand", "Tây Ban Nha", "Czech") và mã 2 chữ IN HOA ("DE",
+ * "CO"). Chỉ nhận cụm nguyên chữ — "IT" trong "ITEM" hay "no" thường không
+ * tính. Không đoán gì ngoài các bảng trên.
+ */
+export function findCountriesInText(text: string): string[] {
+  // Gom theo vị trí trong chuỗi để nhãn "Tên: A, B" giữ thứ tự Trang viết.
+  const hits: { at: number; c: string }[] = [];
+  const push = (at: number, c: string) => {
+    if (!hits.some((h) => h.c === c)) hits.push({ at, c });
+  };
+  let rest = text;
+  for (const [phrase, canon] of countryPhrases()) {
+    if (phrase.length < 3) continue; // mã 2 chữ xử lý riêng (phải viết hoa)
+    let from = 0;
+    for (;;) {
+      const i = rest.toLowerCase().indexOf(phrase, from);
+      if (i < 0) break;
+      const before = i > 0 ? rest.charAt(i - 1) : '';
+      const after = rest.charAt(i + phrase.length);
+      const hit = rest.slice(i, i + phrase.length);
+      // Cụm 3 chữ ("UAE", "USA", "Nga", "Anh") chỉ nhận khi viết HOA — "anh",
+      // "nga" viết thường trong ghi chú tiếng Việt không phải tên nước.
+      const okCase = phrase.length > 3 || hit === hit.toUpperCase();
+      if (okCase && !LETTER.test(before) && !LETTER.test(after)) {
+        push(i, canon);
+        rest = rest.slice(0, i) + ' '.repeat(phrase.length) + rest.slice(i + phrase.length);
+      }
+      from = i + phrase.length;
+    }
+  }
+  // "KW" trong tên camp là "keyword" ("Test - Feature KW"), không phải Kuwait.
+  const code = /(^|[^A-Za-z])([A-Z]{2})(?![A-Za-z])/g;
+  let m: RegExpExecArray | null;
+  while ((m = code.exec(rest)) !== null) {
+    if (m[2] === 'KW') continue;
+    const c = CODE_TO_EN[m[2]];
+    if (c) push(m.index + m[1].length, c);
+  }
+  return hits.sort((a, b) => a.at - b.at).map((h) => h.c);
+}
+
 /** Normalise one free-text country token → Country_L* spelling (or the raw
  *  token title-cased when unrecognised — it simply won't join, never crashes). */
 export function normCountryToken(raw: string): string | null {

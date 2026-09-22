@@ -49,6 +49,7 @@ export function KeywordCampsList({
   nameMaxClass = '',
   hintOf,
   noCoverLabel,
+  missingInMaster,
 }: {
   camps: OriginCamp[];
   rank?: (camp: OriginCamp) => 0 | 1 | 2;
@@ -65,9 +66,29 @@ export function KeywordCampsList({
   hintOf?: (camp: OriginCamp) => string | undefined;
   /** Hiện khi không camp nào ở hạng 0/1 — tức chưa có camp phủ nước của dòng. */
   noCoverLabel?: string;
+  /** Camp Camp_Links có Geo gồm nước của dòng nhưng Master KW Lookup không có
+   *  keyword nào của nó → có thể đang bid keyword này mà dashboard không biết.
+   *  Hiện khi không camp nào ở hạng 0 (không camp nào gọi tên nước rõ). */
+  missingInMaster?: { camps: string[]; label: string };
 }) {
   const [open, setOpen] = useState(false);
-  if (camps.length === 0) return <span className="text-[11px] text-slate-400">{emptyLabel}</span>;
+  const MissingInMaster = ({ show }: { show: boolean }) =>
+    show && missingInMaster && missingInMaster.camps.length > 0 ? (
+      <div
+        className="mb-0.5 text-[10px] text-amber-700"
+        title="Camp_Links ghi Geo gồm nước này, nhưng Master KW Lookup không có dòng keyword nào của camp — dashboard không biết camp bid gì, nên không liệt kê được. Cập nhật Master KW Lookup (xuất keyword các camp mới / đổi tên) để cột này đúng."
+      >
+        ⚠️ {missingInMaster.label}: {missingInMaster.camps.join(', ')}
+      </div>
+    ) : null;
+  if (camps.length === 0) {
+    return (
+      <div className="min-w-0">
+        <MissingInMaster show />
+        <span className="text-[11px] text-slate-400">{emptyLabel}</span>
+      </div>
+    );
+  }
   const pinnedSet = new Set((pinned ?? []).map((p) => p.toLowerCase()));
   const isPinned = (c: OriginCamp) => pinnedSet.has(c.camp.toLowerCase());
   const elsewhereSet = new Set((pinnedElsewhere?.camps ?? []).map((p) => p.toLowerCase()));
@@ -104,8 +125,12 @@ export function KeywordCampsList({
     ) : null;
 
   const noneCovers = rank ? ordered.every((c) => !isPinned(c) && rankOf(c) >= 2) : false;
+  // Không camp nào gọi tên nước này rõ (Geo hoặc tên) → camp Geo thiếu trong
+  // Master có thể chính là camp thật đang bid.
+  const noneExplicit = rank ? ordered.every((c) => !isPinned(c) && rank(c) !== 0) : false;
   return (
     <div className="min-w-0">
+      <MissingInMaster show={noneExplicit} />
       {noneCovers && noCoverLabel && (
         <div className="mb-0.5 text-[10px] text-amber-700" title="Mọi camp đang bid keyword này đều có Geo hoặc tên không gồm nước của dòng.">
           ⚠️ {noCoverLabel}
