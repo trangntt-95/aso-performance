@@ -17,8 +17,7 @@ import type { Category } from '@/lib/sheets/types';
 import { buildCountryNetValue } from '@/lib/market/keywordNetValue';
 import { findBrandTopCamps } from '@/lib/market/brandTop';
 import { buildKeywordCampIndex, type OriginCamp } from '@/lib/market/installOrigin';
-import { buildCampGeoIndex, campGeoCovers, type CampGeo } from '@/lib/sheets/campGeo';
-import { normalizeCampName } from '@/lib/sheets/campName';
+import { buildCampTargetResolver, coverRank } from '@/lib/market/campCountries';
 import { KeywordCampsList } from '@/components/shared/KeywordCampsList';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { useNotesStore } from '@/lib/store/notesStore';
@@ -211,22 +210,12 @@ export function PositionsView() {
   // camp không phủ nước của dòng. Master không nói camp nào phục vụ nước nào,
   // nên liệt kê hết và để Geo xếp camp đúng nước lên trước.
   const campIndex = useMemo(() => buildKeywordCampIndex(data), [data]);
-  const geoByKey = useMemo(() => {
-    const out = new Map<string, CampGeo>();
-    buildCampGeoIndex(data?.campLinks ?? []).forEach((g, name) => {
-      const k = normalizeCampName(name).toLowerCase();
-      const cur = out.get(k);
-      if (!cur || (cur.mode === 'unknown' && g.mode !== 'unknown')) out.set(k, g);
-    });
-    return out;
-  }, [data?.campLinks]);
-  // 0 = Geo ghi rõ nước này · 1 = Geo trống / loại trừ (có thể phủ) · 2 = không phủ (mờ).
-  const geoRank = (country: string) => (c: OriginCamp): 0 | 1 | 2 => {
-    const g = geoByKey.get(normalizeCampName(c.camp).toLowerCase());
-    if (!g) return 1;
-    if (!campGeoCovers(g, country)) return 2;
-    return g.mode === 'include' ? 0 : 1;
-  };
+  // Nước của camp: Geo Camp_Links trước, tên camp (mã nước / tier / excl) khi
+  // Geo trống — xem lib/market/campCountries.ts. 0 = gọi tên rõ, 1 = có thể,
+  // 2 = không phủ (mờ).
+  const targetOf = useMemo(() => buildCampTargetResolver(data?.campLinks ?? [], data?.marketTiers ?? []), [data?.campLinks, data?.marketTiers]);
+  const geoRank = (country: string) => (c: OriginCamp): 0 | 1 | 2 => coverRank(targetOf(c.camp), country);
+  const hintOf = (c: OriginCamp) => targetOf(c.camp).label;
 
   // Note keyword dùng chung với Underbid / Paid Coverage / trend sheet (App_Notes).
   const loadNotes = useNotesStore((st) => st.load);
@@ -405,9 +394,9 @@ export function PositionsView() {
                 <th className="px-1.5 py-2 text-left font-medium" title={`Keyword Brand có vị trí PAID ≤ ${BRAND_TOP_POS} ở cửa sổ đang sắp (GA4) → đã top; kèm camp brand đang phủ nước đó (Geo Camp_Links) với spend và vị trí camp 14 ngày từ export Shopify. Không có spend theo keyword nên cờ chỉ ra CAMP để hạ bid.`}>
                   Cảnh báo
                 </th>
-                <th className="px-2 py-2 text-left font-medium" title="Camp chưa tắt đang bid keyword này (Master KW Lookup trừ Paused_camp), kèm bid ở camp đó. Ghim theo KEYWORD × NƯỚC: 'profit ở Úc' ghim camp AU, 'profit ở Tây Ban Nha' ghim camp ES. Xếp: ghim ở đây trước, rồi camp đã ghim ở Underbid (nhãn, theo keyword), rồi camp có Geo ghi rõ nước này, Geo trống, cuối là camp không phủ nước (mờ). Bấm +N để xem hết.">
+                <th className="px-2 py-2 text-left font-medium" title="Nước của camp đọc từ Geo trong Camp_Links; Geo trống thì đọc tên camp (mã nước 'DE, FR', tier 'Tier 2' theo khối Tier, 'excl' / '(-IN)'). Xếp: camp đã ghim, rồi camp gọi tên nước này rõ, rồi camp có thể phủ (Geo trống, không nói), cuối là camp không phủ (mờ). Hover tên camp để thấy vì sao. Cảnh báo vàng khi không camp nào phủ nước của dòng. Bấm +N để xem hết.">
                   Camp đang bid
-                  <div className="text-[9px] font-normal text-slate-400">📌 ghim theo keyword × nước · nhãn Underbid = ghim theo keyword · mờ = không phủ</div>
+                  <div className="text-[9px] font-normal text-slate-400">📌 ghim theo keyword × nước · đúng nước trước (Geo hoặc tên camp) · mờ = không phủ</div>
                 </th>
                 <th className="px-2 py-2 text-left font-medium" title="Ghi chú theo KEYWORD × NƯỚC (dòng này), lưu vào App_Notes. Underbid, Paid Coverage và trend sheet hiện note này đọc-chỉ dưới note keyword của họ; note keyword chung (Underbid) hiện đọc-chỉ dưới ô này.">
                   Ghi chú
@@ -509,7 +498,8 @@ export function PositionsView() {
                       onTogglePin={(camp) => toggleCountryPin(r.keyword, r.country, camp)}
                       pinnedElsewhere={{ camps: keywordPinsOf(r.keyword), label: 'Underbid' }}
                       emptyLabel="chưa bid"
-                      nameMaxClass="max-w-[11rem]"
+                      hintOf={hintOf}
+                      noCoverLabel={`chưa có camp phủ ${r.country}`}
                     />
                   </td>
                   <NoteCell

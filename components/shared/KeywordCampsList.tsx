@@ -20,17 +20,19 @@ import { cn } from '@/lib/utils';
 
 const money = (n: number | null | undefined) => (n && n > 0 ? `$${n.toFixed(2)}` : '—');
 
-function CampName({ camp, dim, isPinned, maxW }: { camp: OriginCamp; dim: boolean; isPinned: boolean; maxW: string }) {
+function CampName({ camp, dim, isPinned, maxW, hint }: { camp: OriginCamp; dim: boolean; isPinned: boolean; maxW: string; hint?: string }) {
+  // maxW rỗng = không cắt tên (Trang 22/09/2026: tên camp phải đọc đủ, bảng kéo ngang).
+  const clip = maxW ? 'truncate' : '';
   return (
-    <span className={cn('flex items-baseline gap-1 whitespace-nowrap', dim && 'opacity-50')} title={dim ? `${camp.camp} — Geo không phủ nước này` : camp.camp}>
+    <span className={cn('flex items-baseline gap-1 whitespace-nowrap', dim && 'opacity-50')} title={[camp.camp, hint, dim ? 'không phủ nước này' : ''].filter(Boolean).join(' — ')}>
       {isPinned && <Pin className="h-3 w-3 shrink-0 self-center text-indigo-500" />}
       {camp.url ? (
-        <a href={camp.url} target="_blank" rel="noopener noreferrer" className={cn('inline-flex items-baseline gap-1 truncate text-[11px] text-indigo-600 hover:underline', maxW, isPinned && 'font-medium')}>
-          <span className="truncate">{camp.camp}</span>
+        <a href={camp.url} target="_blank" rel="noopener noreferrer" className={cn('inline-flex items-baseline gap-1 text-[11px] text-indigo-600 hover:underline', clip, maxW, isPinned && 'font-medium')}>
+          <span className={clip}>{camp.camp}</span>
           <ExternalLink className="h-2.5 w-2.5 shrink-0 self-center" />
         </a>
       ) : (
-        <span className={cn('truncate text-[11px] text-slate-700', maxW, isPinned && 'font-medium')}>{camp.camp}</span>
+        <span className={cn('text-[11px] text-slate-700', clip, maxW, isPinned && 'font-medium')}>{camp.camp}</span>
       )}
       <span className="text-[10px] text-slate-400">{money(camp.bidMax)}</span>
     </span>
@@ -44,7 +46,9 @@ export function KeywordCampsList({
   onTogglePin,
   pinnedElsewhere,
   emptyLabel = '—',
-  nameMaxClass = 'max-w-[16rem]',
+  nameMaxClass = '',
+  hintOf,
+  noCoverLabel,
 }: {
   camps: OriginCamp[];
   rank?: (camp: OriginCamp) => 0 | 1 | 2;
@@ -55,8 +59,12 @@ export function KeywordCampsList({
    *  keyword × nước): hiện nhãn, xếp ngay sau ghim ở đây, không tính là ghim ở đây. */
   pinnedElsewhere?: { camps: string[]; label: string };
   emptyLabel?: string;
-  /** Lớp max-width cho tên camp (mặc định 16rem); bảng nhiều cột dùng hẹp hơn. */
+  /** Lớp max-width cho tên camp; mặc định rỗng = hiện đủ tên, bảng kéo ngang. */
   nameMaxClass?: string;
+  /** Dòng giải thích vì sao camp xếp ở đó (vd. "Geo: Spain", "Tên: Tier 2") — vào tooltip. */
+  hintOf?: (camp: OriginCamp) => string | undefined;
+  /** Hiện khi không camp nào ở hạng 0/1 — tức chưa có camp phủ nước của dòng. */
+  noCoverLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   if (camps.length === 0) return <span className="text-[11px] text-slate-400">{emptyLabel}</span>;
@@ -95,11 +103,17 @@ export function KeywordCampsList({
       </button>
     ) : null;
 
+  const noneCovers = rank ? ordered.every((c) => !isPinned(c) && rankOf(c) >= 2) : false;
   return (
     <div className="min-w-0">
+      {noneCovers && noCoverLabel && (
+        <div className="mb-0.5 text-[10px] text-amber-700" title="Mọi camp đang bid keyword này đều có Geo hoặc tên không gồm nước của dòng.">
+          ⚠️ {noCoverLabel}
+        </div>
+      )}
       {head.map((c, idx) => (
         <div key={c.camp} className={cn('flex items-baseline gap-1', idx > 0 && 'mt-0.5')}>
-          <CampName camp={c} dim={isDim(c)} isPinned={isPinned(c)} maxW={nameMaxClass} />
+          <CampName camp={c} dim={isDim(c)} isPinned={isPinned(c)} maxW={nameMaxClass} hint={hintOf?.(c)} />
           <Elsewhere c={c} />
           <PinBtn c={c} />
           {idx === head.length - 1 && rest.length > 0 && (
@@ -119,7 +133,7 @@ export function KeywordCampsList({
         <ul className="mt-1 space-y-0.5 border-l border-slate-200 pl-2">
           {rest.map((c) => (
             <li key={c.camp} className="flex items-baseline gap-1">
-              <CampName camp={c} dim={isDim(c)} isPinned={isPinned(c)} maxW={nameMaxClass} />
+              <CampName camp={c} dim={isDim(c)} isPinned={isPinned(c)} maxW={nameMaxClass} hint={hintOf?.(c)} />
               <Elsewhere c={c} />
               <PinBtn c={c} />
             </li>
