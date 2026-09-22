@@ -17,16 +17,18 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const tab = url.searchParams.get('tab')?.trim();
   if (!tab) return NextResponse.json({ error: 'thiếu ?tab=' }, { status: 400 });
-  const rows = Math.min(2000, Math.max(1, Number(url.searchParams.get('rows') ?? 50)));
+  // rows tối đa 5000 mỗi lần; ?from= để đọc tiếp tab dài (Master ~13k dòng khi backup).
+  const rows = Math.min(5000, Math.max(1, Number(url.searchParams.get('rows') ?? 50)));
+  const from = Math.max(1, Number(url.searchParams.get('from') ?? 1));
   const formula = url.searchParams.get('formula') === '1';
   try {
     const sheets = getSheetsClient();
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: getSpreadsheetId(),
-      range: `'${tab}'!A1:Z${rows}`,
+      range: `'${tab}'!A${from}:Z${from + rows - 1}`,
       valueRenderOption: formula ? 'FORMULA' : 'FORMATTED_VALUE',
     });
-    return NextResponse.json({ tab, formula, rows: res.data.values ?? [] });
+    return NextResponse.json({ tab, formula, from, rows: res.data.values ?? [] });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
