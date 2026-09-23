@@ -1308,7 +1308,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
 
       <SectionCard
         title={`Top volume movers · ${window}`}
-        hint={`Keywords with the biggest |Δ users %|. VN + IN excluded.${winNote}`}
+        hint={`Keyword toàn thị trường đổi nhiều users nhất so kỳ trước (Δ tuyệt đối, không phải %). Ngưỡng: users ≥ ${Math.max(8, Math.round(windowDays(window) * 0.67))}, |Δ| ≥ ${Math.max(5, Math.round(windowDays(window) / 3))} users hoặc ≥ 2 install; bỏ Noise, camp paid mới mở, VN + IN. Nhãn: thị trường (rank giữ) / do mình (rank đổi). Δ giá trị = Δ install × net value/install.${winNote}`}
         anchorId="sec-volume-movers"
         highlighted={highlightKey === 'volume-movers'}
         onCopyLink={embedded ? undefined : () => copyLink('volume-movers')}

@@ -580,17 +580,40 @@ export interface VolumeMover {
   bidSuggest?: string;
   note?: string;
   direction: 'up' | 'down';
+  /** Δ users tuyệt đối (kỳ này − kỳ trước) — tiêu chí xếp hạng từ 23/09/2026. */
+  deltaUsers: number;
+  /** Vì sao đổi: 'market' = rank không đổi → cầu thị trường; 'ours' = rank đổi ≥0.5 bậc → do vị trí/bid của mình; 'mixed' = paid, rank không đổi (bid hoặc thị trường). */
+  cause: 'market' | 'ours' | 'mixed';
+  causeLabel: string;
+  /** Δ install × net value/install của keyword (YTD) — biến động đáng bao nhiêu tiền; null khi chưa có net value. */
+  valueDeltaUsd: number | null;
+  /** Nước chiếm nhiều users nhất của keyword này trong kỳ ("United States 38%"), khi không lọc nước. */
+  topCountry: string | null;
 }
 
 function mapSurface(s: string): SurfaceLabel {
   return s === 'search_ad' || s === 'paid' ? 'paid' : 'organic';
 }
 
-// Floor scales với window (~0.5 users/ngày, min 5) để không cắt sạch L7/L14 nơi tổng users nhỏ.
+// Ngưỡng ý nghĩa theo cửa sổ (Trang 23/09/2026, sau khi thấy bảng xếp theo % toàn term lẻ):
+//   users lớn nhất của hai kỳ ≥ usersFloor (L7 8, L30 20, L90 60) VÀ (|Δ users| ≥ deltaFloor
+//   (L7 5, L30 10, L90 30) HOẶC |Δ install| ≥ 2). Xếp theo |Δ users| tuyệt đối, không theo %.
 function defaultUsersFloor(window: OverviewWindow): number {
-  return Math.max(5, Math.ceil(windowDays(window) * 0.5));
+  return Math.max(8, Math.round(windowDays(window) * 0.67));
+}
+function defaultDeltaFloor(window: OverviewWindow): number {
+  return Math.max(5, Math.round(windowDays(window) / 3));
 }
 
+/**
+ * Top volume movers — keyword nào của cả thị trường đang lên hay xuống.
+ *
+ * Nguồn: All_L{window} (toàn cầu) — nước chỉ là chú thích "chủ yếu ở …"; có lọc
+ * nước thì đọc Country_L{window} của nước đó. Bỏ category Noise và dòng paid mới
+ * mở (kỳ trước 0 users, chưa có rank) vì đó là mình bật camp, không phải thị
+ * trường. Mỗi dòng gắn nhãn nguyên nhân (rank đổi → do mình; rank giữ → thị
+ * trường) và Δ tiền = Δ install × net value/install YTD của keyword.
+ */
 export function topVolumeMovers(
   data: SheetPayload | undefined,
   window: OverviewWindow,
@@ -605,8 +628,48 @@ export function topVolumeMovers(
     keyword = null,
     category = null,
   } = options;
+  const deltaFloor = defaultDeltaFloor(window);
 
-  const rows = countryRowsForWindow(data, window, { surface, country, keyword, category });
+  const rows = country
+    ? countryRowsForWindow(data, window, { surface, country, keyword, category })
+    : rowsForWindow(data, window, { surface, keyword, category });
+
+  // Nước chiếm nhiều users nhất theo keyword × surface (từ Country_L cùng cửa sổ).
+  const byKwCountry = new Map<string, Map<string, number>>();
+  if (!country) {
+    for (const r of countryRowsForWindow(data, window, { surface, keyword, category })) {
+      if (!r.country || EXCLUDED_COUNTRIES.has(r.country)) continue;
+      const k = `${r.searchTerm.toLowerCase()}|${mapSurface(r.surface)}`;
+      const m = byKwCountry.get(k) ?? new Map<string, number>();
+      m.set(r.country, (m.get(r.country) ?? 0) + r.usersL);
+      byKwCountry.set(k, m);
+    }
+  }
+  const topCountryOf = (kw: string, sf: SurfaceLabel): string | null => {
+    const m = byKwCountry.get(`${kw.toLowerCase()}|${sf}`);
+    if (!m) return null;
+    let best: [string, number] | null = null;
+    let total = 0;
+    m.forEach((v, c) => {
+      total += v;
+      if (!best || v > best[1]) best = [c, v];
+    });
+    return best && total > 0 ? `${best[0]} ${Math.round((best[1] / total) * 100)}%` : null;
+  };
+
+  // Net value/install theo keyword (YTD, mọi nước, mọi kênh).
+  const nv = new Map<string, { net: number; installs: number }>();
+  for (const r of data.netValuePerInstall ?? []) {
+    const k = (r.keywordDecoded || r.keyword).toLowerCase().trim();
+    const e = nv.get(k) ?? { net: 0, installs: 0 };
+    e.net += r.netValue;
+    e.installs += r.installs;
+    nv.set(k, e);
+  }
+  const nvPerInstall = (kw: string): number | null => {
+    const e = nv.get(kw.toLowerCase().trim());
+    return e && e.installs >= 3 ? e.net / e.installs : null;
+  };
 
   const actionIndex = new Map<string, ActionQueueRow>();
   data.actionQueue.forEach((a) => {
@@ -615,28 +678,49 @@ export function topVolumeMovers(
   });
 
   const filtered = rows.filter((r) => {
-    if (!Number.isFinite(r.deltaUsersPct)) return false;
-    if (Math.max(r.usersL, r.usersP) < minUsersFloor) return false;
+    if (r.category === 'Noise') return false;
     if (r.country && EXCLUDED_COUNTRIES.has(r.country)) return false;
-    return true;
+    if (Math.max(r.usersL, r.usersP) < minUsersFloor) return false;
+    // Paid mới mở: kỳ trước không có gì → là mình bật camp, không phải thị trường.
+    if (mapSurface(r.surface) === 'paid' && r.usersP === 0 && r.posP === null) return false;
+    const dU = Math.abs(r.usersL - r.usersP);
+    const dI = Math.abs(r.getAppL - r.getAppP);
+    return dU >= deltaFloor || dI >= 2;
   });
 
-  filtered.sort((a, b) => Math.abs(b.deltaUsersPct) - Math.abs(a.deltaUsersPct));
+  filtered.sort((a, b) => Math.abs(b.usersL - b.usersP) - Math.abs(a.usersL - a.usersP) || Math.abs(b.getAppL - b.getAppP) - Math.abs(a.getAppL - a.getAppP));
 
   return filtered.slice(0, limit).map((r) => {
-    const surface = mapSurface(r.surface);
-    const country = r.country ?? '(global)';
-    const key = `${r.searchTerm.toLowerCase()}|${country}|${surface}|${window}`;
+    const sf = mapSurface(r.surface);
+    const countryLabel = r.country ?? '(global)';
+    const key = `${r.searchTerm.toLowerCase()}|${countryLabel}|${sf}|${window}`;
     const action = actionIndex.get(key);
+    const deltaUsers = r.usersL - r.usersP;
     const deltaGetAppPct = r.getAppP > 0 ? (r.getAppL - r.getAppP) / r.getAppP : null;
+    const deltaUsersPct = r.usersP > 0 ? deltaUsers / r.usersP : (r.usersL > 0 ? 1 : 0);
+    const posDiff = r.posL !== null && r.posP !== null ? r.posL - r.posP : null;
+    let cause: VolumeMover['cause'];
+    let causeLabel: string;
+    if (posDiff !== null && Math.abs(posDiff) >= 0.5) {
+      cause = 'ours';
+      causeLabel = `do mình: rank ${posDiff > 0 ? 'tụt' : 'lên'} ${Math.abs(posDiff).toFixed(1)} bậc`;
+    } else if (sf === 'paid') {
+      cause = 'mixed';
+      causeLabel = 'rank giữ → bid/budget hoặc cầu thị trường';
+    } else {
+      cause = 'market';
+      causeLabel = 'rank giữ → cầu thị trường đổi';
+    }
+    const perInstall = nvPerInstall(r.searchTerm);
+    const valueDeltaUsd = perInstall === null ? null : (r.getAppL - r.getAppP) * perInstall;
     return {
       keyword: r.searchTerm,
-      country,
-      surface,
+      country: countryLabel,
+      surface: sf,
       category: r.category,
       usersL: r.usersL,
       usersP: r.usersP,
-      deltaUsersPct: r.deltaUsersPct,
+      deltaUsersPct,
       getAppL: r.getAppL,
       getAppP: r.getAppP,
       deltaGetAppPct,
@@ -650,7 +734,12 @@ export function topVolumeMovers(
       bidAction: action?.bidAction,
       bidSuggest: action?.bidSuggest,
       note: action?.note,
-      direction: r.deltaUsersPct >= 0 ? 'up' : 'down',
+      direction: deltaUsers >= 0 ? 'up' : 'down',
+      deltaUsers,
+      cause,
+      causeLabel,
+      valueDeltaUsd,
+      topCountry: country ? null : topCountryOf(r.searchTerm, sf),
     };
   });
 }

@@ -160,7 +160,9 @@ function MoverRow({
           )}
         >
           <Icon className="h-3 w-3" />
-          {pct(m.deltaUsersPct)}
+          {m.deltaUsers > 0 ? '+' : ''}
+          {formatNumber(m.deltaUsers)} users
+          <span className="ml-0.5 font-normal opacity-70">({pct(m.deltaUsersPct)})</span>
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -186,7 +188,24 @@ function MoverRow({
               {m.surface === 'paid' ? <DollarSign className="h-2.5 w-2.5" /> : <Leaf className="h-2.5 w-2.5" />}
               {m.direction === 'down' ? '↓' : '↑'} {m.surface === 'paid' ? 'Paid' : 'Organic'}
             </span>
-            <span className="text-[10px] text-slate-500">{m.country}</span>
+            <span className="text-[10px] text-slate-500">{m.topCountry ? `chủ yếu ở ${m.topCountry}` : m.country}</span>
+            <span
+              className={cn(
+                'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium',
+                m.cause === 'market' ? 'bg-sky-100 text-sky-800' : m.cause === 'ours' ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-700',
+              )}
+              title="Thị trường = rank trung bình không đổi mà users đổi → cầu tìm kiếm đổi. Do mình = rank đổi ≥0.5 bậc (bid, listing). Paid rank giữ = có thể bid/budget."
+            >
+              {m.cause === 'market' ? 'thị trường' : m.cause === 'ours' ? 'do mình' : 'bid / thị trường'}
+            </span>
+            {m.valueDeltaUsd !== null && Math.abs(m.valueDeltaUsd) >= 20 && (
+              <span
+                className={cn('text-[10px] font-medium tabular-nums', m.valueDeltaUsd >= 0 ? 'text-emerald-700' : 'text-rose-700')}
+                title="Δ install × net value/install YTD của keyword (tab Net value per install)"
+              >
+                {m.valueDeltaUsd >= 0 ? '+' : '−'}${formatNumber(Math.round(Math.abs(m.valueDeltaUsd)))} giá trị
+              </span>
+            )}
           </div>
 
           {/* Số liệu: abs → abs (delta %) cho từng metric */}
