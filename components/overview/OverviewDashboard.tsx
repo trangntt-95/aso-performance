@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
-import { ArrowRight, AlertCircle, AlertTriangle, Check, Link2, Megaphone, Target, Users } from 'lucide-react';
+import { ArrowRight, AlertCircle, AlertTriangle, Check, DollarSign, Link2, Megaphone, Target, Users } from 'lucide-react';
 import { expectedAdsInstalls, runrateAdsToMonthEnd } from '@/lib/config/ads-targets';
 import { googleAdsInstallsInRange } from '@/lib/market/googleAdsReport';
+import { toUsd } from '@/lib/config/fx';
 import { AdsTargetTile } from './AdsTargetTile';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import {
@@ -522,10 +523,31 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const verdictS = composedVerdict ? verdictBadgeStyle(composedVerdict) : null;
   const days = windowDays(window);
   const adsTargetExpected = useMemo(() => expectedAdsInstalls(days), [days]);
-  const adsTargetPct = useMemo(() => {
-    if (!channelSnapshot || !adsTargetExpected || adsTargetExpected <= 0) return null;
-    return channelSnapshot.paidGetApp / adsTargetExpected;
-  }, [channelSnapshot, adsTargetExpected]);
+  // Install + spend App Store Ads trong window, lấy THẲNG từ export Shopify Ads
+  // theo ngày (Trang 23/09/2026) — không dùng GA4 paid: GA4 chỉ thấy phiên mang
+  // surface_type=search_ad nên thấp hơn Shopify 20–30% (tháng 9: 61 vs 78).
+  const shopifyWindow = useMemo(() => {
+    const r = dateRange ?? data?.windowDates?.[window];
+    if (!r?.from || !r?.to) return { installs: 0, spend: 0, days: 0 };
+    let installs = 0, spend = 0;
+    const seen = new Set<string>();
+    for (const row of data?.shopifyDaily ?? []) {
+      if (row.date < r.from || row.date > r.to) continue;
+      installs += row.installs;
+      spend += row.spend;
+      seen.add(row.date);
+    }
+    return { installs, spend, days: seen.size };
+  }, [data?.shopifyDaily, data?.windowDates, window, dateRange]);
+  // Chi phí Google Ads cùng window, đổi ra USD (tài khoản tính VND).
+  const gadsWindowCostUsd = useMemo(() => {
+    const r = dateRange ?? data?.windowDates?.[window];
+    if (!r?.from || !r?.to) return 0;
+    const cur = data?.googleAds?.meta?.currency ?? 'VND';
+    let cost = 0;
+    for (const c of data?.googleAds?.campaigns ?? []) if (c.date >= r.from && c.date <= r.to) cost += c.cost;
+    return toUsd(cost, cur) ?? 0;
+  }, [data?.googleAds, data?.windowDates, window, dateRange]);
   // Paid installs across BOTH channels, over the selected window.
   //
   // The monthly target (163) is set for paid advertising as a whole, so pacing
@@ -545,10 +567,22 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     return googleAdsInstallsInRange(data?.googleAds?.convActions, r.from, r.to);
   }, [data?.googleAds?.convActions, data?.windowDates, window, dateRange]);
 
-  const adsRunrate = useMemo(() => {
-    if (!channelSnapshot) return null;
-    return runrateAdsToMonthEnd(days, channelSnapshot.paidGetApp + gadsWindowInstalls);
-  }, [channelSnapshot, days, gadsWindowInstalls]);
+  const paidWindowInstalls = shopifyWindow.installs + gadsWindowInstalls;
+  const adsTargetPct = useMemo(() => {
+    if (!adsTargetExpected || adsTargetExpected <= 0) return null;
+    return paidWindowInstalls / adsTargetExpected;
+  }, [paidWindowInstalls, adsTargetExpected]);
+  const adsRunrate = useMemo(() => runrateAdsToMonthEnd(days, paidWindowInstalls), [days, paidWindowInstalls]);
+  // CPI ads gộp hai kênh trong window: (spend Shopify Ads + chi Google Ads USD) ÷ install hai kênh.
+  const adsCpi = useMemo(() => {
+    const spend = shopifyWindow.spend + gadsWindowCostUsd;
+    return {
+      blended: paidWindowInstalls > 0 ? spend / paidWindowInstalls : null,
+      shopify: shopifyWindow.installs > 0 ? shopifyWindow.spend / shopifyWindow.installs : null,
+      gads: gadsWindowInstalls > 0 ? gadsWindowCostUsd / gadsWindowInstalls : null,
+      spend,
+    };
+  }, [shopifyWindow, gadsWindowCostUsd, paidWindowInstalls, gadsWindowInstalls]);
   const totalCr = useMemo(() => {
     if (!kpis.usersL) return null;
     return kpis.getAppL / kpis.usersL;
@@ -916,7 +950,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             <AdsTargetTile
               label={inDateMode ? `Ads target · ${window} (window)` : `Ads target · ${window}`}
               pct={surfaceFocus === 'organic' ? null : adsTargetPct}
-              actual={surfaceFocus === 'organic' ? 0 : channelSnapshot?.paidGetApp ?? 0}
+              actual={surfaceFocus === 'organic' ? 0 : paidWindowInstalls}
               expected={surfaceFocus === 'organic' ? null : adsTargetExpected}
               runratePct={
                 surfaceFocus === 'organic'
@@ -929,11 +963,21 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                 adsRunrate
                   ? adsRunrate.mode === 'direct'
                     ? `Actual ${Math.round(adsRunrate.projectedInstalls)} / target L90 ${Math.round(adsRunrate.targetInstalls)} (tổng 3 tháng)`
-                    : `Paid install trong window: App Store ${channelSnapshot?.paidGetApp ?? 0} + Google Ads ${Math.round(gadsWindowInstalls)} = ${Math.round((channelSnapshot?.paidGetApp ?? 0) + gadsWindowInstalls)}\n` +
-                      `Pace = ${Math.round((channelSnapshot?.paidGetApp ?? 0) + gadsWindowInstalls)} / ${adsRunrate.effectiveDays} ngày → dự phóng ${Math.round(adsRunrate.projectedInstalls)} / target ${Math.round(adsRunrate.targetInstalls)} cuối tháng\n\n` +
-                      'Hai kênh do hai hệ attribution khác nhau đếm nên tổng này không phải số đã loại trùng — nhưng target tháng cũng đặt trên cùng cơ sở gộp đó.'
+                    : `Paid install trong window: App Store Ads (export Shopify Ads theo ngày) ${shopifyWindow.installs} + Google Ads ${Math.round(gadsWindowInstalls)} = ${Math.round(paidWindowInstalls)}\n` +
+                      `Pace = ${Math.round(paidWindowInstalls)} / ${adsRunrate.effectiveDays} ngày → dự phóng ${Math.round(adsRunrate.projectedInstalls)} / target ${Math.round(adsRunrate.targetInstalls)} cuối tháng\n\n` +
+                      'Số App Store lấy từ Shopify Ads, không phải GA4 (GA4 chỉ thấy phiên mang surface_type=search_ad, thấp hơn 20–30%). Google Ads = shopify_app_install + app_install_attributed.'
                   : undefined
               }
+            />
+            <KpiTile
+              label={`CPI ads · ${window}`}
+              value={surfaceFocus === 'organic' || adsCpi.blended === null ? '—' : `$${adsCpi.blended.toFixed(1)}`}
+              helper={
+                surfaceFocus === 'organic'
+                  ? 'chỉ tính khi xem paid'
+                  : `App Store ${adsCpi.shopify === null ? '—' : '$' + adsCpi.shopify.toFixed(1)} · Google ${adsCpi.gads === null ? '—' : '$' + adsCpi.gads.toFixed(1)} · chi $${Math.round(adsCpi.spend).toLocaleString('en-US')}`
+              }
+              Icon={DollarSign}
             />
           </>
         )}
