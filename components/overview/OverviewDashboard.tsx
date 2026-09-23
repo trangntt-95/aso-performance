@@ -521,33 +521,49 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     ? composeVerdict(headlineWindow.deltaWeightedPct, kpis.usersDeltaPct)
     : null;
   const verdictS = composedVerdict ? verdictBadgeStyle(composedVerdict) : null;
-  const days = windowDays(window);
+  // Số ngày đã đo: ở chế độ chọn ngày ("tháng này" = 1→22 là 22 ngày) phải dùng
+  // độ dài khoảng đã chọn, không phải độ dài window (30). Trang 23/09/2026:
+  // "phải lấy 112/22×30/163, không phải 112/30×30/163".
+  const days = dateRange
+    ? Math.max(1, Math.round((Date.parse(dateRange.to) - Date.parse(dateRange.from)) / 86400000) + 1)
+    : windowDays(window);
   const adsTargetExpected = useMemo(() => expectedAdsInstalls(days), [days]);
   // Install + spend App Store Ads trong window, lấy THẲNG từ export Shopify Ads
   // theo ngày (Trang 23/09/2026) — không dùng GA4 paid: GA4 chỉ thấy phiên mang
   // surface_type=search_ad nên thấp hơn Shopify 20–30% (tháng 9: 61 vs 78).
-  const shopifyWindow = useMemo(() => {
+  // Kỳ đang xem và kỳ liền trước cùng độ dài (để so CPI).
+  const paidRanges = useMemo(() => {
     const r = dateRange ?? data?.windowDates?.[window];
-    if (!r?.from || !r?.to) return { installs: 0, spend: 0, days: 0 };
-    let installs = 0, spend = 0;
-    const seen = new Set<string>();
-    for (const row of data?.shopifyDaily ?? []) {
-      if (row.date < r.from || row.date > r.to) continue;
-      installs += row.installs;
-      spend += row.spend;
-      seen.add(row.date);
-    }
-    return { installs, spend, days: seen.size };
-  }, [data?.shopifyDaily, data?.windowDates, window, dateRange]);
-  // Chi phí Google Ads cùng window, đổi ra USD (tài khoản tính VND).
-  const gadsWindowCostUsd = useMemo(() => {
-    const r = dateRange ?? data?.windowDates?.[window];
-    if (!r?.from || !r?.to) return 0;
-    const cur = data?.googleAds?.meta?.currency ?? 'VND';
-    let cost = 0;
-    for (const c of data?.googleAds?.campaigns ?? []) if (c.date >= r.from && c.date <= r.to) cost += c.cost;
-    return toUsd(cost, cur) ?? 0;
-  }, [data?.googleAds, data?.windowDates, window, dateRange]);
+    if (!r?.from || !r?.to) return null;
+    const len = Math.round((Date.parse(r.to) - Date.parse(r.from)) / 86400000) + 1;
+    const prevTo = isoAddDays(r.from, -1);
+    const prevFrom = isoAddDays(r.from, -len);
+    return { cur: r, prev: { from: prevFrom, to: prevTo } };
+  }, [data?.windowDates, window, dateRange]);
+  const paidInRange = useCallback(
+    (r: { from: string; to: string } | null | undefined) => {
+      if (!r) return { shopifyInstalls: 0, shopifySpend: 0, gadsInstalls: 0, gadsCostUsd: 0, installs: 0, spend: 0, cpi: null as number | null };
+      let shopifyInstalls = 0, shopifySpend = 0;
+      for (const row of data?.shopifyDaily ?? []) {
+        if (row.date < r.from || row.date > r.to) continue;
+        shopifyInstalls += row.installs;
+        shopifySpend += row.spend;
+      }
+      const cur = data?.googleAds?.meta?.currency ?? 'VND';
+      let cost = 0;
+      for (const c of data?.googleAds?.campaigns ?? []) if (c.date >= r.from && c.date <= r.to) cost += c.cost;
+      const gadsCostUsd = toUsd(cost, cur) ?? 0;
+      const gadsInstalls = googleAdsInstallsInRange(data?.googleAds?.convActions, r.from, r.to);
+      const installs = shopifyInstalls + gadsInstalls;
+      const spend = shopifySpend + gadsCostUsd;
+      return { shopifyInstalls, shopifySpend, gadsInstalls, gadsCostUsd, installs, spend, cpi: installs > 0 ? spend / installs : null };
+    },
+    [data?.shopifyDaily, data?.googleAds],
+  );
+  const paidCur = useMemo(() => paidInRange(paidRanges?.cur), [paidInRange, paidRanges]);
+  const paidPrev = useMemo(() => paidInRange(paidRanges?.prev), [paidInRange, paidRanges]);
+  const shopifyWindow = { installs: paidCur.shopifyInstalls, spend: paidCur.shopifySpend };
+  const gadsWindowCostUsd = paidCur.gadsCostUsd;
   // Paid installs across BOTH channels, over the selected window.
   //
   // The monthly target (163) is set for paid advertising as a whole, so pacing
@@ -576,13 +592,16 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   // CPI ads gộp hai kênh trong window: (spend Shopify Ads + chi Google Ads USD) ÷ install hai kênh.
   const adsCpi = useMemo(() => {
     const spend = shopifyWindow.spend + gadsWindowCostUsd;
+    const blended = paidWindowInstalls > 0 ? spend / paidWindowInstalls : null;
     return {
-      blended: paidWindowInstalls > 0 ? spend / paidWindowInstalls : null,
+      blended,
       shopify: shopifyWindow.installs > 0 ? shopifyWindow.spend / shopifyWindow.installs : null,
       gads: gadsWindowInstalls > 0 ? gadsWindowCostUsd / gadsWindowInstalls : null,
       spend,
+      prev: paidPrev.cpi,
+      deltaPct: blended !== null && paidPrev.cpi !== null && paidPrev.cpi > 0 ? blended / paidPrev.cpi - 1 : null,
     };
-  }, [shopifyWindow, gadsWindowCostUsd, paidWindowInstalls, gadsWindowInstalls]);
+  }, [shopifyWindow, gadsWindowCostUsd, paidWindowInstalls, gadsWindowInstalls, paidPrev]);
   const totalCr = useMemo(() => {
     if (!kpis.usersL) return null;
     return kpis.getAppL / kpis.usersL;
@@ -918,7 +937,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
       <section
         id="sec-kpis"
         className={cn(
-          'grid grid-cols-2 lg:grid-cols-4 gap-3 scroll-mt-24 rounded-xl transition-shadow',
+          'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 scroll-mt-24 rounded-xl transition-shadow',
           highlightKey === 'kpis' && 'ring-2 ring-indigo-400 ring-offset-2',
         )}
       >
@@ -972,10 +991,12 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
             <KpiTile
               label={`CPI ads · ${window}`}
               value={surfaceFocus === 'organic' || adsCpi.blended === null ? '—' : `$${adsCpi.blended.toFixed(1)}`}
+              deltaPct={surfaceFocus === 'organic' ? null : adsCpi.deltaPct}
+              lowerIsBetter
               helper={
                 surfaceFocus === 'organic'
                   ? 'chỉ tính khi xem paid'
-                  : `App Store ${adsCpi.shopify === null ? '—' : '$' + adsCpi.shopify.toFixed(1)} · Google ${adsCpi.gads === null ? '—' : '$' + adsCpi.gads.toFixed(1)} · chi $${Math.round(adsCpi.spend).toLocaleString('en-US')}`
+                  : `kỳ trước ${adsCpi.prev === null ? '—' : '$' + adsCpi.prev.toFixed(1)} · App Store ${adsCpi.shopify === null ? '—' : '$' + adsCpi.shopify.toFixed(1)} · Google ${adsCpi.gads === null ? '—' : '$' + adsCpi.gads.toFixed(1)}`
               }
               Icon={DollarSign}
             />

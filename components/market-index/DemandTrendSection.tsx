@@ -161,7 +161,7 @@ export function DemandTrendSection({ data }: { data: SheetPayload }) {
           </ResponsiveContainer>
         </div>
         <p className="mt-1 text-[10px] text-slate-400">
-          Nguồn GA4 (History_Daily): đếm khi khách thực sự bấm vào listing, không phải impression; thấp hơn Shopify Ads khoảng 10–30% và lệch nặng hơn ở số nhỏ. Mỗi ngày là tổng mọi keyword có phiên.
+          Nguồn GA4 gốc theo ngày (BigQuery, tab GA4_daily_auto, đủ mọi search term): đếm khi khách thực sự bấm vào listing, không phải impression; thấp hơn Shopify Ads khoảng 20–30% vì chỉ tính phiên mang surface_type. Mỗi ngày là tổng mọi keyword có phiên.
         </p>
       </div>
 

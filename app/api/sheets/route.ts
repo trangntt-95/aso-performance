@@ -103,6 +103,11 @@ export async function GET() {
       shopifyCampRows.map((c) => normalizeCampName(c.camp).toLowerCase()),
     );
     const masterKwLookup = parseMasterKw(raw['Master KW Lookup'] ?? []);
+    // GA4 gốc theo ngày (BigQuery → tab GA4_daily_auto*), cùng layout History_Daily*.
+    // Ưu tiên khi có đủ dòng; History_Daily của Apps Script chỉ còn là dự phòng
+    // (nó mất install của term nhỏ: tháng 9/2026 ghi 31 paid trong khi GA4 gốc 61).
+    const ga4Daily = parseHistoryDaily(raw['GA4_daily_auto'] ?? []);
+    const ga4DailyCountry = parseHistoryDailyCountry(raw['GA4_daily_country_auto'] ?? []);
 
     // Parsed once: the revenue block yields both the rows and the period label.
     // Khối doanh thu theo nước: tab tự động từ BigQuery (4 tháng gần nhất đã
@@ -156,8 +161,9 @@ export async function GET() {
       allL365: fixSnap(parseSnapshot(raw['All_L365'] ?? [], false)),
       countryL365: fixSnap(parseSnapshot(raw['Country_L365'] ?? [], true)),
       history: parseHistory(raw['History'] ?? []),
-      historyDaily: parseHistoryDaily(raw['History_Daily'] ?? []),
-      historyDailyCountry: parseHistoryDailyCountry(raw['History_Daily_Country'] ?? []),
+      historyDaily: ga4Daily.length >= 500 ? ga4Daily : parseHistoryDaily(raw['History_Daily'] ?? []),
+      historyDailySource: ga4Daily.length >= 500 ? 'ga4_bq' : 'apps_script',
+      historyDailyCountry: ga4DailyCountry.length >= 500 ? ga4DailyCountry : parseHistoryDailyCountry(raw['History_Daily_Country'] ?? []),
       alertLog: parseAlertLog(raw['AlertLog'] ?? []),
       kwAddedManual: parseKwAddedManual(raw['KW_Added_Manual'] ?? []),
       masterKwLookup,

@@ -84,6 +84,9 @@ async function fetchPayload(): Promise<SheetPayload> {
   const raw = await fetchAllTabs();
   const masterKwLookup = parseMasterKw(raw['Master KW Lookup'] ?? []);
   const langKws = languageOnlyKeywords(masterKwLookup);
+  // GA4 gốc theo ngày (tab GA4_daily_auto*) ưu tiên, như app/api/sheets/route.ts.
+  const ga4Daily = parseHistoryDaily(raw['GA4_daily_auto'] ?? []);
+  const ga4DailyCountry = parseHistoryDailyCountry(raw['GA4_daily_country_auto'] ?? []);
   return {
     actionQueue: parseActionQueue(raw['Action_Queue'] ?? []),
     marketIndex: parseMarketIndex(raw['Market_Index'] ?? []),
@@ -101,8 +104,9 @@ async function fetchPayload(): Promise<SheetPayload> {
     allL365: overrideCategoryExact(overrideToLanguage(parseSnapshot(raw['All_L365'] ?? [], false), langKws)),
     countryL365: overrideCategoryExact(overrideToLanguage(parseSnapshot(raw['Country_L365'] ?? [], true), langKws)),
     history: parseHistory(raw['History'] ?? []),
-    historyDaily: parseHistoryDaily(raw['History_Daily'] ?? []),
-    historyDailyCountry: parseHistoryDailyCountry(raw['History_Daily_Country'] ?? []),
+    historyDaily: ga4Daily.length >= 500 ? ga4Daily : parseHistoryDaily(raw['History_Daily'] ?? []),
+    historyDailySource: ga4Daily.length >= 500 ? 'ga4_bq' : 'apps_script',
+    historyDailyCountry: ga4DailyCountry.length >= 500 ? ga4DailyCountry : parseHistoryDailyCountry(raw['History_Daily_Country'] ?? []),
     // The chat context doesn't reason over per-day spend; skip the second-sheet
     // fetch so the assistant stays fast.
     shopifyDaily: [],

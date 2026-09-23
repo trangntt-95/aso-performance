@@ -590,6 +590,8 @@ export interface SheetPayload {
   countryL365: SnapshotRow[];
   history: HistoryRow[];
   historyDaily: HistoryDailyRow[];
+  /** 'ga4_bq' = tab GA4_daily_auto (GA4 gốc qua BigQuery, đủ mọi term); 'apps_script' = History_Daily cũ. */
+  historyDailySource: 'ga4_bq' | 'apps_script';
   /** Per-day metrics split by country, Tier-1 markets only. Empty until the
    *  Apps Script job has run — every reader must tolerate that. */
   historyDailyCountry: HistoryDailyCountryRow[];

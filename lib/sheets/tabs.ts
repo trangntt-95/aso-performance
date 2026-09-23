@@ -22,6 +22,11 @@ export const TABS = [
   'History',
   'History_Daily',
   'History_Daily_Country',
+  // GA4 gốc theo ngày, kéo về BigQuery mỗi sáng (scripts/net-value/build-ga4-daily.mjs).
+  // Cùng layout History_Daily*; khi có đủ dòng thì thay History_Daily* (Apps Script
+  // mất install của term nhỏ). Trang 23/09/2026.
+  'GA4_daily_auto',
+  'GA4_daily_country_auto',
   'AlertLog',
   'KW_Added_Manual',
   'Master KW Lookup',

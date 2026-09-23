@@ -9,6 +9,8 @@ interface Props {
   helper?: string;
   Icon?: LucideIcon;
   tone?: 'default' | 'warn' | 'danger';
+  /** Chỉ số càng thấp càng tốt (CPI, CPC): tăng tô đỏ, giảm tô xanh. */
+  lowerIsBetter?: boolean;
 }
 
 const toneStyles = {
@@ -17,9 +19,10 @@ const toneStyles = {
   danger: 'border-rose-200 bg-rose-50/30',
 };
 
-export function KpiTile({ label, value, deltaPct, helper, Icon, tone = 'default' }: Props) {
-  const dTone = deltaPct !== undefined && deltaPct !== null ? deltaTone(deltaPct) : null;
-  const Arrow = dTone === 'pos' ? ArrowUp : dTone === 'neg' ? ArrowDown : ArrowRight;
+export function KpiTile({ label, value, deltaPct, helper, Icon, tone = 'default', lowerIsBetter = false }: Props) {
+  const rawTone = deltaPct !== undefined && deltaPct !== null ? deltaTone(deltaPct) : null;
+  const dTone = lowerIsBetter && rawTone === 'pos' ? 'neg' : lowerIsBetter && rawTone === 'neg' ? 'pos' : rawTone;
+  const Arrow = rawTone === 'pos' ? ArrowUp : rawTone === 'neg' ? ArrowDown : ArrowRight;
   const arrowColor =
     dTone === 'pos' ? 'text-emerald-600' : dTone === 'neg' ? 'text-rose-600' : 'text-slate-400';
 

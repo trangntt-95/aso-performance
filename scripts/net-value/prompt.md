@@ -132,3 +132,32 @@ Bước 12 — Xác nhận: chạy Bash
 `curl -s -m 120 https://appstore-performance.vercel.app/api/sheets | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);const q=p.data??p;const b=q.bidCap;console.log('bidCap',b.length,'| có NPI',b.filter(r=>r.netValue!=null&&r.netValue>0).length,'| US Brand B1 NPI',b.find(r=>r.country==='United States'&&r.category==='Brand')?.netValue)})"`
 
 Dòng tóm tắt cuối bổ sung: Max bid cap số dòng active/paused, OK hay lỗi.
+
+Bước 13 — GA4 gốc theo ngày (thay History_Daily của Apps Script). Gọi `mcp__claude_ai_TrueProfit_GA_MCP__ga_report_to_bq` BỐN lần, property_id 348654457, date_ranges [{"start_date": "<hôm qua trừ 110 ngày, YYYY-MM-DD>", "end_date": "<hôm qua YYYY-MM-DD>"}], write_mode "overwrite":
+ a) dimensions ["date","landingPagePlusQueryString"], metrics ["totalUsers","sessions"], dimension_filter {"filter":{"field_name":"landingPagePlusQueryString","string_filter":{"match_type":"CONTAINS","value":"surface_type=search"}}}, dest_table "trueprofit.ga_daily_lp_current"
+ b) dimensions ["date","landingPagePlusQueryString"], metrics ["eventCount"], dimension_filter {"and_group":{"expressions":[{"filter":{"field_name":"eventName","string_filter":{"match_type":"EXACT","value":"shopify_app_install"}}},{"filter":{"field_name":"landingPagePlusQueryString","string_filter":{"match_type":"CONTAINS","value":"surface_type=search"}}}]}}, dest_table "trueprofit.ga_daily_install_current"
+ c) như (a) nhưng dimensions ["date","country","landingPagePlusQueryString"], metrics ["totalUsers"], dest_table "trueprofit.ga_daily_lp_country_current"
+ d) như (b) nhưng dimensions ["date","country","landingPagePlusQueryString"], dest_table "trueprofit.ga_daily_install_country_current"
+Kỳ vọng mỗi lần rows_written > 0.
+
+Bước 14 — Tổng hợp trong BigQuery. Gọi `mcp__claude_ai_TrueProfit_DA__run_query` với max_rows 20000, HAI SQL sau (kết quả lớn, tool ghi ra file .txt; ghi nhớ đường dẫn, KHÔNG đọc vào chat):
+
+SQL daily:
+WITH u AS (SELECT date, landing_page_plus_query_string AS lp, total_users, sessions FROM `trueda.trueprofit.ga_daily_lp_current`),
+i AS (SELECT date, landing_page_plus_query_string AS lp, event_count FROM `trueda.trueprofit.ga_daily_install_current`),
+pu AS (SELECT date, REGEXP_EXTRACT(lp, r'surface_type=([^&]+)') AS surface, REGEXP_EXTRACT(lp, r'surface_detail=([^&]+)') AS kw_raw, SAFE_CAST(REGEXP_EXTRACT(lp, r'surface_inter_position=([^&]+)') AS FLOAT64) AS pos, total_users, sessions FROM u),
+pi AS (SELECT date, REGEXP_EXTRACT(lp, r'surface_type=([^&]+)') AS surface, REGEXP_EXTRACT(lp, r'surface_detail=([^&]+)') AS kw_raw, event_count FROM i),
+ug AS (SELECT date, surface, kw_raw, SUM(total_users) AS users, SUM(sessions) AS sessions, SAFE_DIVIDE(SUM(IF(pos IS NOT NULL, pos * total_users, 0)), SUM(IF(pos IS NOT NULL, total_users, 0))) AS pos FROM pu WHERE surface IN ('search','search_ad') AND kw_raw IS NOT NULL GROUP BY 1,2,3),
+ig AS (SELECT date, surface, kw_raw, SUM(event_count) AS installs FROM pi WHERE surface IN ('search','search_ad') AND kw_raw IS NOT NULL GROUP BY 1,2,3)
+SELECT COALESCE(ug.date, ig.date) AS date, COALESCE(ug.surface, ig.surface) AS surface, COALESCE(ug.kw_raw, ig.kw_raw) AS kw_raw, IFNULL(ug.users, 0) AS users, IFNULL(ug.sessions, 0) AS sessions, ug.pos, IFNULL(ig.installs, 0) AS installs
+FROM ug FULL OUTER JOIN ig ON ug.date = ig.date AND ug.surface = ig.surface AND ug.kw_raw = ig.kw_raw ORDER BY date, surface, kw_raw
+
+SQL country: y hệt nhưng đọc `ga_daily_lp_country_current` / `ga_daily_install_country_current`, thêm cột `country` vào mọi SELECT/GROUP BY/JOIN (không có sessions).
+
+Bước 15 — Dựng và đẩy: copy hai file kết quả vào `.net-value-run/ga4-daily.json` và `.net-value-run/ga4-daily-country.json` (Bash `cp`), rồi
+`node scripts/net-value/build-ga4-daily.mjs .net-value-run/ga4-daily.json .net-value-run/ga4-daily-country.json .net-value-run 100`
+Kỳ vọng rows >= 1500. Rồi `node scripts/net-value/push-ga4-daily.mjs .net-value-run/ga4-daily-body.json .net-value-run/ga4-daily-country-body.json` → hai dòng `200 {"ok":true,...}`.
+
+Bước 16 — Xác nhận: chạy Bash
+`curl -s -m 120 https://appstore-performance.vercel.app/api/sheets | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);const q=p.data??p;console.log('historyDailySource',q.historyDailySource,'| rows',q.historyDaily.length)})"`
+Kỳ vọng historyDailySource = ga4_bq. Dòng tóm tắt cuối bổ sung: GA4 daily số dòng, OK hay lỗi.
