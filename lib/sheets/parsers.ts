@@ -1244,17 +1244,21 @@ export function parseCampLinks(rows: string[][]): CampLinkRow[] {
     }
   }
   if (headerIdx < 0) return [];
+  // Cột "Tên cũ (alias)" — tìm theo header vì tab cũ không có; nhiều tên cách nhau " | ".
+  const aliasCol = rows[headerIdx].findIndex((h) => /^tên cũ|alias/i.test(str(h).trim()));
   return rows
     .slice(headerIdx + 1)
     .map((row): CampLinkRow | null => {
       const camp = str(row?.[1]).trim();
       if (!camp) return null;
+      const aliases = aliasCol >= 0 ? str(row[aliasCol]).split('|').map((x) => x.trim()).filter((x) => x && x !== camp) : [];
       return {
         category: str(row[0]).trim(),
         camp,
         campaignId: str(row[2]).trim(),
         url: str(row[3]).trim(),
         geoRaw: str(row[4]).trim(),
+        ...(aliases.length ? { aliases } : {}),
       };
     })
     .filter((r): r is CampLinkRow => r !== null);

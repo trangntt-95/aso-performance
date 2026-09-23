@@ -1,5 +1,5 @@
 import type { CampLinkRow } from './types';
-import { normalizeCampName, buildCampNameResolver } from './campName';
+import { normalizeCampName, buildCampLinkResolver } from './campName';
 
 /**
  * Camp name → its Shopify Ads URL, tolerant of the performance tags Trang adds
@@ -28,7 +28,7 @@ export function buildCampUrlIndex(campLinks: CampLinkRow[]): CampUrlIndex {
     const id = (c.campaignId ?? '').trim();
     if (id && c.url && !byId.has(id)) byId.set(id, c.url);
   }
-  const resolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+  const resolver = buildCampLinkResolver(campLinks);
   return {
     size: byName.size,
     getById(campaignId) {

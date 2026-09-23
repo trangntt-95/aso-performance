@@ -13,7 +13,8 @@
 //   - Dòng thiếu ID → tìm camp Shopify cùng tên (bỏ tag) → điền ID + URL.
 //   - Camp Shopify (active/paused) chưa có dòng → thêm dòng mới, Category suy từ tên.
 //   - Dòng trỏ camp đã archive → giữ, ghi chú "archived" (không xoá dữ liệu của Trang).
-//   - Cột ghi chú F–H của Trang giữ nguyên; cột H ghi ngày cập nhật.
+//   - Cột ghi chú F–H của Trang giữ nguyên; cột I "Tên cũ (alias)" gom mọi tên cũ của
+//     cùng ID (cách nhau " | ") để export/Master/note mang tên cũ vẫn quy về camp; cột J ngày cập nhật.
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const [backupFile, geoFile, outFile] = process.argv.slice(2);
@@ -85,7 +86,8 @@ const seenIds = new Set();
 const stats = { kept: 0, renamed: 0, idFilled: 0, geoFilled: 0, archived: 0, added: 0, unmatched: 0 };
 const log = [];
 for (const r of data) {
-  const row = Array.from({ length: 8 }, (_, i) => (r[i] === undefined || r[i] === null ? '' : String(r[i])));
+  const row = Array.from({ length: 10 }, (_, i) => (r[i] === undefined || r[i] === null ? '' : String(r[i])));
+  const aliases = new Set(row[8].split('|').map((x) => x.trim()).filter(Boolean));
   let id = row[2].trim();
   let c = id ? shop.get(id) : undefined;
   if (!id) {
@@ -94,24 +96,26 @@ for (const r of data) {
   }
   if (id) seenIds.add(id);
   if (c && c.status !== 'archived') {
-    if (loose(c.name) !== loose(row[1])) { log.push(`đổi tên: "${row[1]}" → "${c.name}"`); row[1] = c.name; stats.renamed++; }
+    if (loose(c.name) !== loose(row[1])) { log.push(`đổi tên: "${row[1]}" → "${c.name}"`); aliases.add(row[1].trim()); row[1] = c.name; stats.renamed++; }
     const g = geoCell(c);
     if (g && g !== row[4].trim()) { row[4] = g; stats.geoFilled++; }
     if (!row[3].trim()) row[3] = url(id);
-    row[7] = today;
+    row[9] = today;
     stats.kept++;
   } else if (c && c.status === 'archived') {
-    row[5] = row[5].trim() ? row[5] : 'archived trên Shopify'; row[7] = today; stats.archived++;
+    row[5] = row[5].trim() ? row[5] : 'archived trên Shopify'; row[9] = today; stats.archived++;
   } else if (id) {
     row[5] = row[5].trim() ? row[5] : 'ID không còn trên Shopify (archived?)'; stats.unmatched++; log.push(`không thấy ID ${id}: ${row[1]}`);
   } else {
     stats.unmatched++; log.push(`không khớp camp nào: ${row[1]}`);
   }
+  aliases.delete(row[1].trim());
+  row[8] = Array.from(aliases).join(' | ');
   out.push(row);
 }
 for (const c of shop.values()) {
   if (c.status === 'archived' || seenIds.has(c.id)) continue;
-  out.push([categoryOf(c.name), c.name, c.id, url(c.id), geoCell(c), `thêm ${today} từ Shopify Ads (${c.status})`, '', today]);
+  out.push([categoryOf(c.name), c.name, c.id, url(c.id), geoCell(c), `thêm ${today} từ Shopify Ads (${c.status})`, '', '', '', today]);
   stats.added++;
   log.push(`thêm: ${c.id} ${c.status} ${c.name}`);
 }

@@ -1,7 +1,7 @@
 import type { BidCapRow, CampLinkRow, MasterKwRow, ShopifyCampRow } from '@/lib/sheets/types';
 import { buildCampGeoIndex, isNeverTargeted, type CampGeo } from '@/lib/sheets/campGeo';
 import { aggregateBidCapCells, bidCapCellsByCategory } from '@/lib/market/bidCapAgg';
-import { normalizeCampName, buildCampNameResolver } from '@/lib/sheets/campName';
+import { normalizeCampName, buildCampNameResolver, buildCampLinkResolver } from '@/lib/sheets/campName';
 import { sumCountryNetValue, type NetValueAgg } from '@/lib/market/keywordNetValue';
 
 // Detect OVERBID campaigns: paid camps (from Shopify_daily) whose effective
@@ -169,7 +169,7 @@ export function buildCampBenchmark(
   bidCap: BidCapRow[],
   campLinks: CampLinkRow[],
 ): (camp: string) => CampBenchmark {
-  const linkResolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+  const linkResolver = buildCampLinkResolver(campLinks);
 
   // Bid-cap cells grouped by category, ONE entry per country: cluster rows are
   // collapsed first so a country counts once no matter how many clusters it has.
@@ -299,7 +299,7 @@ export function assessCamps(
   const pausedResolver = buildCampNameResolver(pausedCamps.map((p) => p.camp));
   // Maps an annotated Shopify_daily name onto its Camp_Links base name so notes
   // like "(CPI 107) - cân nhắc off" or "- good CPI 7" don't lose the URL/geo.
-  const linkResolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+  const linkResolver = buildCampLinkResolver(campLinks);
 
   // The resolver above only folds a LONGER spend label onto a SHORTER paused
   // name. The reverse happens just as often: Paused_camp holds the annotated

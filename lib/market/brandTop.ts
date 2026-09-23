@@ -6,7 +6,7 @@ import type {
   ShopifyDailyRow,
 } from '@/lib/sheets/types';
 import { buildCampGeoIndex, type CampGeo } from '@/lib/sheets/campGeo';
-import { buildCampNameResolver, normalizeCampName } from '@/lib/sheets/campName';
+import { buildCampNameResolver, buildCampLinkResolver, normalizeCampName } from '@/lib/sheets/campName';
 import { canonicalCategoriesFor } from '@/lib/market/categoryTaxonomy';
 import { aggregateBidCapCells, bidCapCellsByCategory } from '@/lib/market/bidCapAgg';
 
@@ -125,7 +125,7 @@ export function findBrandTopCamps(
   anchor.setUTCDate(anchor.getUTCDate() - (days - 1));
   const from = anchor.toISOString().slice(0, 10);
 
-  const linkResolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+  const linkResolver = buildCampLinkResolver(campLinks);
   const pausedResolver = buildCampNameResolver(pausedCamps.map((p) => p.camp));
   const masterResolver = buildCampNameResolver(master.map((m) => m.camp));
   const linkByKey = new Map<string, CampLinkRow>();

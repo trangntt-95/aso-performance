@@ -1,6 +1,6 @@
 import type { SheetPayload, KeywordRow, MasterKwRow } from '@/lib/sheets/types';
 import { normKw } from '@/lib/sheets/kwNorm';
-import { buildCampNameResolver, normalizeCampName } from '@/lib/sheets/campName';
+import { buildCampLinkResolver, normalizeCampName } from '@/lib/sheets/campName';
 import { buildCampUrlIndex } from '@/lib/sheets/campUrl';
 
 // Where each paid install actually came from: which keyword, in which country,
@@ -169,7 +169,7 @@ export function buildKeywordCampIndex(data: SheetPayload | null | undefined): Ke
   );
   const negatives = new Set((data?.negativeKw ?? []).map(normKw).filter(Boolean));
   const campUrl = buildCampUrlIndex(data?.campLinks ?? []);
-  const resolver = buildCampNameResolver((data?.campLinks ?? []).map((c) => c.camp));
+  const resolver = buildCampLinkResolver(data?.campLinks ?? []);
   const cache = new Map<string, KeywordCamps>();
 
   return {

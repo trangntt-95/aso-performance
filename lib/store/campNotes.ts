@@ -1,6 +1,6 @@
 'use client';
 
-import { buildCampNameResolver, normalizeCampName } from '@/lib/sheets/campName';
+import { buildCampLinkResolver, normalizeCampName } from '@/lib/sheets/campName';
 import { buildCampGrouper } from '@/lib/sheets/campGroup';
 import { noteKeyOf } from '@/lib/store/notesStore';
 import { KEYWORD_PIN_SCOPE, readKeywordNote } from '@/lib/store/keywordNotes';
@@ -188,8 +188,8 @@ export function buildCampNoteResolver(
    */
   observedNames: Iterable<string> = [],
 ): CampNoteResolver {
-  const resolver = buildCampNameResolver(campLinks.map((c) => c.camp));
-  const grouper = buildCampGrouper(observedNames, campLinks.map((c) => c.camp));
+  const resolver = buildCampLinkResolver(campLinks);
+  const grouper = buildCampGrouper(observedNames, campLinks);
   const linkByKey = new Map<string, CampLinkRow>();
   for (const c of campLinks) {
     const k = normalizeCampName(c.camp).toLowerCase();

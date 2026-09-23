@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const TAB = 'Camp_Links';
-const HEADER = ['Category', 'Camp Name (chuẩn — từ keyword bidding)', 'Campaign ID', 'URL', 'Geo', 'Ghi chú', '', 'Cập nhật'];
+const HEADER = ['Category', 'Camp Name (chuẩn — từ keyword bidding)', 'Campaign ID', 'URL', 'Geo', 'Ghi chú', '', '', 'Tên cũ (alias)', 'Cập nhật'];
 
 interface UploadBody { title: string; rows: (string | number)[][] }
 
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     if (!(meta.data.sheets ?? []).some((s) => s.properties?.title === TAB)) {
       return NextResponse.json({ error: `không thấy tab '${TAB}'` }, { status: 404 });
     }
-    await sheets.spreadsheets.values.clear({ spreadsheetId, range: `'${TAB}'!A:H` });
+    await sheets.spreadsheets.values.clear({ spreadsheetId, range: `'${TAB}'!A:J` });
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `'${TAB}'!A1`,

@@ -73,7 +73,7 @@ export interface CampDailyIndex {
 
 export function buildCampDailyIndex(
   rows: ShopifyDailyRow[],
-  canonicalNames: string[] = [],
+  canonicalNames: Array<string | { camp: string; aliases?: string[] }> = [],
 ): CampDailyIndex {
   // Group first, then bucket. Storing by raw/normalised name would split a
   // campaign's history across its labels — "X" and "X - test till Sep" would

@@ -96,7 +96,8 @@ export interface CampHealthOptions {
   minSpend?: number;
   /** Camp_Links names, fed to the grouper so an annotated label can resolve to
    *  its clean base name even when that base never appears in the spend data. */
-  canonicalNames?: string[];
+  /** Camp_Links — truyền thẳng CampLinkRow để gộp cả tên cũ (alias). */
+  canonicalNames?: Array<string | { camp: string; aliases?: string[] }>;
   /** Camp names from the Paused_camp tab. The ONLY reliable proof a campaign was
    *  switched off — absence of spend is not, since a camp can simply have been
    *  renamed or run out of budget. */

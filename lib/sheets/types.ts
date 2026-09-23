@@ -535,6 +535,9 @@ export interface CampLinkRow {
   url: string;
   /** Raw Geo cell — mixed VN/EN country names, "-IN, PK" exclusions, "All countries/regions". */
   geoRaw: string;
+  /** Tên cũ của cùng campaign (cột "Tên cũ (alias)", 23/09/2026): Trang đổi đuôi
+   *  tên trên Shopify, export/Master/note cũ còn mang tên cũ → vẫn quy về dòng này. */
+  aliases?: string[];
 }
 
 export interface AlertLogRow {

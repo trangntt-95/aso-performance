@@ -178,3 +178,35 @@ export function buildCampNameResolver(canonical: readonly string[]): CampNameRes
     },
   };
 }
+
+/**
+ * Resolver dựng từ Camp_Links, biết cả TÊN CŨ (cột alias). Trang đổi đuôi tên
+ * camp trên Shopify ("… - Excl Phil, US, Austria" → "… - TIer 2+") nhưng camp
+ * vẫn là camp đó (cùng URL / Campaign ID); export Shopify_daily, Master dán tay
+ * và note cũ còn mang tên cũ. Mọi tên cũ đều quy về tên hiện tại của dòng
+ * Camp_Links, nên URL, Geo, category, note, lịch sử spend gộp về một camp.
+ * Trang 23/09/2026: "khớp link URL gộp campaign lại, nhiều khi thay đổi tên
+ * phần đuôi thôi, camp vẫn là nó".
+ */
+export function buildCampLinkResolver(campLinks: readonly { camp: string; aliases?: string[] }[]): CampNameResolver {
+  const names: string[] = [];
+  const canonicalOfAlias = new Map<string, string>(); // looseCampKey(alias) → tên hiện tại
+  for (const c of campLinks) {
+    if (!c.camp) continue;
+    names.push(c.camp);
+    for (const a of c.aliases ?? []) {
+      if (!a) continue;
+      names.push(a);
+      const k = looseCampKey(normalizeCampName(a));
+      if (!canonicalOfAlias.has(k)) canonicalOfAlias.set(k, normalizeCampName(c.camp));
+    }
+  }
+  const inner = buildCampNameResolver(names);
+  return {
+    resolve(name) {
+      const hit = inner.resolve(name);
+      if (hit === null) return null;
+      return canonicalOfAlias.get(looseCampKey(hit)) ?? hit;
+    },
+  };
+}

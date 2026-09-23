@@ -183,7 +183,7 @@ export function CampHealthView() {
       analyseCampHealth(data?.shopifyDaily ?? [], {
         windowDays,
         capOf: (camp) => benchmarkOf(camp).targetCpi,
-        canonicalNames: (data?.campLinks ?? []).map((c) => c.camp),
+        canonicalNames: data?.campLinks ?? [],
         pausedCamps: (data?.pausedKw ?? []).map((r) => r.camp),
         // Fallback when the export has no date column: campaign totals still
         // answer the period-free questions.

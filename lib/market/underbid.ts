@@ -8,7 +8,7 @@ import type {
 } from '@/lib/sheets/types';
 import { buildPaidStatusIndex, resolvePaidStatus } from '@/lib/sheets/paidStatus';
 import { normKw } from '@/lib/sheets/kwNorm';
-import { normalizeCampName, buildCampNameResolver } from '@/lib/sheets/campName';
+import { normalizeCampName, buildCampNameResolver, buildCampLinkResolver } from '@/lib/sheets/campName';
 
 // Camp identity key: strip trailing "(CPI …)" performance tags THEN lowercase +
 // collapse whitespace. Master KW Lookup annotates camp names ("Beprofit (CPI 17)")
@@ -126,7 +126,7 @@ export function findUnderbidKeywords(
   // Master camp names carry notes ("(CPI 107) - cân nhắc off", "- good CPI 7")
   // that the plain key can't strip, so resolve them onto the real Camp_Links /
   // Paused_camp base names before looking up the URL / paused state.
-  const linkResolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+  const linkResolver = buildCampLinkResolver(campLinks);
   // Camps present in the Paused_camp tab are no longer running. A stale annotated
   // Master row of a paused camp can escape buildPaidStatusIndex's exact-name pause
   // filter, so we re-check camp-by-camp here against the paused base names.

@@ -1,6 +1,6 @@
 import type { CampLinkRow, MasterKwRow } from '@/lib/sheets/types';
 import { buildCampGeoIndex, findCountriesInText, isNeverTargeted, normCountryToken, parseCampGeo, type CampGeo } from '@/lib/sheets/campGeo';
-import { buildCampNameResolver, looseCampKey, normalizeCampName } from '@/lib/sheets/campName';
+import { buildCampLinkResolver, looseCampKey, normalizeCampName } from '@/lib/sheets/campName';
 
 // Camp này chạy ở nước nào — để cột "Camp đang bid" ở Vị trí keyword xếp camp
 // đúng nước lên trước và làm mờ camp không phủ.
@@ -89,7 +89,7 @@ export function targetFromName(camp: string): CampTarget {
 }
 
 export function buildCampTargetResolver(campLinks: readonly CampLinkRow[]): (camp: string, campaignId?: string) => CampTarget {
-  const resolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+  const resolver = buildCampLinkResolver(campLinks);
   const geoByKey = new Map<string, CampGeo>();
   buildCampGeoIndex(campLinks as CampLinkRow[]).forEach((g, name) => {
     const k = normalizeCampName(name).toLowerCase();
@@ -167,7 +167,7 @@ export function buildGeoCampsMissingInMaster(
 ): ((country: string) => GeoCampSuggestion[]) & { all: GeoCampSuggestion[] } {
   const key = (n: string) => looseCampKey(normalizeCampName(n));
   const paused = new Set(pausedKw.map((p) => key(p.camp)));
-  const resolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+  const resolver = buildCampLinkResolver(campLinks);
   const inMaster = new Set<string>();
   const inMasterId = new Set<string>();
   for (const m of master) {

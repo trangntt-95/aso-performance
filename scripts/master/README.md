@@ -40,3 +40,8 @@ Trang: "lấy sheet camp_URL làm chuẩn; tên không khớp thì rà URL xem k
    giữ cột ghi chú F–H.
 4. `node scripts/master/push-camp-links.mjs <body.json>` → `/api/camp-links/upload`.
 Dashboard nối camp theo Campaign ID khi Master có cột ID (parseMasterKw, installOrigin, campUrl.getById, campCountries).
+Cột I "Tên cũ (alias)": mỗi lần đổi tên theo ID, tên cũ được gom vào đây (cách nhau " | ").
+`buildCampLinkResolver` (lib/sheets/campName.ts) đọc alias nên export Shopify_daily, Master dán tay, note cũ
+mang tên cũ vẫn quy về đúng camp — cùng URL là cùng camp, đổi đuôi tên không tách lịch sử.
+Camp archived (289) KHÔNG thêm vào Camp_Links: Camp Health coi mọi dòng Camp_Links là camp đang có,
+thêm vào sẽ hiện 289 camp "paused". Export cũ của camp archived vì thế vẫn không có URL (24 tên).

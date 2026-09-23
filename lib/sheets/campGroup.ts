@@ -1,4 +1,4 @@
-import { normalizeCampName, buildCampNameResolver } from './campName';
+import { normalizeCampName, buildCampNameResolver, buildCampLinkResolver } from './campName';
 
 /**
  * Collapse the many labels one campaign appears under into a single identity.
@@ -37,12 +37,15 @@ export interface CampGrouper {
 
 export function buildCampGrouper(
   names: Iterable<string>,
-  /** Camp_Links camp names — the authority on what a real campaign is. */
-  canonicalNames: Iterable<string> = [],
+  /** Camp_Links camp names — the authority on what a real campaign is. Có thể
+   *  truyền thẳng CampLinkRow để dùng cả tên cũ (alias) — cùng URL là cùng camp. */
+  canonicalNames: Iterable<string | { camp: string; aliases?: string[] }> = [],
 ): CampGrouper {
   const all = Array.from(names).filter(Boolean);
-  const authoritative = Array.from(canonicalNames).filter(Boolean);
-  const byLinks = buildCampNameResolver(authoritative);
+  const authoritative = Array.from(canonicalNames)
+    .map((c) => (typeof c === 'string' ? { camp: c } : c))
+    .filter((c) => !!c.camp);
+  const byLinks = buildCampLinkResolver(authoritative);
 
   // Pass 1 — fold each label onto its Camp_Links campaign.
   const resolved = new Map<string, string>(); // raw label → key

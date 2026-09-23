@@ -1,7 +1,7 @@
 import type { BidCapRow, CampLinkRow, MasterKwRow, SheetPayload } from '@/lib/sheets/types';
 import { aggregateBidCapCells, bidCapCellsByCategory, getBidCapCell, type BidCapCell } from '@/lib/market/bidCapAgg';
 import { buildCampGeoIndex, isNeverTargeted, type CampGeo } from '@/lib/sheets/campGeo';
-import { buildCampNameResolver, normalizeCampName } from '@/lib/sheets/campName';
+import { buildCampLinkResolver, normalizeCampName } from '@/lib/sheets/campName';
 import { BID_SAFETY, buildKeywordCountryNetValue } from '@/lib/market/keywordNetValue';
 import { normKw } from '@/lib/sheets/kwNorm';
 
@@ -135,7 +135,7 @@ export function buildUnderbidCeilingIndex(
     const cur = geo.get(k);
     if (!cur || (cur.mode === 'unknown' && g.mode !== 'unknown')) geo.set(k, g);
   });
-  const resolver = buildCampNameResolver(campLinks.map((c) => c.camp));
+  const resolver = buildCampLinkResolver(campLinks);
   const geoOf = (camp: string): CampGeo | undefined => {
     const base = resolver.resolve(camp) ?? camp;
     return geo.get(normalizeCampName(base).toLowerCase());

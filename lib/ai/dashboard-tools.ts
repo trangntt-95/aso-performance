@@ -413,7 +413,7 @@ export function makeDashboardTools(data: SheetPayload) {
       execute: async ({ days, bucket, limit }) => {
         const health = analyseCampHealth(data.shopifyDaily ?? [], {
           windowDays: days,
-          canonicalNames: (data.campLinks ?? []).map((c) => c.camp),
+          canonicalNames: data.campLinks ?? [],
           pausedCamps: (data.pausedKw ?? []).map((r) => r.camp),
         });
         const rows = bucket === 'all' ? health.rows : health.rows.filter((r) => r.bucket === bucket);
