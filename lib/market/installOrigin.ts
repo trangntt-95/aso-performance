@@ -1,6 +1,6 @@
 import type { SheetPayload, KeywordRow, MasterKwRow } from '@/lib/sheets/types';
 import { normKw } from '@/lib/sheets/kwNorm';
-import { normalizeCampName } from '@/lib/sheets/campName';
+import { buildCampNameResolver, normalizeCampName } from '@/lib/sheets/campName';
 import { buildCampUrlIndex } from '@/lib/sheets/campUrl';
 
 // Where each paid install actually came from: which keyword, in which country,
@@ -167,6 +167,7 @@ export function buildKeywordCampIndex(data: SheetPayload | null | undefined): Ke
   );
   const negatives = new Set((data?.negativeKw ?? []).map(normKw).filter(Boolean));
   const campUrl = buildCampUrlIndex(data?.campLinks ?? []);
+  const resolver = buildCampNameResolver((data?.campLinks ?? []).map((c) => c.camp));
   const cache = new Map<string, KeywordCamps>();
 
   return {
@@ -176,20 +177,30 @@ export function buildKeywordCampIndex(data: SheetPayload | null | undefined): Ke
       const hit = cache.get(key);
       if (hit) return hit;
       const hits = byKeyword.get(key) ?? [];
-      const seen = new Set<string>();
+      // Một campaign có thể xuất hiện dưới nhiều tên trong Master (Trang đổi
+      // tag: "Spanish 5 (CPI 49 - hạ bid)" và "Spanish 5 (ra install IN)" cùng
+      // là camp 62101) → gộp theo tên gốc Camp_Links, giữ bid cao nhất, hiện tên
+      // gốc để khớp URL/Geo. Danh tính thật là Campaign ID; Master mới (từ
+      // Shopify Ads) có cột ID nên tên trùng sẽ hết, đây là lưới cho bản cũ.
+      const seen = new Map<string, OriginCamp>();
       const live: OriginCamp[] = [];
       const paused: OriginCamp[] = [];
       for (const h of hits) {
-        const camp = h.camp?.trim();
-        if (!camp || seen.has(camp)) continue;
-        seen.add(camp);
-        const isPaused = pausedNames.has(normalizeCampName(camp).toLowerCase());
-        (isPaused ? paused : live).push({
-          camp,
-          bidMax: numOrNull(h.bidMax),
-          url: campUrl.get(camp),
-          paused: isPaused,
-        });
+        const raw = h.camp?.trim();
+        if (!raw) continue;
+        const base = resolver.resolve(raw);
+        const identity = (base ?? normalizeCampName(raw)).toLowerCase();
+        const bid = numOrNull(h.bidMax);
+        const prev = seen.get(identity);
+        if (prev) {
+          if (bid !== null && (prev.bidMax === null || bid > prev.bidMax)) prev.bidMax = bid;
+          continue;
+        }
+        const camp = base ?? raw;
+        const isPaused = pausedNames.has(normalizeCampName(raw).toLowerCase()) || pausedNames.has(normalizeCampName(camp).toLowerCase());
+        const entry: OriginCamp = { camp, bidMax: bid, url: campUrl.get(camp) ?? campUrl.get(raw), paused: isPaused };
+        seen.set(identity, entry);
+        (isPaused ? paused : live).push(entry);
       }
       live.sort((a, b) => (b.bidMax ?? 0) - (a.bidMax ?? 0));
       const bids = live.map((c) => c.bidMax).filter((b): b is number => b !== null);
