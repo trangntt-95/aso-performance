@@ -1276,8 +1276,7 @@ export function parseNegativeKw(rows: string[][]): string[] {
   // Một ô có thể chứa cả khối keyword dán từ Paid Coverage, mỗi dòng một từ
   // (23/09/2026: 2 ô như vậy giấu 395 keyword → dashboard không nhận là negative).
   return rows
-    .flatMap((row) => str(row?.[1]).split(/?
-/))
+    .flatMap((row) => str(row?.[1]).split(/\r?\n/))
     .map((kw) => kw.trim())
     .filter((kw) => kw.length > 0);
 }
