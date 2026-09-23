@@ -131,7 +131,8 @@ export function CampHealthView() {
   const { data, isLoading, error } = useSheetData();
   const [search, setSearch] = useState('');
   const [bucketFilter, setBucketFilter] = useState<HealthBucket | 'all' | 'problems'>('problems');
-  const [linkFilter, setLinkFilter] = useState<'all' | 'no-url' | 'legacy'>('all');
+  // Mặc định chỉ camp có URL trong Camp_Links (Trang 23/09/2026); camp chưa có URL xem qua bộ lọc.
+  const [linkFilter, setLinkFilter] = useState<'has-url' | 'all' | 'no-url' | 'legacy'>('has-url');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('atRisk');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -285,6 +286,7 @@ export function CampHealthView() {
       if (bucketFilter !== 'all' && bucketFilter !== 'problems' && r.bucket !== bucketFilter) return false;
       if (linkFilter === 'legacy' ? !isLegacy(r) : isLegacy(r)) return false;
       if (linkFilter === 'no-url' && campUrl.get(r.camp)) return false;
+      if (linkFilter === 'has-url' && !campUrl.get(r.camp)) return false;
       if (categoryFilter !== 'all' && categoryByCamp.get(r.camp) !== categoryFilter) return false;
       if (q && !r.camp.toLowerCase().includes(q)) return false;
       return true;
@@ -516,10 +518,11 @@ export function CampHealthView() {
           </select>
           <select
             value={linkFilter}
-            onChange={(e) => setLinkFilter(e.target.value as 'all' | 'no-url' | 'legacy')}
+            onChange={(e) => setLinkFilter(e.target.value as 'has-url' | 'all' | 'no-url' | 'legacy')}
             className="h-7 rounded border border-slate-200 bg-white px-2 text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             title="Chưa có URL = đang tiêu tiền nhưng Camp_Links chưa có dòng (camp mới, cần thêm). Camp cũ = không có trong Camp_Links kể cả tên cũ và $0 kỳ này → đã tắt/archive, ẩn khỏi mọi danh sách."
           >
+            <option value="has-url">Camp có URL trong Camp_Links</option>
             <option value="all">Mọi camp</option>
             <option value="no-url">Chưa có URL, đang tiêu ({noUrlCount})</option>
             <option value="legacy">Camp cũ, không còn trên Camp_Links ({legacyCount})</option>
