@@ -1273,8 +1273,12 @@ export function parseCampLinks(rows: string[][]): CampLinkRow[] {
 
 export function parseNegativeKw(rows: string[][]): string[] {
   if (!rows || rows.length === 0) return [];
+  // Một ô có thể chứa cả khối keyword dán từ Paid Coverage, mỗi dòng một từ
+  // (23/09/2026: 2 ô như vậy giấu 395 keyword → dashboard không nhận là negative).
   return rows
-    .map((row) => str(row?.[1]).trim())
+    .flatMap((row) => str(row?.[1]).split(/?
+/))
+    .map((kw) => kw.trim())
     .filter((kw) => kw.length > 0);
 }
 
