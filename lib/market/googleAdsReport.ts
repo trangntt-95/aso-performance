@@ -11,11 +11,27 @@ import type {
 // look several times cheaper than the app-store side. So installs are counted
 // separately, from the conversion ACTIONS that actually represent an install.
 
-/** Conversion actions that mean an app was installed, not a page was seen. */
-const INSTALL_ACTION_PATTERNS = [/app_install/i, /shopify_app_install/i];
+/**
+ * Conversion action that means an app was installed, not a page was seen.
+ *
+ * Only ONE action counts. The account has three install-type actions that all
+ * describe the same install: "Shopify Store - GA4 (web) shopify_app_install"
+ * (the GA4 install event every other tab of this dashboard uses), "Inapp - GA4
+ * (web) app_install_attributed" and "Inapp (Upload) app_install_attributed (1)"
+ * (the same install re-attributed from inside the app / an offline upload).
+ * Until 23/09/2026 all three were summed: L90 read 152.9 installs against 84.9
+ * real ones — Trang: "số click thì đúng, nhưng installs sai (bị dư)".
+ */
+const INSTALL_ACTION_PATTERNS = [/shopify_app_install/i];
+/** Same install measured again — shown in the breakdown, never counted. */
+const DUPLICATE_INSTALL_PATTERNS = [/app_install_attributed/i];
 
 export function isInstallAction(actionName: string): boolean {
   return INSTALL_ACTION_PATTERNS.some((re) => re.test(actionName));
+}
+
+export function isDuplicateInstallAction(actionName: string): boolean {
+  return !isInstallAction(actionName) && DUPLICATE_INSTALL_PATTERNS.some((re) => re.test(actionName));
 }
 
 /**
@@ -151,6 +167,8 @@ export interface ConvActionRow {
   category: string;
   conversions: number;
   isInstall: boolean;
+  /** Same install re-measured by another action (app_install_attributed) — not counted. */
+  isDuplicateInstall: boolean;
 }
 
 export interface GoogleAdsReport {
@@ -391,6 +409,7 @@ export function buildGoogleAdsReport(p: GoogleAdsPayload): GoogleAdsReport | nul
       category: a.actionCat,
       conversions: 0,
       isInstall: isInstallAction(a.actionName),
+      isDuplicateInstall: isDuplicateInstallAction(a.actionName),
     };
     e.conversions += a.conversions;
     byAction.set(a.actionName, e);

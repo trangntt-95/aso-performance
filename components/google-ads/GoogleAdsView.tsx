@@ -222,7 +222,8 @@ export function GoogleAdsView() {
         <div className="mt-1 text-[11px] text-slate-600">
           Google đếm <b>{t.conversions.toFixed(1)}</b> conversions, nhưng phần lớn là <b>lượt xem trang</b>. Chỉ{' '}
           <b>{t.installs.toFixed(1)}</b> ({installShare === null ? '—' : formatPercent(installShare)}) là install thật.
-          Mọi chỉ số CPI trên trang này dùng con số install, không dùng tổng conversions — nếu dùng tổng thì kênh này sẽ
+          Ba hành động install (shopify_app_install, app_install_attributed trong app và upload) là cùng một install đo ba
+          lần, chỉ đếm <b>shopify_app_install</b>. Mọi chỉ số CPI trên trang này dùng con số install, không dùng tổng conversions — nếu dùng tổng thì kênh này sẽ
           trông rẻ hơn thực tế nhiều lần.
         </div>
         <div className="mt-2 space-y-0.5">
@@ -234,10 +235,11 @@ export function GoogleAdsView() {
               <span
                 className={cn(
                   'shrink-0 rounded px-1 text-[9px] font-medium',
-                  a.isInstall ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500',
+                  a.isInstall ? 'bg-emerald-100 text-emerald-800' : a.isDuplicateInstall ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500',
                 )}
+                title={a.isDuplicateInstall ? 'Cùng một install với shopify_app_install, đo lại trong app / upload — không cộng vào Install' : undefined}
               >
-                {a.isInstall ? 'install' : a.category.toLowerCase()}
+                {a.isInstall ? 'install' : a.isDuplicateInstall ? 'install trùng' : a.category.toLowerCase()}
               </span>
               <span className="truncate text-slate-600">{a.action}</span>
             </div>

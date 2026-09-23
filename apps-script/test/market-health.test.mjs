@@ -62,11 +62,13 @@ console.log('\nbuildInstallPacing');
   const conv = [
     ca('2026-09-10', 'Shopify Store - GA4 (web) shopify_app_install', 3),
     ca('2026-09-11', 'Shopify Store - GA4 (web) click_get_app', 50), // không phải install
-    ca('2026-09-03', 'app_install', 2), // kỳ trước
+    ca('2026-09-03', 'Shopify Store - GA4 (web) shopify_app_install', 2), // kỳ trước
+    ca('2026-09-10', 'Inapp - GA4 (web) app_install_attributed', 3), // cùng install đo lại → không đếm
+    ca('2026-09-03', 'Inapp (Upload) app_install_attributed (1)', 2), // cùng install đo lại → không đếm
   ];
   const p = buildInstallPacing(shop, conv, 7);
   eq('kỳ theo ngày cuối export Shopify', [p.from, p.to], ['2026-09-08', '2026-09-14']);
-  eq('Shopify 14 + Google 3, click_get_app không tính', [p.shopifyInstalls, p.googleInstalls, p.installs], [14, 3, 17]);
+  eq('Shopify 14 + Google 3; click_get_app và app_install_attributed không tính', [p.shopifyInstalls, p.googleInstalls, p.installs], [14, 3, 17]);
   eq('kỳ trước = 7 Shopify + 2 Google', p.prevInstalls, 9);
   const sept = ADS_MONTHLY_TARGETS['2026-09'];
   near('target 7 ngày = target tháng 9 ÷ 30 × 7', p.target, (sept / 30) * 7);
