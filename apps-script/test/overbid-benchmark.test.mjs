@@ -47,9 +47,12 @@ const LINKS = [
 console.log('Luật 0 install đã rời khỏi Overbid');
 {
   // Từng là ca kinh điển: $45, 3 click, 0 install → trước đây 'overbid'.
-  const rows = assessCamps([camp('TP - Profit - A', 45, 0, 3)], CAPS, [], [], {});
-  eq('3 click → low-clicks, không còn overbid', rows[0].verdict, 'low-clicks');
+  // Ngưỡng mặc định 2 click (Trang 23/09/2026); 1 click vẫn là nhiễu.
+  const rows = assessCamps([camp('TP - Profit - A', 45, 0, 1)], CAPS, [], [], {});
+  eq('1 click → low-clicks, không còn overbid', rows[0].verdict, 'low-clicks');
   eq('không dán lý do 0 install', rows[0].reasons, []);
+  const rows2 = assessCamps([camp('TP - Profit - A2', 45, 0, 2)], CAPS, [], [], {});
+  eq('2 click → được chấm (CPC $22.5 vượt bid) → overbid', rows2[0].verdict, 'overbid');
 }
 {
   // 6 click 0 install, CPC $2 dưới bid cho phép → chấm bình thường: ok.
@@ -64,8 +67,8 @@ console.log('Luật 0 install đã rời khỏi Overbid');
   eq('lý do là CPC, không phải 0 install', rows[0].reasons.length === 1 && /CPC/.test(rows[0].reasons[0]), true);
 }
 {
-  const list = findOverbidCamps([camp('TP - Profit - G', 60, 0, 2), camp('TP - Profit - H', 10, 0, 2)], CAPS, [], [], {});
-  eq('camp ít click 0 install không vào danh sách', list.length, 0);
+  const list = findOverbidCamps([camp('TP - Profit - G', 60, 0, 1), camp('TP - Profit - H', 10, 0, 1)], CAPS, [], [], {});
+  eq('camp 1 click 0 install không vào danh sách', list.length, 0);
 }
 
 console.log('\nLuật tỷ lệ vẫn như cũ');

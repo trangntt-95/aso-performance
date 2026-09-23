@@ -178,7 +178,7 @@ export function OverbidView() {
   const [view, setView] = useState<ViewMode>('active');
 
   // Detection thresholds (tunable).
-  const [minClicks, setMinClicks] = useState('5');
+  const [minClicks, setMinClicks] = useState('2');
   const [cpcTol, setCpcTol] = useState('0');
   const [cpiTol, setCpiTol] = useState('0');
   // Post-filters.

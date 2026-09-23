@@ -87,7 +87,7 @@ export interface OverbidRow {
 }
 
 export interface OverbidParams {
-  /** Ignore camps with fewer clicks (CPC from 1–2 clicks is noise). Default 5.
+  /** Ignore camps with fewer clicks. Default 2 (Trang 23/09/2026: chấm từ 2 click trong 30 ngày; trước là 5).
    *  Camp 0 install không còn được chấm ở đây (15/09/2026): đó là việc của
    *  Camp Health (bucket đốt tiền, bắt từ 2 click). Bảng này chỉ còn một câu
    *  hỏi — trả đắt hơn mức cho phép hay không. */
@@ -291,7 +291,7 @@ export function assessCamps(
    *  thì cột giá trị để null — bảng vẫn chạy, chỉ thiếu một cột. */
   netValueByCountry: Map<string, NetValueAgg> = new Map(),
 ): OverbidRow[] {
-  const minClicks = params.minClicks ?? 5;
+  const minClicks = params.minClicks ?? 2;
   // Camps in the 'Paused_camp' tab are no longer running — drop them so the
   // table only lists live camps whose bid you can still act on. Resolve on the
   // base name so a paused camp renamed with a "(CPI …)" tag or a free-text note
