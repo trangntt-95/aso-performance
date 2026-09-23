@@ -161,3 +161,21 @@
 .chat-md h3 {
   font-size: 0.95em;
 }
+
+/* Bảng kéo ngang: cột đầu (keyword / camp / nước) đứng yên khi kéo sang phải
+   (Trang 23/09/2026). Áp cho mọi <table> nằm trong khung .overflow-x-auto. */
+.overflow-x-auto > table > tbody > tr > td:first-child,
+.overflow-x-auto > table > thead > tr > th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background-color: #fff;
+  box-shadow: 1px 0 0 #e2e8f0;
+}
+.overflow-x-auto > table > thead > tr > th:first-child {
+  z-index: 20;
+  background-color: #f8fafc;
+}
+.overflow-x-auto > table > tbody > tr:hover > td:first-child {
+  background-color: #f8fafc;
+}
