@@ -27,6 +27,20 @@ export const TABS = [
   // mất install của term nhỏ). Trang 23/09/2026.
   'GA4_daily_auto',
   'GA4_daily_country_auto',
+  // 12 tab cửa sổ GA4 gốc (build-ga4-windows.mjs) thay All_L*/Country_L* của Apps Script
+  // (cắt 500 dòng). Ưu tiên khi có ≥20 dòng.
+  'GA4_All_L3_auto',
+  'GA4_Country_L3_auto',
+  'GA4_All_L7_auto',
+  'GA4_Country_L7_auto',
+  'GA4_All_L14_auto',
+  'GA4_Country_L14_auto',
+  'GA4_All_L30_auto',
+  'GA4_Country_L30_auto',
+  'GA4_All_L90_auto',
+  'GA4_Country_L90_auto',
+  'GA4_All_L365_auto',
+  'GA4_Country_L365_auto',
   'AlertLog',
   'KW_Added_Manual',
   'Master KW Lookup',

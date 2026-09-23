@@ -106,6 +106,7 @@ async function fetchPayload(): Promise<SheetPayload> {
     history: parseHistory(raw['History'] ?? []),
     historyDaily: ga4Daily.length >= 500 ? ga4Daily : parseHistoryDaily(raw['History_Daily'] ?? []),
     historyDailySource: ga4Daily.length >= 500 ? 'ga4_bq' : 'apps_script',
+    keywordTabsSource: {},
     historyDailyCountry: ga4DailyCountry.length >= 500 ? ga4DailyCountry : parseHistoryDailyCountry(raw['History_Daily_Country'] ?? []),
     // The chat context doesn't reason over per-day spend; skip the second-sheet
     // fetch so the assistant stays fast.

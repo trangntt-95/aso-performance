@@ -133,14 +133,14 @@ Bước 12 — Xác nhận: chạy Bash
 
 Dòng tóm tắt cuối bổ sung: Max bid cap số dòng active/paused, OK hay lỗi.
 
-Bước 13 — GA4 gốc theo ngày (thay History_Daily của Apps Script). Gọi `mcp__claude_ai_TrueProfit_GA_MCP__ga_report_to_bq` BỐN lần, property_id 348654457, date_ranges [{"start_date": "<hôm qua trừ 110 ngày, YYYY-MM-DD>", "end_date": "<hôm qua YYYY-MM-DD>"}], write_mode "overwrite":
+Bước 13 — GA4 gốc theo ngày (thay History_Daily của Apps Script). Gọi `mcp__claude_ai_TrueProfit_GA_MCP__ga_report_to_bq` BỐN lần, property_id 348654457, date_ranges [{"start_date": "<hôm qua trừ 370 ngày, YYYY-MM-DD>", "end_date": "<hôm qua YYYY-MM-DD>"}], write_mode "overwrite":
  a) dimensions ["date","landingPagePlusQueryString"], metrics ["totalUsers","sessions"], dimension_filter {"filter":{"field_name":"landingPagePlusQueryString","string_filter":{"match_type":"CONTAINS","value":"surface_type=search"}}}, dest_table "trueprofit.ga_daily_lp_current"
  b) dimensions ["date","landingPagePlusQueryString"], metrics ["eventCount"], dimension_filter {"and_group":{"expressions":[{"filter":{"field_name":"eventName","string_filter":{"match_type":"EXACT","value":"shopify_app_install"}}},{"filter":{"field_name":"landingPagePlusQueryString","string_filter":{"match_type":"CONTAINS","value":"surface_type=search"}}}]}}, dest_table "trueprofit.ga_daily_install_current"
  c) như (a) nhưng dimensions ["date","country","landingPagePlusQueryString"], metrics ["totalUsers"], dest_table "trueprofit.ga_daily_lp_country_current"
  d) như (b) nhưng dimensions ["date","country","landingPagePlusQueryString"], dest_table "trueprofit.ga_daily_install_country_current"
 Kỳ vọng mỗi lần rows_written > 0.
 
-Bước 14 — Tổng hợp trong BigQuery. Gọi `mcp__claude_ai_TrueProfit_DA__run_query` với max_rows 20000, HAI SQL sau (kết quả lớn, tool ghi ra file .txt; ghi nhớ đường dẫn, KHÔNG đọc vào chat):
+Bước 14 — Tổng hợp trong BigQuery. Gọi `mcp__claude_ai_TrueProfit_DA__run_query` với max_rows 40000, HAI SQL sau (kết quả lớn, tool ghi ra file .txt; ghi nhớ đường dẫn, KHÔNG đọc vào chat):
 
 SQL daily:
 WITH u AS (SELECT date, landing_page_plus_query_string AS lp, total_users, sessions FROM `trueda.trueprofit.ga_daily_lp_current`),
@@ -161,3 +161,12 @@ Kỳ vọng rows >= 1500. Rồi `node scripts/net-value/push-ga4-daily.mjs .net-
 Bước 16 — Xác nhận: chạy Bash
 `curl -s -m 120 https://appstore-performance.vercel.app/api/sheets | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);const q=p.data??p;console.log('historyDailySource',q.historyDailySource,'| rows',q.historyDaily.length)})"`
 Kỳ vọng historyDailySource = ga4_bq. Dòng tóm tắt cuối bổ sung: GA4 daily số dòng, OK hay lỗi.
+
+Bước 17 — Tab cửa sổ GA4 (thay All_L*/Country_L*): cần `.net-value-run/payload.json` (đã tải ở bước 3), rồi
+`node scripts/net-value/build-ga4-windows.mjs .net-value-run/ga4-daily.json .net-value-run/ga4-daily-country.json .net-value-run/payload.json .net-value-run/ga4-windows-body.json`
+Kỳ vọng in ra 12 tab, GA4_All_L30_auto rows >= 300. Rồi
+`node scripts/net-value/push-ga4-windows.mjs .net-value-run/ga4-windows-body.json` → 3 dòng `200 {"ok":true,...}`.
+
+Bước 18 — Xác nhận: chạy Bash
+`curl -s -m 120 https://appstore-performance.vercel.app/api/sheets | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);const q=p.data??p;console.log('keywordTabsSource',JSON.stringify(q.keywordTabsSource),'| allL30',q.allL30.length,'allL90',q.allL90.length)})"`
+Kỳ vọng mọi cửa sổ = ga4_bq. Dòng tóm tắt cuối bổ sung: GA4 windows 12 tab, OK hay lỗi.

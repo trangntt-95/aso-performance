@@ -139,27 +139,38 @@ export async function GET() {
     // Language reclassify, then category fixes (brand, "profit" → Profit, tracker → Feature).
     const fixKw = (rows: KeywordRow[]) => overrideCategoryExact(overrideToLanguage(rows, langKws));
     const fixSnap = (rows: SnapshotRow[]) => overrideCategoryExact(overrideToLanguage(rows, langKws));
+    // Tab cửa sổ: ưu tiên GA4_*_auto (GA4 gốc qua BigQuery, đủ mọi term) khi có
+    // ≥20 dòng; không thì All_L*/Country_L* của Apps Script (cắt 500 dòng —
+    // All_L90 cũ 136 install paid trong khi GA4 gốc 231). Trang 23/09/2026.
+    const keywordTabsSource: Record<string, 'ga4_bq' | 'apps_script'> = {};
+    const winTab = (kind: 'All' | 'Country', w: string): string[][] => {
+      const ga4 = raw[`GA4_${kind}_L${w}_auto`] ?? [];
+      const ok = ga4.length >= 23; // tiêu đề + header + TOTAL + ≥20 dòng
+      keywordTabsSource[`${kind}_L${w}`] = ok ? 'ga4_bq' : 'apps_script';
+      return ok ? ga4 : raw[`${kind}_L${w}`] ?? [];
+    };
     const windowDates: Record<string, { from: string; to: string }> = {};
     (['L3', 'L7', 'L14', 'L30', 'L90'] as const).forEach((w) => {
-      const r = parseWindowDateRange(raw[`All_${w}`] ?? []);
+      const r = parseWindowDateRange(winTab('All', w.slice(1)));
       if (r) windowDates[w] = r;
     });
     const payload: SheetPayload = {
       actionQueue: parseActionQueue(raw['Action_Queue'] ?? []),
       marketIndex: parseMarketIndex(raw['Market_Index'] ?? []),
       tier1Watch: parseTier1Watch(raw['Tier1_Market_Watch'] ?? []),
-      allL3: fixKw(parseKeywordTab(raw['All_L3'] ?? [], false)),
-      allL7: fixKw(parseKeywordTab(raw['All_L7'] ?? [], false)),
-      allL14: fixKw(parseKeywordTab(raw['All_L14'] ?? [], false)),
-      allL30: fixKw(parseKeywordTab(raw['All_L30'] ?? [], false)),
-      allL90: fixKw(parseKeywordTab(raw['All_L90'] ?? [], false)),
-      countryL3: fixKw(parseKeywordTab(raw['Country_L3'] ?? [], true)),
-      countryL7: fixKw(parseKeywordTab(raw['Country_L7'] ?? [], true)),
-      countryL14: fixKw(parseKeywordTab(raw['Country_L14'] ?? [], true)),
-      countryL30: fixKw(parseKeywordTab(raw['Country_L30'] ?? [], true)),
-      countryL90: fixKw(parseKeywordTab(raw['Country_L90'] ?? [], true)),
-      allL365: fixSnap(parseSnapshot(raw['All_L365'] ?? [], false)),
-      countryL365: fixSnap(parseSnapshot(raw['Country_L365'] ?? [], true)),
+      allL3: fixKw(parseKeywordTab(winTab('All', '3'), false)),
+      allL7: fixKw(parseKeywordTab(winTab('All', '7'), false)),
+      allL14: fixKw(parseKeywordTab(winTab('All', '14'), false)),
+      allL30: fixKw(parseKeywordTab(winTab('All', '30'), false)),
+      allL90: fixKw(parseKeywordTab(winTab('All', '90'), false)),
+      countryL3: fixKw(parseKeywordTab(winTab('Country', '3'), true)),
+      countryL7: fixKw(parseKeywordTab(winTab('Country', '7'), true)),
+      countryL14: fixKw(parseKeywordTab(winTab('Country', '14'), true)),
+      countryL30: fixKw(parseKeywordTab(winTab('Country', '30'), true)),
+      countryL90: fixKw(parseKeywordTab(winTab('Country', '90'), true)),
+      allL365: fixSnap(parseSnapshot(winTab('All', '365'), false)),
+      countryL365: fixSnap(parseSnapshot(winTab('Country', '365'), true)),
+      keywordTabsSource,
       history: parseHistory(raw['History'] ?? []),
       historyDaily: ga4Daily.length >= 500 ? ga4Daily : parseHistoryDaily(raw['History_Daily'] ?? []),
       historyDailySource: ga4Daily.length >= 500 ? 'ga4_bq' : 'apps_script',
