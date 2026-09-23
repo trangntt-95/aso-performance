@@ -12,26 +12,30 @@ import type {
 // separately, from the conversion ACTIONS that actually represent an install.
 
 /**
- * Conversion action that means an app was installed, not a page was seen.
+ * Conversion actions that mean an app was installed, not a page was seen.
  *
- * Only ONE action counts. The account has three install-type actions that all
- * describe the same install: "Shopify Store - GA4 (web) shopify_app_install"
- * (the GA4 install event every other tab of this dashboard uses), "Inapp - GA4
- * (web) app_install_attributed" and "Inapp (Upload) app_install_attributed (1)"
- * (the same install re-attributed from inside the app / an offline upload).
- * Until 23/09/2026 all three were summed: L90 read 152.9 installs against 84.9
- * real ones — Trang: "số click thì đúng, nhưng installs sai (bị dư)".
+ * Two actions count, because the account runs two kinds of campaign:
+ *   - đích App Store → GA4 của listing bắt "Shopify Store - GA4 (web)
+ *     shopify_app_install" ngay sau click;
+ *   - đích website (trueprofit.io) → install xảy ra sau, listing không thấy;
+ *     GA4 trong app quy về qua "Inapp - GA4 (web) app_install_attributed".
+ * Trang 23/09/2026: "phải đếm cả app_install_attributed".
+ *
+ * KHÔNG đếm "Inapp (Upload) app_install_attributed (1)": cùng chuyển đổi đó
+ * upload offline lần nữa (Google đánh hậu tố "(1)"), theo camp luôn ≤ bản GA4
+ * và rơi trên cùng camp — chính là phần "bị dư" (L90: 152.9 khi cộng cả ba,
+ * 128.0 khi bỏ bản upload).
  */
-const INSTALL_ACTION_PATTERNS = [/shopify_app_install/i];
-/** Same install measured again — shown in the breakdown, never counted. */
-const DUPLICATE_INSTALL_PATTERNS = [/app_install_attributed/i];
-
-export function isInstallAction(actionName: string): boolean {
-  return INSTALL_ACTION_PATTERNS.some((re) => re.test(actionName));
-}
+const INSTALL_ACTION_PATTERNS = [/shopify_app_install/i, /app_install_attributed/i];
+/** Same install imported again — shown in the breakdown, never counted. */
+const DUPLICATE_INSTALL_PATTERNS = [/\(upload\)/i];
 
 export function isDuplicateInstallAction(actionName: string): boolean {
-  return !isInstallAction(actionName) && DUPLICATE_INSTALL_PATTERNS.some((re) => re.test(actionName));
+  return /app_install/i.test(actionName) && DUPLICATE_INSTALL_PATTERNS.some((re) => re.test(actionName));
+}
+
+export function isInstallAction(actionName: string): boolean {
+  return !isDuplicateInstallAction(actionName) && INSTALL_ACTION_PATTERNS.some((re) => re.test(actionName));
 }
 
 /**
