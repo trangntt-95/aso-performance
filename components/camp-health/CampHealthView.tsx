@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ExternalLink, HeartPulse, Search, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
 import { NoteCell } from '@/components/shared/NoteCell';
@@ -131,7 +131,7 @@ export function CampHealthView() {
   const { data, isLoading, error } = useSheetData();
   const [search, setSearch] = useState('');
   const [bucketFilter, setBucketFilter] = useState<HealthBucket | 'all' | 'problems'>('problems');
-  const [linkFilter, setLinkFilter] = useState<'all' | 'no-url'>('all');
+  const [linkFilter, setLinkFilter] = useState<'all' | 'no-url' | 'legacy'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('atRisk');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -209,10 +209,16 @@ export function CampHealthView() {
   // Camps the spend data knows about but Camp_Links doesn't. Not a fault of the
   // camp — it just means the row is missing from the sheet, which also costs it
   // its Geo, so it can't be checked against the exclude list either.
+  // Camp không có trong Camp_Links (kể cả tên cũ / alias) và $0 kỳ này = camp
+  // đã tắt hoặc archive mà export còn giữ tên cũ — Trang 23/09/2026: "không gộp
+  // được với version hiện tại thì tức là pause rồi, cho vào mục riêng hoặc
+  // không hiển thị". Ẩn khỏi mọi danh sách, chỉ xem qua bộ lọc "Camp cũ".
+  const isLegacy = useCallback((r: CampHealthRow) => !campUrl.get(r.camp) && r.cur.spend === 0, [campUrl]);
   const noUrlCount = useMemo(
-    () => result.rows.filter((r) => !campUrl.get(r.camp)).length,
-    [result.rows, campUrl],
+    () => result.rows.filter((r) => !campUrl.get(r.camp) && !isLegacy(r)).length,
+    [result.rows, campUrl, isLegacy],
   );
+  const legacyCount = useMemo(() => result.rows.filter(isLegacy).length, [result.rows, isLegacy]);
   // Keyword notes reach a campaign through the camps pinned on Underbid.
   const loadNotes = useNotesStore((st) => st.load);
   const allNotes = useNotesStore((st) => st.notes);
@@ -277,6 +283,7 @@ export function CampHealthView() {
       )
         return false;
       if (bucketFilter !== 'all' && bucketFilter !== 'problems' && r.bucket !== bucketFilter) return false;
+      if (linkFilter === 'legacy' ? !isLegacy(r) : isLegacy(r)) return false;
       if (linkFilter === 'no-url' && campUrl.get(r.camp)) return false;
       if (categoryFilter !== 'all' && categoryByCamp.get(r.camp) !== categoryFilter) return false;
       if (q && !r.camp.toLowerCase().includes(q)) return false;
@@ -312,25 +319,26 @@ export function CampHealthView() {
           : (va as number) - (vb as number);
       return base * dir || b.atRisk - a.atRisk;
     });
-  }, [result.rows, search, bucketFilter, linkFilter, categoryFilter, categoryByCamp, campUrl, sortKey, sortDir, noteView, hiddenUntil]);
+  }, [result.rows, search, bucketFilter, linkFilter, categoryFilter, categoryByCamp, campUrl, isLegacy, sortKey, sortDir, noteView, hiddenUntil]);
 
   const problemCount = useMemo(
     () =>
       result.rows.filter(
         (r) =>
           !['ok', 'scale', 'rising', 'paused', 'silent'].includes(r.bucket) &&
+          !isLegacy(r) &&
           !hiddenUntil.has(campNoteId(r.camp)),
       ).length,
-    [result.rows, hiddenUntil],
+    [result.rows, hiddenUntil, isLegacy],
   );
 
   const totalRisk = useMemo(
     () =>
       result.rows
         .filter((r) => !['ok', 'scale', 'rising', 'paused'].includes(r.bucket))
-        .filter((r) => !hiddenUntil.has(campNoteId(r.camp)))
+        .filter((r) => !isLegacy(r) && !hiddenUntil.has(campNoteId(r.camp)))
         .reduce((s, r) => s + r.atRisk, 0),
-    [result.rows, hiddenUntil],
+    [result.rows, hiddenUntil, isLegacy],
   );
 
   if (error) {
@@ -508,12 +516,13 @@ export function CampHealthView() {
           </select>
           <select
             value={linkFilter}
-            onChange={(e) => setLinkFilter(e.target.value as 'all' | 'no-url')}
+            onChange={(e) => setLinkFilter(e.target.value as 'all' | 'no-url' | 'legacy')}
             className="h-7 rounded border border-slate-200 bg-white px-2 text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            title="Camp chưa có URL trong Camp_Links: không mở thẳng sang Apple Ads được, và cũng không có Geo để đối chiếu"
+            title="Chưa có URL = đang tiêu tiền nhưng Camp_Links chưa có dòng (camp mới, cần thêm). Camp cũ = không có trong Camp_Links kể cả tên cũ và $0 kỳ này → đã tắt/archive, ẩn khỏi mọi danh sách."
           >
             <option value="all">Mọi camp</option>
-            <option value="no-url">Chưa có URL ({noUrlCount})</option>
+            <option value="no-url">Chưa có URL, đang tiêu ({noUrlCount})</option>
+            <option value="legacy">Camp cũ, không còn trên Camp_Links ({legacyCount})</option>
           </select>
           {/* Category is a property of the campaign, not of the window, so this
               one stays available even when the export has no date column and the
