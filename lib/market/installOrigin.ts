@@ -30,6 +30,8 @@ export interface OriginCamp {
   camp: string;
   bidMax: number | null;
   url?: string;
+  /** Campaign ID Shopify (khi Master có cột này) — dùng để nối Camp_Links (URL, Geo) chắc hơn tên. */
+  campaignId?: string;
   /** True when the camp appears in Paused_camp — it can't be serving now. */
   paused: boolean;
 }
@@ -188,17 +190,20 @@ export function buildKeywordCampIndex(data: SheetPayload | null | undefined): Ke
       for (const h of hits) {
         const raw = h.camp?.trim();
         if (!raw) continue;
+        const id = h.campaignId?.trim() || undefined;
         const base = resolver.resolve(raw);
-        const identity = (base ?? normalizeCampName(raw)).toLowerCase();
+        // Có ID (Master từ Shopify Ads) → danh tính là ID; không thì tên gốc Camp_Links.
+        const identity = id ? `id:${id}` : (base ?? normalizeCampName(raw)).toLowerCase();
         const bid = numOrNull(h.bidMax);
         const prev = seen.get(identity);
         if (prev) {
           if (bid !== null && (prev.bidMax === null || bid > prev.bidMax)) prev.bidMax = bid;
           continue;
         }
-        const camp = base ?? raw;
+        // Có ID thì giữ tên Shopify hiện tại (Trang nhìn thấy đúng tên đang chạy); không thì tên gốc Camp_Links.
+        const camp = id ? raw : (base ?? raw);
         const isPaused = pausedNames.has(normalizeCampName(raw).toLowerCase()) || pausedNames.has(normalizeCampName(camp).toLowerCase());
-        const entry: OriginCamp = { camp, bidMax: bid, url: campUrl.get(camp) ?? campUrl.get(raw), paused: isPaused };
+        const entry: OriginCamp = { camp, bidMax: bid, url: campUrl.getById(id) ?? campUrl.get(camp) ?? campUrl.get(raw), paused: isPaused, ...(id ? { campaignId: id } : {}) };
         seen.set(identity, entry);
         (isPaused ? paused : live).push(entry);
       }

@@ -88,7 +88,7 @@ export function targetFromName(camp: string): CampTarget {
   return { mode: 'unknown', countries: [], source: 'none', label: 'Không có Geo, tên không nói nước' };
 }
 
-export function buildCampTargetResolver(campLinks: readonly CampLinkRow[]): (camp: string) => CampTarget {
+export function buildCampTargetResolver(campLinks: readonly CampLinkRow[]): (camp: string, campaignId?: string) => CampTarget {
   const resolver = buildCampNameResolver(campLinks.map((c) => c.camp));
   const geoByKey = new Map<string, CampGeo>();
   buildCampGeoIndex(campLinks as CampLinkRow[]).forEach((g, name) => {
@@ -96,12 +96,24 @@ export function buildCampTargetResolver(campLinks: readonly CampLinkRow[]): (cam
     const cur = geoByKey.get(k);
     if (!cur || (cur.mode === 'unknown' && g.mode !== 'unknown')) geoByKey.set(k, g);
   });
+  // Theo Campaign ID — Trang đổi tên camp thường xuyên, ID thì không.
+  const geoById = new Map<string, CampGeo>();
+  for (const c of campLinks) {
+    const id = (c.campaignId ?? '').trim();
+    if (!id) continue;
+    const g = parseCampGeo(c.geoRaw);
+    const cur = geoById.get(id);
+    if (!cur || (cur.mode === 'unknown' && g.mode !== 'unknown')) geoById.set(id, g);
+  }
   const cache = new Map<string, CampTarget>();
-  return (camp: string) => {
-    const hit = cache.get(camp);
+  return (camp: string, campaignId?: string) => {
+    const id = (campaignId ?? '').trim();
+    const cacheKey = id ? `id:${id}|${camp}` : camp;
+    const hit = cache.get(cacheKey);
     if (hit) return hit;
-    const base = resolver.resolve(camp);
-    const geo = base ? geoByKey.get(normalizeCampName(base).toLowerCase()) : undefined;
+    const byId = id ? geoById.get(id) : undefined;
+    const base = byId ? camp : resolver.resolve(camp);
+    const geo = byId ?? (base ? geoByKey.get(normalizeCampName(base).toLowerCase()) : undefined);
     let out: CampTarget;
     if (geo && geo.mode === 'include' && geo.countries.length > 0) {
       out = { mode: 'include', countries: geo.countries, source: 'geo', label: `Geo: ${geo.countries.join(', ')}` };
@@ -117,7 +129,7 @@ export function buildCampTargetResolver(campLinks: readonly CampLinkRow[]): (cam
       // Master còn giữ tên cũ) — nói rõ để Trang biết vì sao không có Geo.
       if (!base) out = { ...out, label: `${out.label} · không có trong Camp_Links` };
     }
-    cache.set(camp, out);
+    cache.set(cacheKey, out);
     return out;
   };
 }
@@ -157,9 +169,11 @@ export function buildGeoCampsMissingInMaster(
   const paused = new Set(pausedKw.map((p) => key(p.camp)));
   const resolver = buildCampNameResolver(campLinks.map((c) => c.camp));
   const inMaster = new Set<string>();
+  const inMasterId = new Set<string>();
   for (const m of master) {
     if (!m.camp) continue;
     inMaster.add(key(m.camp));
+    if (m.campaignId) inMasterId.add(m.campaignId.trim());
     const base = resolver.resolve(m.camp);
     if (base) inMaster.add(key(base));
   }
@@ -167,7 +181,8 @@ export function buildGeoCampsMissingInMaster(
   const all: GeoCampSuggestion[] = [];
   for (const c of campLinks) {
     const k = key(c.camp);
-    if (!k || paused.has(k) || inMaster.has(k)) continue;
+    const id = (c.campaignId ?? '').trim();
+    if (!k || paused.has(k) || inMaster.has(k) || (id && inMasterId.has(id))) continue;
     const geo = parseCampGeo(c.geoRaw);
     if (geo.mode !== 'include') continue;
     const item = { camp: c.camp, url: c.url ?? '' };

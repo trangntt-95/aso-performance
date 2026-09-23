@@ -214,8 +214,8 @@ export function PositionsView() {
   // khi Geo trống — xem lib/market/campCountries.ts. 0 = gọi tên rõ, 1 = có
   // thể, 2 = không phủ (mờ). Chữ "Tier" không suy ra nước.
   const targetOf = useMemo(() => buildCampTargetResolver(data?.campLinks ?? []), [data?.campLinks]);
-  const geoRank = (country: string) => (c: OriginCamp): 0 | 1 | 2 => coverRank(targetOf(c.camp), country);
-  const hintOf = (c: OriginCamp) => targetOf(c.camp).label;
+  const geoRank = (country: string) => (c: OriginCamp): 0 | 1 | 2 => coverRank(targetOf(c.camp, c.campaignId), country);
+  const hintOf = (c: OriginCamp) => targetOf(c.camp, c.campaignId).label;
   // Camp có Geo phủ nước nhưng Master không có keyword → dashboard không thể
   // biết nó bid keyword này (22/09/2026: profit × Colombia thật ra chạy ở
   // "Brandname - Exact - Tier 3 (31 countries)", camp vắng trong Master).

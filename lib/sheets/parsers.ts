@@ -579,16 +579,20 @@ export function parseMasterKw(rows: string[][]): MasterKwRow[] {
     }
   }
   if (headerIdx < 0) return [];
+  // Cột "Campaign ID" (bản Master từ Shopify Ads) — tìm theo tên header vì bản cũ không có.
+  const idCol = rows[headerIdx].findIndex((h) => str(h).trim().toLowerCase() === 'campaign id');
   return rows
     .slice(headerIdx + 1)
     .map((row): MasterKwRow | null => {
       const keyword = str(row?.[2]).trim();
       if (!keyword) return null;
+      const campaignId = idCol >= 0 ? str(row[idCol]).trim() : '';
       return {
         category: str(row[0]).trim(),
         camp: str(row[1]).trim(),
         keyword,
         bidMax: str(row[4]).trim(),
+        ...(campaignId ? { campaignId } : {}),
       };
     })
     .filter((r): r is MasterKwRow => r !== null);

@@ -11,6 +11,8 @@ import { normalizeCampName, buildCampNameResolver } from './campName';
  */
 export interface CampUrlIndex {
   get(camp: string): string | undefined;
+  /** Theo Campaign ID — chắc nhất, không phụ thuộc tên camp đổi tag. */
+  getById(campaignId: string | undefined): string | undefined;
   size: number;
 }
 
@@ -21,9 +23,18 @@ export function buildCampUrlIndex(campLinks: CampLinkRow[]): CampUrlIndex {
     const key = normalizeCampName(c.camp).toLowerCase();
     if (!byName.has(key)) byName.set(key, c.url);
   }
+  const byId = new Map<string, string>();
+  for (const c of campLinks) {
+    const id = (c.campaignId ?? '').trim();
+    if (id && c.url && !byId.has(id)) byId.set(id, c.url);
+  }
   const resolver = buildCampNameResolver(campLinks.map((c) => c.camp));
   return {
     size: byName.size,
+    getById(campaignId) {
+      const id = (campaignId ?? '').trim();
+      return id ? byId.get(id) : undefined;
+    },
     get(camp) {
       const direct = byName.get(normalizeCampName(camp).toLowerCase());
       if (direct) return direct;

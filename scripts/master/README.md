@@ -26,3 +26,17 @@ chạy trong Chrome của Trang (Claude in Chrome), các bước còn lại là 
 - Classification (NOISE / POTENTIAL) là cột Trang gán tay, build script chép lại theo keyword từ bản cũ.
 - Keyword status ≠ active ghi Bid rỗng; dashboard vẫn liệt kê camp nhưng bid hiện "—".
 - Camp archived không nằm trong hai tab (Shopify trả `archived:false`).
+
+## Camp_Links (Camp_URL) đối chiếu theo Campaign ID — 23/09/2026
+
+Trang: "lấy sheet camp_URL làm chuẩn; tên không khớp thì rà URL xem khớp camp nào hiện tại thì sửa".
+1. Trong tab Shopify Ads, chạy JS lấy `campaigns(first:50, archived:false){ edges{node{id name status targeting{geographicTargets{code}}}} }`
+   (và `archived:true` để biết camp đã lưu trữ). Nén thành TSV `id \t status \t incl|excl \t codes \t name`
+   (excl = mã nước bị loại so với hợp của mọi camp), hiện trong `<pre>` rồi đọc bằng get_page_text (~40k ký tự).
+   Lưu `exports/shopify-ads-geo-<ngày>.tsv`.
+2. Backup: `GET /api/sheets/raw?tab=Camp_Links&rows=2000` → `exports/backup-Camp_Links-<ngày>.json`.
+3. `node scripts/master/build-camp-links.mjs <backup> <geo.tsv> exports/camp-links-<ngày>/camp-links-body.json`
+   — đổi tên theo Shopify qua ID, điền ID/URL thiếu, Geo thật (include liệt kê nước; "exclude: …"), thêm camp thiếu,
+   giữ cột ghi chú F–H.
+4. `node scripts/master/push-camp-links.mjs <body.json>` → `/api/camp-links/upload`.
+Dashboard nối camp theo Campaign ID khi Master có cột ID (parseMasterKw, installOrigin, campUrl.getById, campCountries).

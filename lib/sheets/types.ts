@@ -267,6 +267,8 @@ export interface MasterKwRow {
   camp: string;
   keyword: string;
   bidMax: string;
+  /** Cột "Campaign ID" — có từ bản Master dựng từ Shopify Ads (23/09/2026); bản dán tay không có. */
+  campaignId?: string;
 }
 
 /**
