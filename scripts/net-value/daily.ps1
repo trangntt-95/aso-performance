@@ -45,9 +45,15 @@ Remove-Item -Path $outFile, $errFile -ErrorAction SilentlyContinue
 
 # Prompt dài (12 bước) → đưa qua stdin thay vì tham số dòng lệnh để không vướng
 # giới hạn độ dài / dấu nháy của Windows; claude -p đọc prompt từ stdin.
+# $allowed có khoảng trắng ("Bash(curl *)") nên phải bọc nháy kép, không thì
+# Start-Process tách thành nhiều tham số và claude bỏ qua các rule đó.
 $p = Start-Process -FilePath $claude -NoNewWindow -Wait -PassThru `
-  -ArgumentList @('-p', '--allowedTools', $allowed, '--max-turns', '40') `
+  -ArgumentList @('-p', '--allowedTools', ('"' + $allowed + '"'), '--max-turns', '40') `
   -RedirectStandardInput $promptFile -RedirectStandardOutput $outFile -RedirectStandardError $errFile
 if (Test-Path $outFile) { Get-Content $outFile -Raw | Out-File -FilePath $log -Encoding utf8 -Append }
 if (Test-Path $errFile) { $e = Get-Content $errFile -Raw; if ($e) { "--- stderr ---`n$e" | Out-File -FilePath $log -Encoding utf8 -Append } }
-"=== end $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') exit=$($p.ExitCode)" | Out-File -FilePath $log -Encoding utf8 -Append
+# claude -p trả 0 kể cả khi pipeline báo lỗi (24/09/2026: thiếu tool MCP, dừng bước 1,
+# vẫn exit=0 nên lần sau trong ngày bị "skip"). Thành công thật = có dòng PIPELINE_OK.
+$ok = (Test-Path $outFile) -and (Select-String -Path $outFile -Pattern 'PIPELINE_OK' -Quiet)
+$code = if ($ok) { 0 } elseif ($p.ExitCode -ne 0) { $p.ExitCode } else { 1 }
+"=== end $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') exit=$code" | Out-File -FilePath $log -Encoding utf8 -Append

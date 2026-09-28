@@ -170,3 +170,5 @@ Kỳ vọng in ra 12 tab, GA4_All_L30_auto rows >= 300. Rồi
 Bước 18 — Xác nhận: chạy Bash
 `curl -s -m 120 https://appstore-performance.vercel.app/api/sheets | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);const q=p.data??p;console.log('keywordTabsSource',JSON.stringify(q.keywordTabsSource),'| allL30',q.allL30.length,'allL90',q.allL90.length)})"`
 Kỳ vọng mọi cửa sổ = ga4_bq. Dòng tóm tắt cuối bổ sung: GA4 windows 12 tab, OK hay lỗi.
+
+Kết thúc: nếu MỌI bước (1–18) đều thành công, dòng cuối cùng của câu trả lời phải là đúng chuỗi `PIPELINE_OK` (một mình trên một dòng). Bất kỳ bước nào lỗi hoặc bị bỏ qua thì KHÔNG in `PIPELINE_OK`, in `PIPELINE_FAIL: <bước> - <lý do>` để lần kích hoạt sau trong ngày chạy lại.
