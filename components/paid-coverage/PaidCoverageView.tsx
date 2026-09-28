@@ -21,6 +21,7 @@ import { SortableTh } from '@/components/shared/SortableTh';
 import { cn } from '@/lib/utils';
 import { buildCountryBidIndex, bidPressureFor, type BidPressureSummary } from '@/lib/market/countryBid';
 import { normKw } from '@/lib/sheets/kwNorm';
+import { countryTierIndex } from '@/lib/market/keywordPosition';
 import { buildKeywordNetValue, type KeywordNetValue } from '@/lib/market/keywordNetValue';
 import {
   buildPaidStatusIndex,
@@ -409,6 +410,16 @@ export function PaidCoverageView() {
   const [win, setWin] = useState<Win>('l365');
 
   const rows = useMemo(() => (data ? buildRows(data) : []), [data]);
+  // Tier của nước (khối Tier trong Max bid cap) — Trang 28/09/2026: ghi cạnh tên nước.
+  const tierOf = useMemo(() => countryTierIndex(data?.bidCap ?? []), [data?.bidCap]);
+  const tierTag = (country: string): string => {
+    const t = tierOf.get(country.trim().toLowerCase()) ?? '';
+    if (!t) return '';
+    if (/premium/i.test(t)) return 'T1P';
+    if (/strong/i.test(t)) return 'T1S';
+    const m = /tier\s*(\d+(?:[.,]\d+)?)/i.exec(t);
+    return m ? `T${m[1].replace(',', '.')}` : t;
+  };
 
   // Effective window for the Countries column: the selected one if it has data,
   // else the nearest populated fallback (L90/L365 country tabs are empty).
@@ -776,9 +787,9 @@ export function PaidCoverageView() {
                         return (
                           <span
                             className="text-[10px] text-slate-500"
-                            title={cc.map((c) => `${c.name} (${c.users})`).join(', ')}
+                            title={cc.map((c) => `${c.name} · ${tierOf.get(c.name.trim().toLowerCase()) ?? 'chưa xếp tier'} · ${c.users} users`).join(', ')}
                           >
-                            {cc.slice(0, 4).map((c) => c.name).join(', ')}
+                            {cc.slice(0, 4).map((c) => (tierTag(c.name) ? `${c.name} (${tierTag(c.name)})` : c.name)).join(', ')}
                             {cc.length > 4 && ` +${cc.length - 4}`}
                           </span>
                         );
