@@ -103,16 +103,50 @@ const WIN_KEYS: readonly Win[] = ['l7', 'l30', 'l90', 'l365'];
 
 // Cột sắp được. Cột window sắp theo users của đúng window đó; Countries theo
 // số nước có traffic; Bid vs trần theo số nước bị trần chặn.
-type SortKey = Win | 'keyword' | 'category' | 'value' | 'countries' | 'paid' | 'bid';
-const TEXT_COLS: readonly SortKey[] = ['keyword', 'category', 'paid'];
+type SortKey = Win | 'keyword' | 'category' | 'value' | 'countries' | 'tier' | 'paid' | 'bid';
+const TEXT_COLS: readonly SortKey[] = ['keyword', 'category', 'paid', 'tier'];
 const SORT_LABEL: Record<Exclude<SortKey, Win>, string> = {
   keyword: 'Keyword',
   category: 'Category',
   value: 'Value/install',
   countries: 'Countries',
+  tier: 'Tier',
   paid: 'Paid?',
   bid: 'Bid vs trần tier',
 };
+
+// Tier của nước theo khối Tier của Max bid cap. Rank để sắp: T1P < T1S < T1.5 < T2 < T3.
+const TIER_RANK: Record<string, number> = { T1P: 1, T1S: 2, 'T1.5': 3, T2: 4, T3: 5 };
+function tierTagOf(tierName: string | undefined): string {
+  const t = (tierName ?? '').trim();
+  if (!t) return '';
+  if (/premium/i.test(t)) return 'T1P';
+  if (/strong/i.test(t)) return 'T1S';
+  const m = /tier\s*(\d+(?:[.,]\d+)?)/i.exec(t);
+  return m ? `T${m[1].replace(',', '.')}` : t;
+}
+/** Tier tốt nhất (rank nhỏ nhất) trong các nước có traffic của dòng, kèm phân bố. */
+function rowTier(
+  r: CoverageRow,
+  countryWin: Win,
+  tierOf: Map<string, string>,
+): { best: string; rank: number | null; breakdown: string } {
+  const counts = new Map<string, number>();
+  let best = '';
+  let rank: number | null = null;
+  for (const c of r.countriesByWin[countryWin]) {
+    const tag = tierTagOf(tierOf.get(c.name.trim().toLowerCase()));
+    if (!tag) continue;
+    counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    const rk = TIER_RANK[tag] ?? 9;
+    if (rank === null || rk < rank) { rank = rk; best = tag; }
+  }
+  const breakdown = Array.from(counts.entries())
+    .sort((a, b) => (TIER_RANK[a[0]] ?? 9) - (TIER_RANK[b[0]] ?? 9))
+    .map(([t, n]) => `${t} ×${n}`)
+    .join(' · ');
+  return { best, rank, breakdown };
+}
 
 function paidLabel(r: PaidStatus): string | null {
   // Cùng nhãn với PaidStatusBadge; negative không có badge → null (cuối bảng).
@@ -122,7 +156,7 @@ function paidLabel(r: PaidStatus): string | null {
   return r.source === 'manual' ? 'Added (manual)' : 'In Paid';
 }
 
-function sortValue(r: CoverageRow, key: SortKey, countryWin: Win): number | string | null {
+function sortValue(r: CoverageRow, key: SortKey, countryWin: Win, tierOf: Map<string, string>): number | string | null {
   switch (key) {
     case 'keyword':
       return r.keyword;
@@ -132,6 +166,8 @@ function sortValue(r: CoverageRow, key: SortKey, countryWin: Win): number | stri
       return r.nv?.netPerInstall ?? null;
     case 'countries':
       return r.countriesByWin[countryWin].length || null;
+    case 'tier':
+      return rowTier(r, countryWin, tierOf).rank;
     case 'paid':
       return paidLabel(r);
     case 'bid': {
@@ -412,14 +448,7 @@ export function PaidCoverageView() {
   const rows = useMemo(() => (data ? buildRows(data) : []), [data]);
   // Tier của nước (khối Tier trong Max bid cap) — Trang 28/09/2026: ghi cạnh tên nước.
   const tierOf = useMemo(() => countryTierIndex(data?.bidCap ?? []), [data?.bidCap]);
-  const tierTag = (country: string): string => {
-    const t = tierOf.get(country.trim().toLowerCase()) ?? '';
-    if (!t) return '';
-    if (/premium/i.test(t)) return 'T1P';
-    if (/strong/i.test(t)) return 'T1S';
-    const m = /tier\s*(\d+(?:[.,]\d+)?)/i.exec(t);
-    return m ? `T${m[1].replace(',', '.')}` : t;
-  };
+
 
   // Effective window for the Countries column: the selected one if it has data,
   // else the nearest populated fallback (L90/L365 country tabs are empty).
@@ -488,7 +517,7 @@ export function PaidCoverageView() {
 
   // Sắp SAU khi lọc, trước khi render; không có số → cuối bảng dù chiều nào.
   const sorted = useMemo(
-    () => sort.sortRows(filtered, (r, key) => sortValue(r, key, countryWin)),
+    () => sort.sortRows(filtered, (r, key) => sortValue(r, key, countryWin, tierOf)),
     [filtered, sort, countryWin],
   );
 
@@ -701,6 +730,14 @@ export function PaidCoverageView() {
                   }
                   label={<>Countries · {WIN_LABEL[countryWin]}</>}
                 />
+                <SortableTh
+                  col="tier"
+                  {...thProps}
+                  align="left"
+                  className="px-2 py-2"
+                  title="Tier tốt nhất trong các nước có traffic của keyword (khối Tier ở Max bid cap: T1P = Tier 1 Premium, T1S = Tier 1 Strong, T1.5, T2, T3). Sắp T1 trước; hover thấy phân bố số nước theo tier."
+                  label="Tier"
+                />
                 <SortableTh col="paid" {...thProps} align="left" className="px-2 py-2" label="Paid?" />
                 <SortableTh
                   col="bid"
@@ -789,8 +826,20 @@ export function PaidCoverageView() {
                             className="text-[10px] text-slate-500"
                             title={cc.map((c) => `${c.name} · ${tierOf.get(c.name.trim().toLowerCase()) ?? 'chưa xếp tier'} · ${c.users} users`).join(', ')}
                           >
-                            {cc.slice(0, 4).map((c) => (tierTag(c.name) ? `${c.name} (${tierTag(c.name)})` : c.name)).join(', ')}
+                            {cc.slice(0, 4).map((c) => c.name).join(', ')}
                             {cc.length > 4 && ` +${cc.length - 4}`}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-2 py-1.5 align-top whitespace-nowrap">
+                      {(() => {
+                        const t = rowTier(row, countryWin, tierOf);
+                        if (!t.best) return <span className="text-slate-300">—</span>;
+                        return (
+                          <span className="text-[10px] font-medium text-slate-700" title={t.breakdown}>
+                            {t.best}
+                            {t.breakdown.includes('·') && <span className="ml-1 font-normal text-slate-400">+</span>}
                           </span>
                         );
                       })()}
