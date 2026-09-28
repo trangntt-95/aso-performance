@@ -1,3 +1,14 @@
+# Routine cloud "ASO net value daily" — prompt (bản dùng cho claude.ai/code/routines)
+#
+# Khác bản chạy trên máy Trang (daily.ps1): token ghi sheet lấy từ biến môi trường
+# NET_VALUE_UPLOAD_TOKEN của cloud environment (không có file scripts/net-value/.token
+# vì bị gitignore). Mọi lệnh khác giống hệt. Môi trường cloud phải cho phép domain
+# appstore-performance.vercel.app (mạng Custom) và bật hai connector TrueProfit DA,
+# TrueProfit GA MCP. Node có sẵn trong môi trường mặc định.
+#
+# Đầu phiên: chạy `test -n "$NET_VALUE_UPLOAD_TOKEN" && echo TOKEN_OK || echo TOKEN_MISSING`;
+# thiếu token thì dừng, in PIPELINE_FAIL: token.
+
 Bạn đang chạy headless trong repo C:\Users\trangkeke\aso-performance để cập nhật tab "Net value per install" của dashboard ASO. Làm đúng các bước, không hỏi lại, không sửa code. Mọi file tạm ghi vào thư mục `.net-value-run/` trong repo (tạo nếu chưa có). Hôm nay là ngày chạy; "hôm qua" = ngày hiện tại trừ 1, định dạng YYYY-MM-DD và dd/mm/yyyy.
 
 Bước 1 — Kéo install GA4 của các tháng chưa có trong BigQuery.
