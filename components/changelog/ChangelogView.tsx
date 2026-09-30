@@ -53,6 +53,7 @@ const CHANNEL_CLS: Record<string, string> = {
   'Shopify Ads': 'bg-emerald-100 text-emerald-800',
   'Google Ads': 'bg-sky-100 text-sky-800',
   'Microsoft Ads': 'bg-orange-100 text-orange-800',
+  'ChatGPT Ads': 'bg-violet-100 text-violet-800',
 };
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -173,7 +174,7 @@ export function ChangelogView() {
         export). Không ghi lại thì tuần sau CPI nhảy mà không biết là do quyết định hay do đấu giá.
         <div className="mt-1">
           Ngày nhập là <b>ngày thay đổi thật sự xảy ra</b>, không phải ngày bạn gõ — nhờ vậy vạch mốc trên biểu đồ theo
-          ngày rơi đúng chỗ. <b>Kênh</b> = thay đổi thuộc Shopify / Google / Microsoft Ads, bỏ trống nếu không riêng kênh
+          ngày rơi đúng chỗ. <b>Kênh</b> = thay đổi thuộc Shopify / Google / Microsoft / ChatGPT Ads, bỏ trống nếu không riêng kênh
           nào. Lưu vào tab <code className="text-[10px]">App_Notes</code> nên xem/sửa được cả trong sheet. Bấm ✎ để sửa
           mục đã ghi.
         </div>

@@ -34,7 +34,7 @@ export interface ChangeTag {
 }
 
 /** Kênh quảng cáo mà thay đổi thuộc về. '' = không riêng kênh nào. */
-export const CHANNELS = ['Shopify Ads', 'Google Ads', 'Microsoft Ads'] as const;
+export const CHANNELS = ['Shopify Ads', 'Google Ads', 'Microsoft Ads', 'ChatGPT Ads'] as const;
 export type Channel = (typeof CHANNELS)[number] | '';
 
 /** Chuẩn hoá chuỗi kênh đọc từ id — mã cũ không có kênh thì ra ''. */
@@ -50,7 +50,7 @@ export interface ChangeEntry {
   /** ISO date the change actually happened. */
   date: string;
   tag: ChangeTag;
-  /** Kênh (Shopify / Google / Microsoft Ads), '' khi không riêng kênh nào. */
+  /** Kênh (Shopify / Google / Microsoft / ChatGPT Ads), '' khi không riêng kênh nào. */
   channel: Channel;
   /** What was changed / observed. */
   text: string;
