@@ -78,7 +78,7 @@ export function buildPaidStatusIndex(
 }
 
 /** Resolve "In Paid" status for a single keyword. Precedence:
- *  master (active camps) > manual (freshly-added fallback) > paused > negative.
+ *  master (active camps) > manual (freshly-added fallback) > negative > paused.
  *  A kw bid in one active camp AND paused in another counts as In Paid.
  *  Case- and whitespace-insensitive match (ASO tabs sometimes carry double spaces). */
 export function resolvePaidStatus(
@@ -107,6 +107,13 @@ export function resolvePaidStatus(
       manualNote: manual.note,
     };
   }
+  // Negative list thắng paused (30/09/2026): Trang đã quyết định loại keyword,
+  // dù nó còn nằm trong một camp đã tắt thì cũng không cần hiện lại ở "Not in
+  // Paid (gồm ⏸)". Trước đây paused xét trước nên 44 keyword đã negative vẫn hiện
+  // là "Paused camp".
+  if (index.negative.has(k)) {
+    return { inPaid: false, negative: true, paused: false, source: 'negative' };
+  }
   // Only paused camps ever bid this kw → treat as NOT bid (re-consider it),
   // but keep the history visible via the paused flag/camps.
   const pausedCamps = index.paused.get(k);
@@ -118,10 +125,6 @@ export function resolvePaidStatus(
       source: 'paused',
       pausedCamps: Array.from(pausedCamps),
     };
-  }
-  // Negative list: not actively bid, but explicitly handled → not "Not in Paid".
-  if (index.negative.has(k)) {
-    return { inPaid: false, negative: true, paused: false, source: 'negative' };
   }
   return { inPaid: false, negative: false, paused: false, source: null };
 }
