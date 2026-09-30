@@ -58,6 +58,7 @@ import { useCategoryDetailStore } from '@/lib/store/categoryDetailStore';
 import { useDashboardContext } from '@/lib/store/dashboardContextStore';
 import { useNotesStore } from '@/lib/store/notesStore';
 import { readChangelog } from '@/lib/store/changelog';
+import { stripRichText } from '@/components/shared/RichNote';
 import { cn } from '@/lib/utils';
 
 function CopyLinkButton({ onClick, copied }: { onClick: () => void; copied: boolean }) {
@@ -292,7 +293,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     [data, surfaceFocus],
   );
   const changeMarkers = useMemo(
-    () => changeEntries.map((e) => ({ date: e.date, label: e.text })),
+    () => changeEntries.map((e) => ({ date: e.date, label: stripRichText(e.text) })),
     [changeEntries],
   );
 

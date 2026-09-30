@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Check, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useNotesStore } from '@/lib/store/notesStore';
 import { useSheetData } from '@/lib/hooks/useSheetData';
@@ -14,11 +14,11 @@ import {
   type ChangeTagKind,
   type Channel,
 } from '@/lib/store/changelog';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DateFieldDMY } from '@/components/shared/DateFieldDMY';
 import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
+import { RichToolbar, renderRichText } from '@/components/shared/RichNote';
 import { formatDMY, formatDMYTime } from '@/lib/utils/format';
 
 // What was changed, and what happened after.
@@ -97,6 +97,8 @@ export function ChangelogView() {
   const [draft, setDraft] = useState<Draft>({ date: todayIso(), kind: 'account', value: '', channel: '', text: '' });
   const [filter, setFilter] = useState<'all' | ChangeTagKind>('all');
   const [channelFilter, setChannelFilter] = useState<'all' | Channel>('all');
+  const addRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+  const editRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [edit, setEdit] = useState<Draft | null>(null);
 
@@ -174,7 +176,7 @@ export function ChangelogView() {
         export). Không ghi lại thì tuần sau CPI nhảy mà không biết là do quyết định hay do đấu giá.
         <div className="mt-1">
           Ngày nhập là <b>ngày thay đổi thật sự xảy ra</b>, không phải ngày bạn gõ — nhờ vậy vạch mốc trên biểu đồ theo
-          ngày rơi đúng chỗ. <b>Kênh</b> = thay đổi thuộc Shopify / Google / Microsoft / ChatGPT Ads, bỏ trống nếu không riêng kênh
+          ngày rơi đúng chỗ. <b>Kênh</b> = thay đổi thuộc Shopify / Google / Microsoft / ChatGPT Ads, bỏ trống nếu không riêng kênh. Định dạng: bôi đen rồi bấm nút, hoặc gõ **đậm**, _nghiêng_, ~~gạch~~, ==nền vàng==, {'{'}red|chữ đỏ{'}'}
           nào. Lưu vào tab <code className="text-[10px]">App_Notes</code> nên xem/sửa được cả trong sheet. Bấm ✎ để sửa
           mục đã ghi.
         </div>
@@ -230,15 +232,23 @@ export function ChangelogView() {
             </label>
           )}
           <label className="flex min-w-[16rem] flex-1 flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wide text-slate-500">Đổi gì / thấy gì</span>
-            <Input
+            <span className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-slate-500">
+              Đổi gì / thấy gì
+              <RichToolbar inputRef={addRef} value={draft.text} onChange={(t) => setDraft((d) => ({ ...d, text: t }))} />
+            </span>
+            <AutoGrowTextarea
+              ref={addRef as RefObject<HTMLTextAreaElement>}
               value={draft.text}
               onChange={(e) => setDraft((d) => ({ ...d, text: e.target.value }))}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') add();
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  add();
+                }
               }}
-              placeholder="vd: nâng trần CPI Brand từ $15 lên $35 ở 4 nước Tier 1"
-              className="h-7 text-xs"
+              rows={1}
+              placeholder="vd: nâng trần CPI Brand từ $15 lên $35 ở 4 nước Tier 1 — bôi đen rồi bấm B / I / màu"
+              className="min-h-7 w-full rounded-md border border-slate-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </label>
           <Button size="sm" className="h-7 gap-1 text-xs" disabled={!draftValid(draft)} onClick={add}>
@@ -348,8 +358,12 @@ export function ChangelogView() {
                   )}
                 </div>
                 <label className="mt-2 flex flex-col gap-1">
-                  <span className="text-[10px] uppercase tracking-wide text-slate-500">Đổi gì / thấy gì</span>
+                  <span className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-slate-500">
+                    Đổi gì / thấy gì
+                    <RichToolbar inputRef={editRef} value={edit.text} onChange={(t) => setEdit((d) => (d ? { ...d, text: t } : d))} />
+                  </span>
                   <AutoGrowTextarea
+                    ref={editRef as RefObject<HTMLTextAreaElement>}
                     value={edit.text}
                     onChange={(ev) => setEdit((d) => (d ? { ...d, text: ev.target.value } : d))}
                     onKeyDown={(ev) => {
@@ -384,7 +398,7 @@ export function ChangelogView() {
                 <span className={cn('shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium', TAG_CLS[e.tag.kind])} title={TAG_LABEL[e.tag.kind]}>
                   {e.tag.kind === 'account' ? 'toàn bộ' : e.tag.value}
                 </span>
-                <span className="min-w-0 flex-1 whitespace-pre-wrap text-[12px] leading-snug text-slate-800">{e.text}</span>
+                <span className="min-w-0 flex-1 whitespace-pre-wrap text-[12px] leading-snug text-slate-800">{renderRichText(e.text)}</span>
                 {e.writtenAt && (
                   <span className="shrink-0 cursor-help text-[9px] text-slate-300" title={`Ghi lúc ${formatDMYTime(e.writtenAt)}`}>
                     ✎

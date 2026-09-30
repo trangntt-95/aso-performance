@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useRef, type ComponentProps } from 'react';
+import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, type ComponentProps } from 'react';
 
 // Textarea cao đúng bằng nội dung.
 //
@@ -10,8 +10,15 @@ import { useLayoutEffect, useRef, type ComponentProps } from 'react';
 // mount), nên mở bảng ra là thấy đủ. `rows` vẫn là chiều cao TỐI THIỂU để ô
 // trống không xẹp thành một vạch. Người dùng kéo tay (resize-y) vẫn được, và
 // lần gõ tiếp theo sẽ tính lại theo nội dung.
-export function AutoGrowTextarea({ value, style, ...props }: ComponentProps<'textarea'>) {
+//
+// forwardRef (30/09/2026): thanh định dạng RichToolbar cần tới textarea để bọc
+// đoạn đang bôi đen bằng markup.
+export const AutoGrowTextarea = forwardRef<HTMLTextAreaElement, ComponentProps<'textarea'>>(function AutoGrowTextarea(
+  { value, style, ...props },
+  outerRef,
+) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  useImperativeHandle(outerRef, () => ref.current as HTMLTextAreaElement, []);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -19,4 +26,4 @@ export function AutoGrowTextarea({ value, style, ...props }: ComponentProps<'tex
     el.style.height = `${el.scrollHeight}px`;
   }, [value]);
   return <textarea ref={ref} value={value} style={{ overflowY: 'hidden', ...style }} {...props} />;
-}
+});
