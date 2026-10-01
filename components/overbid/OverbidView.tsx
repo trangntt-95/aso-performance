@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Search, X, ExternalLink, Flame } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
+import { campaignIdFromUrl } from '@/lib/sheets/campUrl';
+import { CampIdTag } from '@/components/shared/CampIdTag';
 import { NoteCell } from '@/components/shared/NoteCell';
 import { CampImpactCell } from '@/components/overbid/CampImpactCell';
 import { BrandTopPanel } from '@/components/overbid/BrandTopPanel';
@@ -314,7 +316,8 @@ export function OverbidView() {
       if (view === 'active' && !showHidden && hiddenUntil.has(r.camp)) return false;
       if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
       if (matchFilter !== 'all' && r.matchLevel !== matchFilter) return false;
-      if (q && !r.camp.toLowerCase().includes(q)) return false;
+      // Khớp theo tên HOẶC Campaign ID (số cuối URL Camp_Links) — Trang 01/10/2026.
+      if (q && !r.camp.toLowerCase().includes(q) && campaignIdFromUrl(r.url) !== q) return false;
       return true;
     });
     const { kind, get } = SORT_COLS[sortKey];
@@ -436,7 +439,7 @@ export function OverbidView() {
         <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
           <div className="relative flex-1 min-w-[160px] max-w-xs">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm camp…" className="pl-7 h-7 text-xs" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm camp hoặc Campaign ID…" className="pl-7 h-7 text-xs" />
           </div>
           <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className={selectCls} title="Category">
             <option value="all">Category: All</option>
@@ -568,6 +571,7 @@ export function OverbidView() {
                         ) : (
                           <span className="font-medium text-[12px] text-slate-800">{r.camp}</span>
                         )}
+                        {campaignIdFromUrl(r.url) && <CampIdTag id={campaignIdFromUrl(r.url)!} />}
                         {r.mergedCount > 1 && (
                           <span
                             title={`Gộp từ ${r.mergedCount} dòng cùng campaign (cùng URL):\n${r.mergedNames.join('\n')}`}

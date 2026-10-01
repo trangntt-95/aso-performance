@@ -17,6 +17,7 @@ import {
   type HealthBucket,
 } from '@/lib/market/campHealth';
 import { buildCampUrlIndex } from '@/lib/sheets/campUrl';
+import { CampIdTag } from '@/components/shared/CampIdTag';
 import { buildCampBenchmark } from '@/lib/market/overbid';
 import { resolveCampCategory, CANONICAL_CATEGORIES } from '@/lib/market/categoryTaxonomy';
 import {
@@ -288,7 +289,9 @@ export function CampHealthView() {
       if (linkFilter === 'no-url' && campUrl.get(r.camp)) return false;
       if (linkFilter === 'has-url' && !campUrl.get(r.camp)) return false;
       if (categoryFilter !== 'all' && categoryByCamp.get(r.camp) !== categoryFilter) return false;
-      if (q && !r.camp.toLowerCase().includes(q)) return false;
+      // Khớp theo tên HOẶC Campaign ID (Trang 01/10/2026: tên đổi đuôi liên
+      // tục, gõ ID khớp dễ hơn).
+      if (q && !r.camp.toLowerCase().includes(q) && campUrl.idOf(r.camp) !== q) return false;
       return true;
     });
     const val = (r: CampHealthRow): number | string | null => {
@@ -493,7 +496,7 @@ export function CampHealthView() {
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2">
           <div className="relative flex-1 min-w-[150px] max-w-xs">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm camp…" className="pl-7 h-7 text-xs" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm camp hoặc Campaign ID…" className="pl-7 h-7 text-xs" />
           </div>
           {/* One dropdown for every group, with its count — the chip row it
               replaced needed nine colours to say the same thing. */}
@@ -632,6 +635,7 @@ export function CampHealthView() {
               {filtered.map((r) => {
                 const meta = BUCKET_META[r.bucket];
                 const url = campUrl.get(r.camp);
+                const campId = campUrl.idOf(r.camp);
                 const hideTs = hiddenUntil.get(campNoteId(r.camp));
                 const impTone = r.impDelta == null ? '' : r.impDelta <= -0.35 ? 'text-rose-600' : r.impDelta < 0 ? 'text-amber-600' : 'text-emerald-600';
                 return (
@@ -646,10 +650,12 @@ export function CampHealthView() {
                         >
                           {r.camp}
                           <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
+                          {campId && <CampIdTag id={campId} />}
                         </a>
                       ) : (
                         <span className="inline-flex items-baseline gap-1">
                           <span className="text-[12px] font-medium text-slate-800">{r.camp}</span>
+                          {campId && <CampIdTag id={campId} />}
                           <span
                             className="cursor-help rounded bg-slate-100 px-1 text-[9px] font-medium text-slate-500"
                             title="Chưa có dòng URL trong Camp_Links → không mở thẳng sang Apple Ads được, và cũng không có cột Geo để đối chiếu với danh sách exclude."
