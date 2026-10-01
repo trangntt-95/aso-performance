@@ -18,6 +18,7 @@
     "../../lib/sheets/paidCategoryBoard.ts",
     "../../lib/market/categoryTaxonomy.ts",
     "../../lib/sheets/campName.ts",
+    "../../lib/sheets/campGroup.ts",
     "../../lib/utils/keywordQuery.ts",
     "../../lib/market/countryWeighting.ts",
     "../../lib/sheets/campGeo.ts",

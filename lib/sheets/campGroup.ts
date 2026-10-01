@@ -29,7 +29,8 @@ import { normalizeCampName, buildCampNameResolver, buildCampLinkResolver } from 
 export interface CampGrouper {
   /** Stable lowercase key identifying the campaign a label belongs to. */
   key(camp: string): string;
-  /** Display name for a key — the shortest label seen for that campaign. */
+  /** Display name for a key — the Camp_Links name when the campaign is known
+   *  there, else the shortest label seen for it. */
   label(key: string): string;
   /** How many labels folded into an existing campaign (diagnostics). */
   mergedCount: number;
@@ -46,14 +47,27 @@ export function buildCampGrouper(
     .map((c) => (typeof c === 'string' ? { camp: c } : c))
     .filter((c) => !!c.camp);
   const byLinks = buildCampLinkResolver(authoritative);
+  // key → tên HIỆN TẠI trong Camp_Links. Camp gộp được về Camp_Links thì hiện
+  // đúng tên đó, không phải nhãn ngắn nhất trong export: "TP - Profit - Exact
+  // 01 - Tier 1 - NL" (Camp_Links) từng hiện là "… Tier 2 - NL" vì export còn
+  // giữ 42 ngày tên cũ trước khi đổi tier, hai tên dài bằng nhau và tên cũ
+  // đến trước — tìm "Tier 1 - NL" trên Camp Health không ra gì (01/10/2026).
+  const linkLabel = new Map<string, string>();
+  for (const c of authoritative) {
+    const n = normalizeCampName(c.camp);
+    if (n && !linkLabel.has(n.toLowerCase())) linkLabel.set(n.toLowerCase(), n);
+  }
 
   // Pass 1 — fold each label onto its Camp_Links campaign.
   const resolved = new Map<string, string>(); // raw label → key
   const unresolved: string[] = [];
   for (const n of all) {
     const base = byLinks.resolve(n);
-    if (base) resolved.set(n, base.toLowerCase());
-    else unresolved.push(n);
+    if (base) {
+      const k = base.toLowerCase();
+      resolved.set(n, k);
+      if (!linkLabel.has(k)) linkLabel.set(k, base);
+    } else unresolved.push(n);
   }
 
   // Pass 2 — labels Camp_Links doesn't know about can still fold into each
@@ -88,6 +102,9 @@ export function buildCampGrouper(
   for (const n of all) {
     const k = resolved.get(n)!;
     perKey.set(k, (perKey.get(k) ?? 0) + 1);
+    // Camp_Links knows the campaign: its current name is the label, whatever
+    // the export calls it.
+    if (linkLabel.has(k)) continue;
     const cur = labels.get(k);
     // Notes only lengthen a name, so the shortest label is closest to the real one.
     if (cur === undefined || n.length < cur.length) labels.set(k, n);
@@ -112,6 +129,6 @@ export function buildCampGrouper(
       cache.set(camp, k);
       return k;
     },
-    label: (k) => labels.get(k) ?? k,
+    label: (k) => linkLabel.get(k) ?? labels.get(k) ?? k,
   };
 }
