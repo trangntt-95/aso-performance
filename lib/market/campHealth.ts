@@ -19,6 +19,7 @@ export type HealthBucket =
   | 'paused' // listed in Paused_camp → genuinely switched off
   | 'idle' // spent last period, nothing now, but NOT in Paused_camp → check
   | 'silent' // not paused, yet $0 in both windows: no export row at all, or a few impressions and 0 clicks → forgotten or bid too low
+  | 'tiny' // not paused, lifetime spend (whole export) under TINY_LIFETIME_SPEND → never really ran; raise bid or switch off
   | 'pricey' // converting, but CPI above the allowed ceiling (NPI×90%; median when no cap)
   | 'rising' // impressions AND installs both up vs the prior period → push it
   | 'scale' // cheap CPI with steady installs → room to push
@@ -57,7 +58,15 @@ export interface CampHealthRow {
   reliable: boolean;
   lastActive: string;
   series: { t: number; v: number | null }[];
+  /** Cả đời camp trong export theo ngày (từ ngày đầu export). Để xếp 'tiny' và
+   *  để bảng hiện "cả đời $X" cạnh tên — Trang 01/10/2026 hỏi "camp nào all
+   *  time chỉ spend < $15". */
+  lifetime: { spend: number; installs: number; from: string; to: string };
 }
+
+/** Dưới mức này cả đời → 'tiny': camp chưa bao giờ chạy thật sự. */
+export const TINY_LIFETIME_SPEND = 15;
+const NO_LIFETIME = { spend: 0, installs: 0, from: '', to: '' };
 
 export interface CampHealthResult {
   rows: CampHealthRow[];
@@ -94,6 +103,8 @@ export interface CampHealthOptions {
   windowDays?: number;
   /** Ignore camps below this spend in the current window. Default 1. */
   minSpend?: number;
+  /** Lifetime spend (whole export) below this → 'tiny'. Default TINY_LIFETIME_SPEND. */
+  tinySpend?: number;
   /** Camp_Links names, fed to the grouper so an annotated label can resolve to
    *  its clean base name even when that base never appears in the spend data. */
   /** Camp_Links — truyền thẳng CampLinkRow để gộp cả tên cũ (alias). */
@@ -179,6 +190,7 @@ export function analyseCampHealth(
 ): CampHealthResult {
   const win = opts.windowDays ?? 30;
   const minSpend = opts.minSpend ?? 1;
+  const tinySpend = opts.tinySpend ?? TINY_LIFETIME_SPEND;
   // One campaign shows up under several labels ("… - test till Sep",
   // "… (CPI 32)"). Group them, or the same camp is reported as several rows
   // each holding a slice of its spend.
@@ -215,6 +227,7 @@ export function analyseCampHealth(
     prev: HealthWindow; prevDays: Set<string>;
     lastActive: string;
     series: { t: number; v: number | null }[];
+    life: { spend: number; installs: number; from: string; to: string };
   }
   const byCamp = new Map<string, Acc>();
   for (const r of rows) {
@@ -222,9 +235,13 @@ export function analyseCampHealth(
     if (!key) continue;
     let a = byCamp.get(key);
     if (!a) {
-      a = { camp: r.camp, cur: empty(), curDays: new Set(), prev: empty(), prevDays: new Set(), lastActive: '', series: [] };
+      a = { camp: r.camp, cur: empty(), curDays: new Set(), prev: empty(), prevDays: new Set(), lastActive: '', series: [], life: { spend: 0, installs: 0, from: '', to: '' } };
       byCamp.set(key, a);
     }
+    a.life.spend += r.spend;
+    a.life.installs += r.installs;
+    if (!a.life.from || r.date < a.life.from) a.life.from = r.date;
+    if (r.date > a.life.to) a.life.to = r.date;
     // The grouper already picked the shortest label for this campaign.
     a.camp = grouper.label(key);
     a.series.push({ t: Date.parse(r.date), v: r.impressions });
@@ -256,7 +273,49 @@ export function analyseCampHealth(
     const cur = a.cur, prev = a.prev;
     const spentNow = cur.spend >= minSpend;
     const spentBefore = prev.spend >= minSpend;
+    // Presence in Paused_camp settles it: the campaign is off, so nothing about
+    // it is actionable. Checked FIRST and without regard to spend — a camp
+    // paused midway still shows spend for the days before it was switched off,
+    // and flagging that as "burning money" would send you to fix something
+    // already fixed.
+    const isPaused = pausedKeys.has(grouper.key(a.camp));
+    // Cả đời chưa tới ngưỡng (01/10/2026): camp chưa bao giờ chạy thật sự —
+    // bid quá thấp để có click, hoặc mở rồi bỏ quên. Xếp trước mọi nhóm theo
+    // kỳ, vì "đốt $4" hay "ngừng chi $3" đều là đọc nhiễu trên một camp chưa
+    // có dữ liệu; việc cần làm là quyết định tăng bid hay tắt hẳn. Camp đã
+    // tắt (Paused_camp) không cần quyết định gì → đi tiếp xuống dưới.
+    if (!isPaused && a.life.spend > 0 && a.life.spend < tinySpend) {
+      out.push({
+        camp: a.camp,
+        bucket: 'tiny',
+        cur,
+        prev,
+        impDelta: null,
+        installDelta: null,
+        spendDelta: null,
+        atRisk: cur.spend,
+        reason: `Cả đời (từ ${a.life.from}) chỉ tiêu $${a.life.spend.toFixed(2)}, ${a.life.installs} install — chưa bao giờ chạy thật sự; ${win} ngày qua $${cur.spend.toFixed(2)}. Quyết định: tăng bid để có dữ liệu, hoặc tắt và ghi vào Paused_camp.`,
+        reliable: false,
+        lastActive: a.lastActive,
+        series: a.series.sort((x, y) => x.t - y.t),
+        lifetime: a.life,
+      });
+      continue;
+    }
     if (!spentNow && !spentBefore) {
+      // Camp đã tắt (Paused_camp) mà $0 cả hai kỳ: là "đã tắt", không phải
+      // "không hiển thị" — trước 01/10/2026 nhánh này chạy trước kiểm tra
+      // Paused_camp nên camp tắt hẳn từ lâu vẫn bị gọi là bị bỏ quên.
+      if (isPaused) {
+        out.push({
+          camp: a.camp, bucket: 'paused', cur, prev,
+          impDelta: null, installDelta: null, spendDelta: null, atRisk: 0,
+          reason: `Có trong tab Paused_camp và $0 cả ${win} ngày qua lẫn kỳ trước → đã tắt hẳn. Không cần làm gì.`,
+          reliable: false, lastActive: a.lastActive,
+          series: a.series.sort((x, y) => x.t - y.t), lifetime: a.life,
+        });
+        continue;
+      }
       // Có dòng trong export nhưng $0 cả hai kỳ: trước 16/09/2026 dòng này là
       // `continue`, và vì camp đã "có mặt" trong export nên cũng không được
       // xếp 'silent' bên dưới — nó biến mất khỏi bảng. Ordermetrics: 13 lượt
@@ -278,6 +337,7 @@ export function analyseCampHealth(
         reliable: false,
         lastActive: a.lastActive,
         series: a.series.sort((x, y) => x.t - y.t),
+        lifetime: a.life,
       });
       continue;
     }
@@ -298,12 +358,6 @@ export function analyseCampHealth(
     // Installs this thin make CPI meaningless; flagged so the UI can say so.
     const reliable = cur.installs >= 3;
 
-    // Presence in Paused_camp settles it: the campaign is off, so nothing about
-    // it is actionable. Checked FIRST and without regard to spend — a camp
-    // paused midway still shows spend for the days before it was switched off,
-    // and flagging that as "burning money" would send you to fix something
-    // already fixed.
-    const isPaused = pausedKeys.has(grouper.key(a.camp));
     if (isPaused) {
       bucket = 'paused';
       atRisk = 0;
@@ -353,6 +407,7 @@ export function analyseCampHealth(
       camp: a.camp, bucket, cur, prev, impDelta, installDelta, spendDelta, atRisk, reason, reliable,
       lastActive: a.lastActive,
       series: a.series.sort((x, y) => x.t - y.t),
+      lifetime: a.life,
     });
   }
 
@@ -411,6 +466,7 @@ function appendKnownCamps(
       reliable: false,
       lastActive: '',
       series: [],
+      lifetime: NO_LIFETIME,
     });
   }
 }
@@ -517,6 +573,8 @@ function analyseFromTotals(
       reliable: cur.installs >= 3,
       lastActive: '',
       series: [],
+      // Tổng của một khoảng không rõ dài bao nhiêu → không xếp 'tiny' từ đây.
+      lifetime: { spend: cur.spend, installs: cur.installs, from: '', to: '' },
     });
   }
 
@@ -578,6 +636,11 @@ export const BUCKET_META: Record<
     label: '🔇 Không hiển thị', short: 'Không hiển thị',
     tone: 'warn',
     help: 'Camp không nằm trong Paused_camp nhưng không tiêu một đồng nào ở cả kỳ này và kỳ trước: hoặc export Shopify không có dòng nào (không có lượt hiển thị), hoặc có vài lượt hiển thị mà 0 click. Đây là camp bị bỏ quên: bid quá thấp để lên chỗ người ta bấm, hoặc đã tắt trên Shopify mà chưa ghi vào Paused_camp. Không có số để xếp hạng, nên nằm cuối bảng.',
+  },
+  tiny: {
+    label: '🪫 Tiêu quá ít', short: 'Tiêu quá ít',
+    tone: 'warn',
+    help: `Không nằm trong Paused_camp nhưng CẢ ĐỜI (toàn bộ export theo ngày) tiêu chưa tới $${TINY_LIFETIME_SPEND}. Camp chưa bao giờ chạy thật sự: bid quá thấp để có click, hoặc mở rồi bỏ quên. Mọi nhãn theo kỳ đều là nhiễu ở mức này, nên nhóm này thắng — việc cần làm là quyết định tăng bid để có dữ liệu, hoặc tắt hẳn và ghi vào Paused_camp.`,
   },
   idle: {
     label: '⏹ Ngừng chi', short: 'Ngừng chi',

@@ -401,11 +401,11 @@ export function makeDashboardTools(data: SheetPayload) {
 
     get_camp_health: tool({
       description:
-        'Campaign-level health for a period: which camps burn money with no installs, which have a CTR problem, which are losing impressions, which are rising, which are switched off. Use when the question is about CAMPAIGNS rather than keywords.',
+        'Campaign-level health for a period: which camps burn money with no installs, which have a CTR problem, which are losing impressions, which are rising, which are switched off, which never really ran (lifetime spend under $15 = "tiny"). Use when the question is about CAMPAIGNS rather than keywords.',
       inputSchema: z.object({
         days: z.number().min(3).max(90).default(30),
         bucket: z
-          .enum(['all', 'burning', 'wasted-imp', 'losing-imp', 'rising', 'paused'])
+          .enum(['all', 'burning', 'wasted-imp', 'losing-imp', 'pricey', 'idle', 'tiny', 'silent', 'rising', 'scale', 'paused', 'ok'])
           .default('all')
           .describe('Filter to one health bucket.'),
         limit: z.number().min(1).max(40).default(12),
@@ -436,6 +436,8 @@ export function makeDashboardTools(data: SheetPayload) {
             imp_delta_pct: round((r.impDelta ?? 0) * 100),
             spend_delta_pct: round((r.spendDelta ?? 0) * 100),
             money_at_risk: round(r.atRisk, 0),
+            lifetime_spend: round(r.lifetime.spend, 0),
+            lifetime_installs: r.lifetime.installs,
             // Small install counts make CPI a sample, not a rate — say so rather
             // than letting the model quote it as one.
             cpi_reliable: r.reliable,

@@ -82,7 +82,7 @@ function SortHead({
   );
 }
 
-const ORDER: HealthBucket[] = ['burning', 'wasted-imp', 'losing-imp', 'pricey', 'idle', 'paused', 'rising', 'scale', 'ok', 'silent'];
+const ORDER: HealthBucket[] = ['burning', 'wasted-imp', 'losing-imp', 'pricey', 'idle', 'tiny', 'paused', 'rising', 'scale', 'ok', 'silent'];
 
 // Comparison-window lengths, plus a whole-span option.
 //
@@ -672,8 +672,16 @@ export function CampHealthView() {
                           ẩn → hiện lại {dmy(hideTs)}
                         </div>
                       )}
-                      {r.lastActive && (
-                        <div className="text-[10px] text-slate-400">hoạt động cuối {r.lastActive}</div>
+                      {(r.lastActive || r.lifetime.from) && (
+                        <div className="text-[10px] text-slate-400">
+                          {r.lastActive && <>hoạt động cuối {r.lastActive}</>}
+                          {r.lastActive && r.lifetime.from && ' · '}
+                          {r.lifetime.from && (
+                            <span title={`Tổng từ ${r.lifetime.from} đến ${r.lifetime.to} (toàn bộ export theo ngày): $${r.lifetime.spend.toFixed(2)}, ${r.lifetime.installs} install`}>
+                              cả đời ${formatNumber(Math.round(r.lifetime.spend))} · {r.lifetime.installs} ins
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="px-2 py-2">

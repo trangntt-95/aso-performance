@@ -25,7 +25,7 @@ Dữ liệu nguồn nằm ở Google Sheets. App **chỉ đọc** các tab data 
 | **Paid Coverage** | `/paid-coverage` | Keyword có traffic nhưng chưa được bid (gồm gap theo quốc gia), câu tìm kiếm paid GA4 chưa có keyword riêng, và chiều ngược lại: keyword đang bid mà 0 users paid, chia nhóm có nhu cầu / tín hiệu yếu / không có gì. |
 | **Underbid Keywords** | `/underbid` | Keyword có nhu cầu organic thật nhưng đang bid thiếu → nên tăng bid; đo impact sau khi note. |
 | **Overbid Camps** | `/overbid-camps` | Campaign đang trả quá cao (CPC/CPI vượt ngưỡng, hoặc tiêu mà 0 install) → nên giảm bid; panel brand đã top. |
-| **Camp Health** | `/camp-health` | Tiền đang chảy vào đâu: camp click mà 0 install, CTR thấp, mất hiển thị, có tiềm năng. |
+| **Camp Health** | `/camp-health` | Tiền đang chảy vào đâu: camp click mà 0 install, CTR thấp, mất hiển thị, tiêu quá ít cả đời (< $15), có tiềm năng. |
 | **Nguồn Install** | `/install-origin` | Install paid truy về keyword × nước × vị trí × camp × bid. |
 | **Google Ads** | `/google-ads` | Kênh Google Ads (VND): install thật vs conversions, impression share, Quality Score, nước, search term. |
 | **Bid Recommendations** | `/bid-cap` | Bid khuyến nghị theo Country × Category × Keyword cluster, bid hiện tại, trần CPI so giá trị install, cảnh báo camp target nhiều nước lệch bid. |
