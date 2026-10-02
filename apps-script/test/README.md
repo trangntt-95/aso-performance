@@ -7,6 +7,7 @@ node apps-script/test/trend-dashboard.parse.test.mjs apps-script/test/fixture-by
 node apps-script/test/trend-dashboard.ui.test.mjs    apps-script/test/fixture-by-categories-2026-08.json
 node apps-script/test/paid-category-trend.test.mjs
 node apps-script/test/country-weighting.test.mjs
+node apps-script/test/camp-id-sync.test.mjs
 ```
 
 ## Vì sao có `build.mjs`
