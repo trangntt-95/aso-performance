@@ -652,7 +652,7 @@ export interface SheetPayload {
   searchTermRange: { from: string; to: string };
   /** Tab 'Net value per install' — net value theo keyword × nước. */
   netValuePerInstall: NetValueRow[];
-  /** Ghi chú phạm vi của tab đó, ví dụ 'Keyword x country — YTD'. */
+  /** Ghi chú phạm vi của tab đó, ví dụ 'Keyword x country — LTV 4 tháng'. */
   netValueScope: string;
   sheetSources: { id: 'aso' | 'shopify' | 'gads'; label: string; url: string }[];
   /**

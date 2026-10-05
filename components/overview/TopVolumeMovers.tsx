@@ -201,7 +201,7 @@ function MoverRow({
             {m.valueDeltaUsd !== null && Math.abs(m.valueDeltaUsd) >= 20 && (
               <span
                 className={cn('text-[10px] font-medium tabular-nums', m.valueDeltaUsd >= 0 ? 'text-emerald-700' : 'text-rose-700')}
-                title="Δ install × net value/install YTD của keyword (tab Net value per install)"
+                title="Δ install × net value/install LTV 4 tháng của keyword (tab Net value per install)"
               >
                 {m.valueDeltaUsd >= 0 ? '+' : '−'}${formatNumber(Math.round(Math.abs(m.valueDeltaUsd)))} giá trị
               </span>

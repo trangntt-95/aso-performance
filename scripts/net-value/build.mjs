@@ -1,3 +1,5 @@
+// Net value = net 120 ngày đầu sau cài (LTV 4 tháng hoàn vốn); installs chỉ gồm shop
+// đã đủ 120 ngày, installs_pending là số chưa đủ (không vào mẫu số).
 // Từ kết quả BigQuery (JSON của MCP run_query, dạng {rows:[...]} hoặc mảng) và
 // payload dashboard hiện tại (để lấy cluster), dựng nv-final.json cho push.mjs.
 // usage: node scripts/net-value/build.mjs <bq-result.json> <out.json> [sheets-payload.json]
@@ -43,7 +45,7 @@ const out = rows
     const inst = Number(r.installs), pay = Number(r.paying_shops), net = Number(r.net_value);
     return {
       surface: r.surface, kwRaw: r.kw_raw, kw, cluster: cluster.get(kw.toLowerCase()) ?? '', country: canon(r.country),
-      inst, pay, net, npi: inst ? net / inst : null, cr: inst ? pay / inst : null,
+      inst, pending: Number(r.installs_pending ?? 0), pay, net, npi: inst ? net / inst : null, cr: inst ? pay / inst : null,
       largest: Number(r.largest_shop_orders30 ?? 0), zero: Number(r.shops_zero_orders30 ?? 0),
     };
   })
@@ -52,4 +54,4 @@ const out = rows
 
 writeFileSync(outFile, JSON.stringify(out));
 const sum = (f) => out.reduce((s, r) => s + r[f], 0);
-console.log(`rows=${out.length} installs=${sum('inst')} paying=${sum('pay')} net=${Math.round(sum('net'))} cluster=${out.filter((r) => r.cluster).length}`);
+console.log(`rows=${out.length} installs=${sum('inst')} pending=${sum('pending')} paying=${sum('pay')} net=${Math.round(sum('net'))} cluster=${out.filter((r) => r.cluster).length}`);

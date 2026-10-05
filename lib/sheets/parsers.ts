@@ -1550,7 +1550,7 @@ export function parseNetValuePerInstall(rows: string[][]): {
     return Number.isFinite(n) ? n : null;
   };
 
-  // Ghi chú phạm vi nằm ở mấy dòng đầu ('Keyword x country — YTD …'). Lấy dòng
+  // Ghi chú phạm vi nằm ở mấy dòng đầu ('Keyword x country — LTV 4 tháng …'). Lấy dòng
   // đầu tiên có chữ mà không phải tiêu đề của cả tab.
   let scope = '';
   for (let i = 0; i < headerIdx; i++) {

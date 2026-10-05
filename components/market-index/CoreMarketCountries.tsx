@@ -98,7 +98,7 @@ export function CoreMarketCountries({ data, limit = 15, weightBasis = 'revenue',
 
   const hasRevenue = !!weights && weights.totalRevenue > 0;
   const revenuePeriod = weights?.period ?? '';
-  // Giá trị install theo tab Net value per install (YTD, cả hai kênh) — nguồn
+  // Giá trị install theo tab Net value per install (LTV 4 tháng, cả hai kênh) — nguồn
   // thứ hai bên cạnh block doanh thu theo quý của Countries performance.
   const netValueByCountry = useMemo(() => buildCountryNetValue(data, 'all'), [data]);
   const nvOf = (country: string) => netValueByCountry.get(country.trim().toLowerCase()) ?? null;
@@ -291,7 +291,7 @@ export function CoreMarketCountries({ data, limit = 15, weightBasis = 'revenue',
                   {nvLabel(r.country) && (
                     <div
                       className="cursor-help text-[10px] text-indigo-600"
-                      title={`Value/inst theo tab Net value per install (YTD, organic + paid): ${nvOf(r.country)!.installs} install · ${nvOf(r.country)!.payingShops} shop trả tiền${nvOf(r.country)!.thin ? ' — dưới 3 shop, mỏng' : ''}. Dòng trên là doanh thu ÷ install theo quý của Countries performance.`}
+                      title={`Value/inst theo tab Net value per install (LTV 4 tháng, organic + paid): ${nvOf(r.country)!.installs} install · ${nvOf(r.country)!.payingShops} shop trả tiền${nvOf(r.country)!.thin ? ' — dưới 3 shop, mỏng' : ''}. Dòng trên là doanh thu ÷ install theo quý của Countries performance.`}
                     >
                       {nvLabel(r.country)}/inst · net value
                     </div>
@@ -304,7 +304,7 @@ export function CoreMarketCountries({ data, limit = 15, weightBasis = 'revenue',
                   <div className="text-[10px] text-slate-400">
                     {r.valuePerInstall === null ? 'chưa có doanh thu' : `$${r.valuePerInstall.toFixed(0)}/install`}
                     {nvLabel(r.country) && (
-                      <span className="ml-1 cursor-help text-indigo-600" title="Value/inst theo tab Net value per install (YTD, organic + paid); * = dưới 3 shop trả tiền">
+                      <span className="ml-1 cursor-help text-indigo-600" title="Value/inst theo tab Net value per install (LTV 4 tháng, organic + paid); * = dưới 3 shop trả tiền">
                         · {nvLabel(r.country)} nv
                       </span>
                     )}

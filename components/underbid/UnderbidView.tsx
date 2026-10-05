@@ -796,7 +796,7 @@ export function UnderbidView() {
                   sortKey={sortKey}
                   sortDir={sortDir}
                   onSort={toggleSort}
-                  title="Dòng trên: tổng net value keyword đã mang về (YTD, mọi nước, mọi kênh) · số install · số shop trả tiền. Dòng dưới: TIỀM NĂNG = organic install trong cửa sổ × $/install — cỡ miếng bánh nếu paid ăn được như organic. Sort theo tiềm năng."
+                  title="Dòng trên: tổng net value keyword đã mang về (LTV 4 tháng, mọi nước, mọi kênh) · số install · số shop trả tiền. Dòng dưới: TIỀM NĂNG = organic install trong cửa sổ × $/install — cỡ miếng bánh nếu paid ăn được như organic. Sort theo tiềm năng."
                 />
                 <SortHead
                   label="Trần bid"
@@ -942,7 +942,7 @@ export function UnderbidView() {
                         <span className="text-slate-300" title="Chưa có dòng nào trong tab 'Net value per install'">—</span>
                       ) : (
                         <div className="leading-tight">
-                          <div className={r.nv.thin ? 'text-amber-700' : 'text-slate-800'} title={`Tổng net value YTD: $${Math.round(r.nv.netValue).toLocaleString()} từ ${r.nv.installs} install, ${r.nv.payingShops} shop trả tiền${r.nv.thin ? ` — ${r.nv.thinReason}` : ''}`}>
+                          <div className={r.nv.thin ? 'text-amber-700' : 'text-slate-800'} title={`Tổng net value LTV 4 tháng: $${Math.round(r.nv.netValue).toLocaleString()} từ ${r.nv.installs} install, ${r.nv.payingShops} shop trả tiền${r.nv.thin ? ` — ${r.nv.thinReason}` : ''}`}>
                             ${Math.round(r.nv.netValue).toLocaleString()}
                             <span className="ml-1 text-[9px] text-slate-400">{r.nv.installs}i · {r.nv.payingShops}s</span>
                           </div>

@@ -1,7 +1,7 @@
 // Tính lại tab 'Max bid cap' từ dữ liệu pipeline, giữ nguyên cấu trúc và các
 // cột cấu hình của tab (Cat#, Ctry#, Country, Tier, Category, Cluster, Example,
 // Tier Ceil, CR used). Chỉ đổi cột tiền:
-//   NPI (cluster×ctry)  = YTD net value ÷ install của keyword thuộc Category đó
+//   NPI (cluster×ctry)  = net 120 ngày đầu sau cài (LTV 4 tháng) ÷ install đã chín của keyword thuộc Category đó
 //                          ở nước đó (nv-final.json); ≥3 shop trả tiền mới tin;
 //                          mỏng mà có ≥3 install → NPI category toàn cầu (*)
 //   NPI×90%, Country NetVal×90% (net/install nước từ countries-body × 0.9),
@@ -105,7 +105,8 @@ const out = data.map((r) => {
 const today = new Date();
 const dmy = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 const yday = new Date(today.getTime() - 86400000);
-const title = `TRUEPROFIT — MAX BID CAP  |  NPI Country×Category YTD 01/01/${yday.getFullYear()} → ${dmy(yday)} (net)  |  Country NetVal 4 tháng gần nhất  |  cập nhật ${dmy(today)}`;
+const matureTo = new Date(yday.getTime() - 120 * 86400000);
+const title = `TRUEPROFIT — MAX BID CAP  |  NPI Country×Category = net 120 ngày đầu sau cài (LTV 4 tháng), shop cài 01/01/${yday.getFullYear()} → ${dmy(matureTo)}  |  Country NetVal 4 tháng gần nhất  |  cập nhật ${dmy(today)}`;
 const footer = Array.from({ length: 15 }, () => '');
 footer[0] = `Bid=min(NPI×90%, Country NV×90%)×CR, chặn Tier Ceil | ${active} active | ${paused} paused | ${fromGlobal} dòng NPI* dùng category toàn cầu (nước mỏng) | ${capBinding} dòng NV nước chặn | ⚠️${warn} bids>$45 | ${unmapped} install không map được category`;
 writeFileSync(outFile, JSON.stringify({ title, rows: [...out, footer] }));

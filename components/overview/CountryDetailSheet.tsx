@@ -101,7 +101,7 @@ export function CountryDetailSheet() {
   const { open, country, window: w, close } = useCountryDetailStore();
   const { data } = useSheetData();
 
-  // Giá trị install (tab Net value per install) — YTD, không đổi theo window:
+  // Giá trị install (tab Net value per install) — LTV 4 tháng, không đổi theo window:
   // nó nói install ở nước này ĐÁNG bao nhiêu, không phải tuần này kiếm được gì.
   const kwCountryNv = useMemo(() => buildKeywordCountryNetValue(data), [data]);
   const countryNv = useMemo(() => buildCountryNetValue(data, 'all'), [data]);
@@ -178,7 +178,7 @@ export function CountryDetailSheet() {
                   </span>
                   {detail.value.thin && <span className="text-[9px] text-amber-700">mỏng</span>}
                   <span className="text-[10px] text-slate-500">
-                    · {detail.value.installs} install · {detail.value.payingShops} shop trả tiền · YTD
+                    · {detail.value.installs} install · {detail.value.payingShops} shop trả tiền · LTV 4 tháng
                   </span>
                 </div>
               )}

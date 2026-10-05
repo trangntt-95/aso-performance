@@ -265,7 +265,7 @@ export function CategoryCpiStrip({
       </ul>
       <div className="mt-1.5 text-[9px] leading-snug text-slate-400">
         <b>Value/inst</b> = một install của category đáng bao nhiêu (tab Net value per install, {pickLabel}
-        {nvScope ? `, ${nvScope}` : ''}); số YTD, không đổi theo khoảng ngày của trang · lọc surface ở trang chỉ tách được cột này, chi phí vẫn là toàn bộ paid ·{' '}
+        {nvScope ? `, ${nvScope}` : ''}); số LTV 4 tháng, không đổi theo khoảng ngày của trang · lọc surface ở trang chỉ tách được cột này, chi phí vẫn là toàn bộ paid ·{' '}
         <span className="text-rose-600">đỏ</span> = CPI cao hơn giá trị, <span className="text-amber-700">mỏng</span> = dưới 3 shop trả tiền
       </div>
     </div>

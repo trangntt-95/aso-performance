@@ -349,7 +349,7 @@ export function KeywordTrendSheet() {
     [data, keyword, drillWindow, surface],
   );
 
-  // keyword × nước → giá trị install. Tab Net value là YTD, không đổi theo
+  // keyword × nước → giá trị install. Tab Net value là LTV 4 tháng, không đổi theo
   // drillWindow — nó nói install ở đó ĐÁNG bao nhiêu, không phải tuần này
   // kiếm được bao nhiêu.
   const kwCountryNv = useMemo(() => buildKeywordCountryNetValue(data), [data]);
@@ -358,7 +358,7 @@ export function KeywordTrendSheet() {
     [kwCountryNv, keyword],
   );
   // Khối "Giá trị": keyword này đã mang về bao nhiêu tiền, từ nước nào, kênh
-  // nào — cộng từ các ô keyword × nước của tab Net value per install (YTD).
+  // nào — cộng từ các ô keyword × nước của tab Net value per install (LTV 4 tháng).
   const kwValue = useMemo(() => {
     if (!nvForKeyword || nvForKeyword.size === 0) return null;
     const cells = Array.from(nvForKeyword.entries());
@@ -682,7 +682,7 @@ export function KeywordTrendSheet() {
               </section>
             )}
 
-            {/* Giá trị: keyword đã mang về bao nhiêu tiền, từ đâu (tab Net value per install, YTD) */}
+            {/* Giá trị: keyword đã mang về bao nhiêu tiền, từ đâu (tab Net value per install, LTV 4 tháng) */}
             <section className="space-y-2 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3">
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-indigo-800">
                 Giá trị (net value){data?.netValueScope ? <span className="ml-1 font-normal normal-case text-indigo-500">· {data.netValueScope}</span> : null}

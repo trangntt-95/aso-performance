@@ -4,7 +4,7 @@ import { getWriteSheetsClient, getSpreadsheetId } from '@/lib/sheets/client';
 // Ghi lại tab 'Max bid cap' từ dữ liệu pipeline (scripts/net-value/build-npi.mjs).
 // Tab này Trang từng dựng bằng MCP rồi dán; 17/09/2026 đọc thô thấy toàn giá
 // trị, không công thức, nên pipeline tính lại và ghi nguyên tab mỗi sáng:
-//   NPI (country × category, YTD net/install, mỏng → NPI category toàn cầu)
+//   NPI (country × category, net 120 ngày đầu sau cài / install đã chín, mỏng → NPI category toàn cầu)
 //   NPI×90% · Country NetVal×90% (net/install nước × 0.9) · Eff = min của hai
 //   Tier Ceil và CR used GIỮ NGUYÊN từ tab (cấu hình + CR theo cluster)
 //   Bid Rec = min(Eff × CR, Tier Ceil) · ⚠️ khi bid > $45
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `cần title và ≥500 dòng đúng ${HEADER.length} cột — chặn ghi đè tab bằng dữ liệu hỏng` }, { status: 400 });
   }
   const values: (string | number)[][] = [
-    [body.title, '', '', '', 'Bid=min(Eff. Max CPI×CR, tier_ceil)  |  NPI = YTD net value/install theo Country×Category (mỏng → category toàn cầu)  |  Country NetVal = net/install 4 tháng gần nhất  |  CR used giữ từ tab  |  ⚠️=bid>$45  |  tự động hằng ngày (Claude Code)'],
+    [body.title, '', '', '', 'Bid=min(Eff. Max CPI×CR, tier_ceil)  |  NPI = net 120 ngày đầu sau cài (LTV 4 tháng) / install theo Country×Category (mỏng → category toàn cầu)  |  Country NetVal = net/install 4 tháng gần nhất  |  CR used giữ từ tab  |  ⚠️=bid>$45  |  tự động hằng ngày (Claude Code)'],
     HEADER,
     ...body.rows,
   ];

@@ -22,31 +22,50 @@ Bảng `trueda.trueprofit.ga_surface_attr_2526` đã phủ year_month 202501–2
 - write_mode: "overwrite"
 Kỳ vọng rows_written > 0. Lỗi thì dừng và in lỗi.
 
-Bước 2 — Tổng hợp trong BigQuery. Gọi `mcp__claude_ai_TrueProfit_DA__run_query` với max_rows 5000 và SQL sau (nguyên văn):
+Bước 2 — Tổng hợp trong BigQuery. Định nghĩa (Trang 05/10/2026): net value một install = net 120 NGÀY ĐẦU sau khi cài (LTV cố định kỳ 4 tháng = thời gian hoàn vốn), KHÔNG phải YTD. Ngày cài lấy từ partner_events (RELATIONSHIP_INSTALLED / REACTIVATED, thiếu thì ngày 1 của tháng GA ghi install). Chỉ shop đã đủ 120 ngày (cohort chín) mới vào installs / net; shop cài chưa đủ 120 ngày đếm ở installs_pending, không vào mẫu số. Gọi `mcp__claude_ai_TrueProfit_DA__run_query` với max_rows 5000 và SQL sau (nguyên văn):
 
 WITH src AS (
-  SELECT shop_id, landing_page_plus_query_string AS lp FROM `trueda.trueprofit.ga_surface_attr_2526` WHERE year_month BETWEEN '202601' AND '202608'
+  SELECT shop_id, landing_page_plus_query_string AS lp, year_month FROM `trueda.trueprofit.ga_surface_attr_2526` WHERE year_month BETWEEN '202601' AND '202608'
   UNION ALL
-  SELECT shop_id, landing_page_plus_query_string FROM `trueda.trueprofit.ga_surface_attr_current` WHERE year_month >= '202609'
+  SELECT shop_id, landing_page_plus_query_string, year_month FROM `trueda.trueprofit.ga_surface_attr_current` WHERE year_month >= '202609'
 ),
 m AS (
-  SELECT shop_id,
+  SELECT shop_id, year_month,
     REGEXP_EXTRACT(lp, r'surface_type=([^&]+)') AS surface,
     REGEXP_EXTRACT(lp, r'surface_detail=([^&]+)') AS kw_raw
   FROM src WHERE shop_id != '(not set)'
 ),
 inst AS (
-  SELECT DISTINCT m.shop_id, m.surface, m.kw_raw, s.CountryName AS country
+  SELECT m.shop_id, m.surface, m.kw_raw, s.CountryName AS country, MIN(m.year_month) AS ga_ym
   FROM m
   LEFT JOIN `trueda.trueprofit.shops` s ON CAST(s.ID AS STRING) = m.shop_id
   LEFT JOIN `trueda.trueprofit.testing_shops` x ON x.shop_id = m.shop_id
   WHERE x.shop_id IS NULL AND m.surface IN ('search','search_ad') AND m.kw_raw IS NOT NULL
+  GROUP BY 1,2,3,4
+),
+ev AS (
+  SELECT shop_id, MIN(DATE(TIMESTAMP_ADD(occurred_at, INTERVAL 7 HOUR))) AS installed_on
+  FROM `trueda.trueprofit.partner_events`
+  WHERE type IN ('RELATIONSHIP_INSTALLED','RELATIONSHIP_REACTIVATED')
+    AND DATE(TIMESTAMP_ADD(occurred_at, INTERVAL 7 HOUR)) >= '2026-01-01'
+  GROUP BY shop_id
+),
+sh AS (
+  SELECT i.shop_id,
+    COALESCE(e.installed_on, PARSE_DATE('%Y%m', MIN(i.ga_ym))) AS installed_on,
+    DATE_ADD(COALESCE(e.installed_on, PARSE_DATE('%Y%m', MIN(i.ga_ym))), INTERVAL 120 DAY) AS window_end,
+    DATE_ADD(COALESCE(e.installed_on, PARSE_DATE('%Y%m', MIN(i.ga_ym))), INTERVAL 120 DAY) <= DATE_SUB(CURRENT_DATE('Asia/Ho_Chi_Minh'), INTERVAL 1 DAY) AS mature
+  FROM inst i LEFT JOIN ev e ON e.shop_id = i.shop_id
+  GROUP BY i.shop_id, e.installed_on
 ),
 tx AS (
-  SELECT shop_id, SUM(net_amount) AS net, COUNTIF(kind = 'AppSubscriptionSale' AND gross_amount > 0) AS paid_tx
-  FROM `trueda.trueprofit.partner_transactions`
-  WHERE DATE(TIMESTAMP_ADD(created_at, INTERVAL 7 HOUR)) >= '2026-01-01'
-  GROUP BY shop_id
+  SELECT t.shop_id, SUM(t.net_amount) AS net,
+    COUNTIF(t.kind = 'AppSubscriptionSale' AND t.gross_amount > 0) AS paid_tx
+  FROM `trueda.trueprofit.partner_transactions` t JOIN sh s ON s.shop_id = t.shop_id
+  WHERE t.created_at >= TIMESTAMP('2025-12-31') AND s.mature
+    AND DATE(TIMESTAMP_ADD(t.created_at, INTERVAL 7 HOUR)) >= s.installed_on
+    AND DATE(TIMESTAMP_ADD(t.created_at, INTERVAL 7 HOUR)) < s.window_end
+  GROUP BY t.shop_id
 ),
 o30 AS (
   SELECT CAST(ShopID AS STRING) AS shop_id, SUM(TotalOrder) AS orders30
@@ -55,12 +74,14 @@ o30 AS (
   GROUP BY 1
 )
 SELECT i.surface, i.kw_raw, i.country,
-  COUNT(DISTINCT i.shop_id) AS installs,
-  COUNT(DISTINCT IF(t.paid_tx > 0, i.shop_id, NULL)) AS paying_shops,
-  ROUND(SUM(IFNULL(t.net, 0)), 2) AS net_value,
-  MAX(IFNULL(o.orders30, 0)) AS largest_shop_orders30,
-  COUNTIF(IFNULL(o.orders30, 0) = 0) AS shops_zero_orders30
-FROM inst i LEFT JOIN tx t ON t.shop_id = i.shop_id LEFT JOIN o30 o ON o.shop_id = i.shop_id
+  COUNT(DISTINCT IF(s.mature, i.shop_id, NULL)) AS installs,
+  COUNT(DISTINCT IF(NOT s.mature, i.shop_id, NULL)) AS installs_pending,
+  COUNT(DISTINCT IF(s.mature AND t.paid_tx > 0, i.shop_id, NULL)) AS paying_shops,
+  ROUND(SUM(IF(s.mature, IFNULL(t.net, 0), 0)), 2) AS net_value,
+  MAX(IF(s.mature, IFNULL(o.orders30, 0), 0)) AS largest_shop_orders30,
+  COUNTIF(s.mature AND IFNULL(o.orders30, 0) = 0) AS shops_zero_orders30
+FROM inst i JOIN sh s ON s.shop_id = i.shop_id
+LEFT JOIN tx t ON t.shop_id = i.shop_id LEFT JOIN o30 o ON o.shop_id = i.shop_id
 GROUP BY 1,2,3
 ORDER BY net_value DESC
 
@@ -71,7 +92,7 @@ Bước 3 — Lấy payload dashboard hiện tại để giữ cột Cluster: ch
 
 Bước 4 — Dựng file đẩy: chạy Bash
 `node scripts/net-value/build.mjs "<đường dẫn file kết quả BigQuery>" .net-value-run/nv-final.json .net-value-run/payload.json`
-Kỳ vọng in ra rows>=900 và installs>=1500. Nhỏ hơn thì dừng, báo lỗi, KHÔNG đẩy.
+Kỳ vọng in ra rows>=900 và installs>=1000 (installs chỉ đếm shop đã đủ 120 ngày; pending là số chưa đủ). Nhỏ hơn thì dừng, báo lỗi, KHÔNG đẩy.
 
 Bước 5 — Đẩy vào sheet: chạy Bash
 `node scripts/net-value/push.mjs .net-value-run/nv-final.json "<hôm qua dd/mm/yyyy>"`
@@ -81,7 +102,7 @@ Bước 6 — Xác nhận: chạy Bash
 `curl -s -m 120 https://appstore-performance.vercel.app/api/sheets | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);const q=p.data??p;console.log(q.netValueScope, q.netValuePerInstall.length)})"`
 Scope phải chứa ngày hôm qua.
 
-Kết thúc bằng đúng một dòng tóm tắt: ngày, số dòng, install, net value, và OK hay lỗi ở bước nào.
+Kết thúc bằng đúng một dòng tóm tắt: ngày, số dòng, install (đã chín) + pending, net value 120 ngày, và OK hay lỗi ở bước nào.
 
 Bước 7 — Doanh thu theo nước (khối Core market). Gọi `mcp__claude_ai_TrueProfit_DA__run_query` với max_rows 500 và SQL sau (nguyên văn; kỳ = 4 tháng gần nhất đã kết thúc, tự tính trong SQL):
 

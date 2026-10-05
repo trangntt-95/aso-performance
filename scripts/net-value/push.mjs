@@ -24,8 +24,9 @@ const rows = out.map((r) => ({
   installs: r.inst, payingShops: r.pay, netValue: r.net, netPerInstall: r.npi, paidCrPct: r.cr,
   largestShopOrders: r.largest, shopsZeroOrders: r.zero,
 }));
-const scope = `Keyword x country — YTD 2026 (01/01/2026 → ${toLabel}) · BigQuery + GA4, cập nhật hằng ngày qua Claude Code`;
-const note = `Nguồn: BigQuery trueda.trueprofit (shops.CountryName, partner_transactions net_amount từ 01/01/2026, shop_insights 30 ngày, loại testing_shops) × GA4 shopify_app_install theo keyword. Ghi ${new Date().toISOString()}. Install tháng gần nhất cohort chưa chín — $/install thấp hơn thật.`;
+const pending = out.reduce((s, r) => s + (r.pending ?? 0), 0);
+const scope = `Keyword x country — LTV 4 tháng (net 120 ngày đầu sau cài; shop cài từ 01/01/2026, chỉ shop đã đủ 120 ngày; data tới ${toLabel}) · BigQuery + GA4, cập nhật hằng ngày qua Claude Code`;
+const note = `Nguồn: BigQuery trueda.trueprofit (shops.CountryName, partner_events ngày cài, partner_transactions net_amount trong 120 ngày sau cài, shop_insights 30 ngày, loại testing_shops) × GA4 shopify_app_install theo keyword. Ghi ${new Date().toISOString()}. ${pending} install cài chưa đủ 120 ngày chưa tính (cohort chưa chín).`;
 const res = await fetch(`${base}/api/net-value/upload`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', 'x-upload-token': token },

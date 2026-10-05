@@ -585,7 +585,7 @@ export interface VolumeMover {
   /** Vì sao đổi: 'market' = rank không đổi → cầu thị trường; 'ours' = rank đổi ≥0.5 bậc → do vị trí/bid của mình; 'mixed' = paid, rank không đổi (bid hoặc thị trường). */
   cause: 'market' | 'ours' | 'mixed';
   causeLabel: string;
-  /** Δ install × net value/install của keyword (YTD) — biến động đáng bao nhiêu tiền; null khi chưa có net value. */
+  /** Δ install × net value/install của keyword (LTV 4 tháng) — biến động đáng bao nhiêu tiền; null khi chưa có net value. */
   valueDeltaUsd: number | null;
   /** Nước chiếm nhiều users nhất của keyword này trong kỳ ("United States 38%"), khi không lọc nước. */
   topCountry: string | null;
@@ -612,7 +612,7 @@ function defaultDeltaFloor(window: OverviewWindow): number {
  * nước thì đọc Country_L{window} của nước đó. Bỏ category Noise và dòng paid mới
  * mở (kỳ trước 0 users, chưa có rank) vì đó là mình bật camp, không phải thị
  * trường. Mỗi dòng gắn nhãn nguyên nhân (rank đổi → do mình; rank giữ → thị
- * trường) và Δ tiền = Δ install × net value/install YTD của keyword.
+ * trường) và Δ tiền = Δ install × net value/install LTV 4 tháng của keyword.
  */
 export function topVolumeMovers(
   data: SheetPayload | undefined,
@@ -657,7 +657,7 @@ export function topVolumeMovers(
     return best && total > 0 ? `${best[0]} ${Math.round((best[1] / total) * 100)}%` : null;
   };
 
-  // Net value/install theo keyword (YTD, mọi nước, mọi kênh).
+  // Net value/install theo keyword (LTV 4 tháng, mọi nước, mọi kênh).
   const nv = new Map<string, { net: number; installs: number }>();
   for (const r of data.netValuePerInstall ?? []) {
     const k = (r.keywordDecoded || r.keyword).toLowerCase().trim();

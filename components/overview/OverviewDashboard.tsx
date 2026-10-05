@@ -1238,7 +1238,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
                 valueByCountry={countryNetValue}
               />
               <div className="mt-1 text-[10px] text-slate-400">
-                Nhãn <span className="text-indigo-600">$…/inst</span> = một install ở nước đó đáng bao nhiêu (tab Net value per install, YTD,{' '}
+                Nhãn <span className="text-indigo-600">$…/inst</span> = một install ở nước đó đáng bao nhiêu (tab Net value per install, LTV 4 tháng,{' '}
                 {surfaceFocus === 'all' ? 'organic + paid' : surfaceFocus === 'paid' ? 'chỉ paid' : 'chỉ organic'}); * = dưới 3 shop trả tiền
               </div>
             </div>

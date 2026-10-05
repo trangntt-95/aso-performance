@@ -28,7 +28,7 @@ export interface NetValueAutoResult {
   rows: NetValueRow[];
   scope: string;
   asOf: string;
-  stats: { installs: number; payingShops: number; netValue: number; shopsMissingCountry: number; testShopsDropped: number; gaRows: number; bqShops: number };
+  stats: { installs: number; pendingInstalls: number; payingShops: number; netValue: number; shopsMissingCountry: number; testShopsDropped: number; gaRows: number; bqShops: number };
   computedAt: string;
 }
 
@@ -94,18 +94,37 @@ async function fetchGaInstalls(jwt: InstanceType<typeof google.auth.JWT>, to: st
   return out;
 }
 
-/** Nước, doanh thu từ 01/01/2026, đơn 30 ngày, cờ test — cho đúng các shop đã cài. */
+/**
+ * Nước, net 120 NGÀY ĐẦU sau cài (LTV 4 tháng = thời gian hoàn vốn, Trang 05/10/2026),
+ * đơn 30 ngày, cờ test — cho đúng các shop đã cài. Ngày cài từ partner_events; shop
+ * không có event cài trong 2026 coi như chưa chín (khác pipeline Claude Code một chút:
+ * bên đó rơi về ngày 1 của tháng GA — ~1% shop). `mature` = đã đủ 120 ngày tới hôm qua.
+ */
 async function fetchBqShops(jwt: InstanceType<typeof google.auth.JWT>, shopIds: string[]): Promise<Map<string, BqShop>> {
   const projectId = process.env.BQ_PROJECT_ID!.trim();
   const bq = google.bigquery({ version: 'v2', auth: jwt });
   const sql = `
     WITH ids AS (SELECT id FROM UNNEST(@ids) AS id),
-    tx AS (
-      SELECT shop_id, SUM(net_amount) AS net, SUM(gross_amount) AS gross,
-        COUNTIF(kind = 'AppSubscriptionSale' AND gross_amount > 0) AS paid_tx
-      FROM \`trueda.trueprofit.partner_transactions\`
-      WHERE DATE(TIMESTAMP_ADD(created_at, INTERVAL 7 HOUR)) >= @from AND shop_id IN (SELECT id FROM ids)
+    ev AS (
+      SELECT shop_id, MIN(DATE(TIMESTAMP_ADD(occurred_at, INTERVAL 7 HOUR))) AS installed_on
+      FROM \`trueda.trueprofit.partner_events\`
+      WHERE type IN ('RELATIONSHIP_INSTALLED','RELATIONSHIP_REACTIVATED')
+        AND DATE(TIMESTAMP_ADD(occurred_at, INTERVAL 7 HOUR)) >= @from AND shop_id IN (SELECT id FROM ids)
       GROUP BY shop_id
+    ),
+    sh AS (
+      SELECT shop_id, installed_on, DATE_ADD(installed_on, INTERVAL 120 DAY) AS window_end,
+        DATE_ADD(installed_on, INTERVAL 120 DAY) <= DATE_SUB(CURRENT_DATE('Asia/Ho_Chi_Minh'), INTERVAL 1 DAY) AS mature
+      FROM ev
+    ),
+    tx AS (
+      SELECT t.shop_id, SUM(t.net_amount) AS net, SUM(t.gross_amount) AS gross,
+        COUNTIF(t.kind = 'AppSubscriptionSale' AND t.gross_amount > 0) AS paid_tx
+      FROM \`trueda.trueprofit.partner_transactions\` t JOIN sh s ON s.shop_id = t.shop_id
+      WHERE t.created_at >= TIMESTAMP(DATE_SUB(@from, INTERVAL 1 DAY)) AND s.mature
+        AND DATE(TIMESTAMP_ADD(t.created_at, INTERVAL 7 HOUR)) >= s.installed_on
+        AND DATE(TIMESTAMP_ADD(t.created_at, INTERVAL 7 HOUR)) < s.window_end
+      GROUP BY t.shop_id
     ),
     o30 AS (
       SELECT CAST(ShopID AS STRING) AS shop_id, SUM(TotalOrder) AS orders30
@@ -116,9 +135,11 @@ async function fetchBqShops(jwt: InstanceType<typeof google.auth.JWT>, shopIds: 
     )
     SELECT ids.id AS shop_id, s.CountryName AS country,
       IFNULL(tx.net, 0) AS net, IFNULL(tx.gross, 0) AS gross, IFNULL(tx.paid_tx, 0) > 0 AS paying,
-      IFNULL(o30.orders30, 0) AS orders30, t.shop_id IS NOT NULL AS is_test
+      IFNULL(o30.orders30, 0) AS orders30, t.shop_id IS NOT NULL AS is_test,
+      IFNULL(sh.mature, FALSE) AS mature
     FROM ids
     LEFT JOIN \`trueda.trueprofit.shops\` s ON CAST(s.ID AS STRING) = ids.id
+    LEFT JOIN sh ON sh.shop_id = ids.id
     LEFT JOIN tx ON tx.shop_id = ids.id
     LEFT JOIN o30 ON o30.shop_id = ids.id
     LEFT JOIN \`trueda.trueprofit.testing_shops\` t ON t.shop_id = ids.id`;
@@ -151,6 +172,7 @@ async function fetchBqShops(jwt: InstanceType<typeof google.auth.JWT>, shopIds: 
       paying: rec.paying === 'true',
       orders30: Number(rec.orders30 ?? 0),
       isTest: rec.is_test === 'true',
+      mature: rec.mature === 'true',
     });
   }
   return out;

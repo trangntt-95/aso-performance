@@ -71,7 +71,7 @@ export const COUNTRY_CAP_COLS: CapCol[] = [
     key: 'value',
     label: 'Value/inst',
     align: 'right',
-    title: 'Một install PAID ở nước này đáng bao nhiêu theo tab Net value per install (net = doanh thu − phí Shopify, chưa trừ ads; YTD), gộp mọi keyword. Khác cột bên trái (Countries performance, doanh thu ÷ install theo quý) về nguồn và kỳ — hai số gần nhau thì đáng tin, lệch xa thì một trong hai đang mỏng.',
+    title: 'Một install PAID ở nước này đáng bao nhiêu theo tab Net value per install (net = doanh thu − phí Shopify, chưa trừ ads; LTV 4 tháng), gộp mọi keyword. Khác cột bên trái (Countries performance, doanh thu ÷ install theo quý) về nguồn và kỳ — hai số gần nhau thì đáng tin, lệch xa thì một trong hai đang mỏng.',
   },
   { key: 'gap', label: 'vs trần', align: 'right', title: 'Trần sheet so với trần cấu hình. Dương = model được phép trả cao hơn mức đã thống nhất.' },
   { key: 'verdict', label: 'Trạng thái', align: 'left' },

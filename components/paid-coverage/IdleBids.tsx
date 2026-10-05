@@ -286,7 +286,7 @@ export function IdleBids() {
                     Export Shopify Ads
                     <div className="text-[9px] font-normal text-slate-400">lượt hiện · click</div>
                   </SortableTh>
-                  <SortableTh col="value" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" title="Net value một install của keyword = (doanh thu − phí Shopify) ÷ install, tab 'Net value per install' (YTD, mọi nước, mọi kênh). Dòng nhỏ: tổng net value · install · shop trả tiền. 'mỏng' = dưới 3 shop trả tiền, chưa nên bid theo. Trống = keyword chưa có install nào truy được.">
+                  <SortableTh col="value" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="px-2 py-1" title="Net value một install của keyword = (doanh thu − phí Shopify) ÷ install, tab 'Net value per install' (LTV 4 tháng, mọi nước, mọi kênh). Dòng nhỏ: tổng net value · install · shop trả tiền. 'mỏng' = dưới 3 shop trả tiền, chưa nên bid theo. Trống = keyword chưa có install nào truy được.">
                     Value
                     <div className="text-[9px] font-normal text-slate-400">$/install · tổng · shop</div>
                   </SortableTh>
@@ -405,7 +405,7 @@ export function IdleBids() {
             <b>Đọc cột:</b> Ghi chú là note theo keyword, cùng một ô với tab Underbid và trend sheet — ghi &ldquo;đã tăng
             bid lên $X ngày …&rdquo; ở đây thì Underbid thấy ngay, và Impact bid ở đó đo từ mốc này. Hai cột Organic / Paid là lịch sử cả năm của keyword, để biết có ai tìm không; cột Export
             là lượt quảng cáo hiện ra theo file export Shopify (GA4 không đo được lượt hiện); Value là net value một
-            install keyword từng mang về (tab Net value per install, YTD) — keyword có nhu cầu mà $/install cao là chỗ
+            install keyword từng mang về (tab Net value per install, LTV 4 tháng) — keyword có nhu cầu mà $/install cao là chỗ
             tăng bid trước; Bid là bid max đang đặt,
             keyword ở nhiều camp thì ghi cao nhất – thấp nhất. Không có users paid ≠ không có impression: GA4 chỉ thấy keyword khi có người bấm vào listing. Keyword hiện
             ra mà không ai bấm sẽ chỉ có ở cột Export (khi export Shopify có nó). Nhóm chia theo{' '}

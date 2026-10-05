@@ -375,7 +375,7 @@ export function PositionsView() {
                 <th onClick={() => toggleSort('keyword')} className={cn(thCls('keyword', false), 'px-2 w-[11rem]')} title="Bấm để sắp theo keyword A→Z / Z→A">
                   Keyword<Arrow k="keyword" />
                 </th>
-                <th onClick={() => toggleSort('country')} className={thCls('country', false)} title="Tier theo Max bid cap · số tím = một install ở nước đó đáng bao nhiêu (tab Net value per install, YTD, theo kênh đang chọn); * = dưới 3 shop trả tiền · bấm để sắp theo nước">
+                <th onClick={() => toggleSort('country')} className={thCls('country', false)} title="Tier theo Max bid cap · số tím = một install ở nước đó đáng bao nhiêu (tab Net value per install, LTV 4 tháng, theo kênh đang chọn); * = dưới 3 shop trả tiền · bấm để sắp theo nước">
                   Nước · tier · value/inst<Arrow k="country" />
                 </th>
                 {POSITION_WINDOWS.map((w) => {
