@@ -11,6 +11,9 @@ export const ADS_MONTHLY_TARGETS: Record<string, number> = {
   '2026-07': 165,
   '2026-08': 169,
   '2026-09': 163,
+  '2026-10': 165,
+  '2026-11': 172,
+  '2026-12': 177,
 };
 
 function daysInMonth(year: number, monthIndex0: number): number {
