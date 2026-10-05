@@ -128,3 +128,68 @@ export function runrateAdsToMonthEnd(
     mode: 'paced',
   };
 }
+
+/**
+ * Target cho MỘT KHOẢNG NGÀY tuỳ ý (chế độ lọc ngày / chọn tháng trên Overview).
+ * Cộng dồn từng ngày: mỗi ngày góp monthly_target / số ngày của THÁNG CHỨA NGÀY ĐÓ,
+ * nên chọn "tháng 7" thì so với target tháng 7 (165), không phải tháng hiện tại.
+ * Trả null nếu khoảng chạm vào tháng chưa có target.
+ */
+export function expectedAdsInstallsForRange(fromIso: string, toIso: string): number | null {
+  const from = new Date(Date.parse(fromIso));
+  const to = new Date(Date.parse(toIso));
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) return null;
+  let total = 0;
+  // Đi theo tháng, không theo ngày: với mỗi tháng lấy số ngày của khoảng nằm trong tháng đó.
+  let cursor = new Date(from.getFullYear(), from.getMonth(), 1);
+  const end = new Date(to.getFullYear(), to.getMonth(), 1);
+  while (cursor <= end) {
+    const t = ADS_MONTHLY_TARGETS[ymKey(cursor)];
+    if (t === undefined) return null;
+    const dim = daysInMonth(cursor.getFullYear(), cursor.getMonth());
+    const mStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const mEnd = new Date(cursor.getFullYear(), cursor.getMonth(), dim);
+    const s = from > mStart ? from : mStart;
+    const e = to < mEnd ? to : mEnd;
+    const n = Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
+    total += (t / dim) * n;
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  }
+  return total;
+}
+
+/**
+ * Runrate cho một khoảng ngày:
+ *   - Khoảng nằm trọn trong MỘT tháng (vd 1→22/09, hoặc cả tháng 7): pace = actual / số ngày
+ *     đã chọn → dự phóng cả tháng ĐÓ, so với target của tháng ĐÓ. Chọn trọn tháng thì
+ *     dự phóng = actual, tức so thẳng.
+ *   - Khoảng vắt qua nhiều tháng: so thẳng actual với target cộng dồn của khoảng.
+ */
+export function runrateAdsForRange(
+  fromIso: string,
+  toIso: string,
+  actualInstalls: number,
+): {
+  pct: number;
+  projectedInstalls: number;
+  targetInstalls: number;
+  effectiveDays: number;
+  mode: 'paced' | 'direct';
+} | null {
+  if (!Number.isFinite(actualInstalls) || actualInstalls < 0) return null;
+  const from = new Date(Date.parse(fromIso));
+  const to = new Date(Date.parse(toIso));
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) return null;
+  const days = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+  const sameMonth = from.getFullYear() === to.getFullYear() && from.getMonth() === to.getMonth();
+  if (!sameMonth) {
+    const target = expectedAdsInstallsForRange(fromIso, toIso);
+    if (target === null || target <= 0) return null;
+    return { pct: actualInstalls / target, projectedInstalls: actualInstalls, targetInstalls: target, effectiveDays: days, mode: 'direct' };
+  }
+  const monthlyTarget = ADS_MONTHLY_TARGETS[ymKey(from)];
+  if (monthlyTarget === undefined || monthlyTarget <= 0) return null;
+  const dim = daysInMonth(from.getFullYear(), from.getMonth());
+  const projectedInstalls = (actualInstalls / days) * dim;
+  return { pct: projectedInstalls / monthlyTarget, projectedInstalls, targetInstalls: monthlyTarget, effectiveDays: days, mode: 'paced' };
+}

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { ArrowRight, AlertCircle, AlertTriangle, Check, DollarSign, Link2, Megaphone, Target, Users } from 'lucide-react';
-import { expectedAdsInstalls, runrateAdsToMonthEnd } from '@/lib/config/ads-targets';
+import { expectedAdsInstalls, expectedAdsInstallsForRange, runrateAdsToMonthEnd, runrateAdsForRange } from '@/lib/config/ads-targets';
 import { googleAdsInstallsInRange } from '@/lib/market/googleAdsReport';
 import { toUsd } from '@/lib/config/fx';
 import { AdsTargetTile } from './AdsTargetTile';
@@ -297,30 +297,40 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     [changeEntries],
   );
 
-  // First day of the month containing the newest day that HAS data → that day.
-  // Anchored to the data, not to today: the export lands a day or two behind, and
-  // anchoring to today would show an empty tail every morning and, on the 1st,
-  // a range with nothing in it at all.
-  const thisMonthRange = useMemo(() => {
-    if (availableDates.length === 0) return null;
-    const last = availableDates[availableDates.length - 1];
-    const from = `${last.slice(0, 7)}-01`;
-    // Only offer it when the month actually has a day of data.
-    return availableDates.some((d) => d >= from) ? { from, to: last } : null;
+  // Every month that has at least one day of data, newest first. Each option is
+  // 1st of the month → last day WITH data in that month. Anchored to the data,
+  // not to today: the export lands a day or two behind, and anchoring to today
+  // would show an empty tail every morning and, on the 1st, nothing at all.
+  const monthOptions = useMemo(() => {
+    const byMonth = new Map<string, { from: string; to: string }>();
+    for (const d of availableDates) {
+      const ym = d.slice(0, 7);
+      const cur = byMonth.get(ym);
+      if (!cur) byMonth.set(ym, { from: `${ym}-01`, to: d });
+      else if (d > cur.to) cur.to = d;
+    }
+    return Array.from(byMonth.entries())
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .map(([ym, range], i) => ({
+        ym,
+        range,
+        label: i === 0 ? 'Tháng này' : `T${Number(ym.slice(5, 7))}/${ym.slice(0, 4)}`,
+      }));
   }, [availableDates]);
 
-  const applyThisMonth = () => {
-    if (!thisMonthRange) return;
-    setDateRange(thisMonthRange);
-    setRangeFrom(thisMonthRange.from);
-    setRangeTo(thisMonthRange.to);
+  const applyMonth = (ym: string) => {
+    const m = monthOptions.find((o) => o.ym === ym);
+    if (!m) return;
+    setDateRange(m.range);
+    setRangeFrom(m.range.from);
+    setRangeTo(m.range.to);
   };
 
-  const isThisMonth =
-    !!dateRange &&
-    !!thisMonthRange &&
-    dateRange.from === thisMonthRange.from &&
-    dateRange.to === thisMonthRange.to;
+  // Which month option (if any) exactly matches the pinned range → select value.
+  const selectedMonth =
+    dateRange
+      ? monthOptions.find((o) => o.range.from === dateRange.from && o.range.to === dateRange.to)?.ym ?? ''
+      : '';
 
   const minDate = availableDates[0];
   const maxDate = availableDates[availableDates.length - 1];
@@ -528,7 +538,12 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const days = dateRange
     ? Math.max(1, Math.round((Date.parse(dateRange.to) - Date.parse(dateRange.from)) / 86400000) + 1)
     : windowDays(window);
-  const adsTargetExpected = useMemo(() => expectedAdsInstalls(days), [days]);
+  // Lọc ngày / chọn tháng: target của ĐÚNG khoảng đó (tháng 7 so với target tháng 7),
+  // không pro-rate từ tháng hiện tại.
+  const adsTargetExpected = useMemo(
+    () => (dateRange ? expectedAdsInstallsForRange(dateRange.from, dateRange.to) : expectedAdsInstalls(days)),
+    [dateRange, days],
+  );
   // Install + spend App Store Ads trong window, lấy THẲNG từ export Shopify Ads
   // theo ngày (Trang 23/09/2026) — không dùng GA4 paid: GA4 chỉ thấy phiên mang
   // surface_type=search_ad nên thấp hơn Shopify 20–30% (tháng 9: 61 vs 78).
@@ -589,7 +604,13 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
     if (!adsTargetExpected || adsTargetExpected <= 0) return null;
     return paidWindowInstalls / adsTargetExpected;
   }, [paidWindowInstalls, adsTargetExpected]);
-  const adsRunrate = useMemo(() => runrateAdsToMonthEnd(days, paidWindowInstalls), [days, paidWindowInstalls]);
+  const adsRunrate = useMemo(
+    () =>
+      dateRange
+        ? runrateAdsForRange(dateRange.from, dateRange.to, paidWindowInstalls)
+        : runrateAdsToMonthEnd(days, paidWindowInstalls),
+    [dateRange, days, paidWindowInstalls],
+  );
   // CPI ads gộp hai kênh trong window: (spend Shopify Ads + chi Google Ads USD) ÷ install hai kênh.
   const adsCpi = useMemo(() => {
     const spend = shopifyWindow.spend + gadsWindowCostUsd;
@@ -797,23 +818,29 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               )}
             >
               <span className="text-slate-500">{inDateMode ? 'Lọc ngày:' : 'Ngày (theo report):'}</span>
-              {/* Shortcut for the range asked for most often. Hidden when the
-                  data has no day in the current month yet — a button that
-                  produces an empty view is worse than no button. */}
-              {thisMonthRange && (
-                <button
-                  type="button"
-                  onClick={applyThisMonth}
-                  title={`Từ ngày 1 của tháng tới ngày mới nhất có data (${formatDMYRange(thisMonthRange.from, thisMonthRange.to)})`}
+              {/* Month picker: "Tháng này" plus every earlier month that has
+                  data. Hidden when there is no per-day data at all. */}
+              {monthOptions.length > 0 && (
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => {
+                    if (e.target.value) applyMonth(e.target.value);
+                  }}
+                  title="Chọn cả tháng: từ ngày 1 tới ngày mới nhất có data trong tháng đó"
                   className={cn(
-                    'rounded border px-1.5 py-0.5 font-medium transition',
-                    isThisMonth
+                    'rounded border px-1.5 py-0.5 font-medium transition bg-white',
+                    selectedMonth
                       ? 'border-rose-300 bg-rose-100 text-rose-700'
                       : 'border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-900',
                   )}
                 >
-                  Tháng này
-                </button>
+                  <option value="">Chọn tháng…</option>
+                  {monthOptions.map((o) => (
+                    <option key={o.ym} value={o.ym}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
               )}
               <DateFieldDMY
                 value={rangeFrom}
@@ -968,7 +995,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               Icon={Megaphone}
             />
             <AdsTargetTile
-              label={inDateMode ? `Ads target · ${window} (window)` : `Ads target · ${window}`}
+              label={inDateMode ? `Ads target · ${dateLabel}` : `Ads target · ${window}`}
               pct={surfaceFocus === 'organic' ? null : adsTargetPct}
               actual={surfaceFocus === 'organic' ? 0 : paidWindowInstalls}
               expected={surfaceFocus === 'organic' ? null : adsTargetExpected}
@@ -982,7 +1009,9 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               runrateTooltip={
                 adsRunrate
                   ? adsRunrate.mode === 'direct'
-                    ? `Actual ${Math.round(adsRunrate.projectedInstalls)} / target L90 ${Math.round(adsRunrate.targetInstalls)} (tổng 3 tháng)`
+                    ? inDateMode
+                      ? `Actual ${Math.round(adsRunrate.projectedInstalls)} / target ${Math.round(adsRunrate.targetInstalls)} (cộng dồn target các tháng trong khoảng ${dateLabel})`
+                      : `Actual ${Math.round(adsRunrate.projectedInstalls)} / target L90 ${Math.round(adsRunrate.targetInstalls)} (tổng 3 tháng)`
                     : `Paid install trong window: App Store Ads (export Shopify Ads theo ngày) ${shopifyWindow.installs} + Google Ads ${Math.round(gadsWindowInstalls)} = ${Math.round(paidWindowInstalls)}\n` +
                       `Pace = ${Math.round(paidWindowInstalls)} / ${adsRunrate.effectiveDays} ngày → dự phóng ${Math.round(adsRunrate.projectedInstalls)} / target ${Math.round(adsRunrate.targetInstalls)} cuối tháng\n\n` +
                       'Số App Store lấy từ Shopify Ads, không phải GA4 (GA4 chỉ thấy phiên mang surface_type=search_ad, thấp hơn 20–30%). Google Ads = shopify_app_install + app_install_attributed.'
