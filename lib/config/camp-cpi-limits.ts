@@ -35,7 +35,9 @@ export function tierHintFromLabel(tier: string | null | undefined): CampTierHint
  */
 export function tierHintFromName(camp: string): CampTierHint {
   const n = camp.toLowerCase();
-  if (/(excl|exclude|-)\s*tier\s*1/.test(n)) return 'lower';
+  // "excl tier 1,2", "(-tier 1)" = chạy ngoài tier 1. Dấu '-' chỉ tính khi nằm trong
+  // ngoặc, vì tên camp nào cũng ngăn cách bằng ' - ' ("Analytics - Tier 1").
+  if (/(excl|exclude|\(\s*-)\s*tier\s*1/.test(n)) return 'lower';
   if (/tier\s*(2|3)\b/.test(n) && !/tier\s*1\b/.test(n)) return 'lower';
   if (/tier\s*1\s*[,.]\s*5\b/.test(n) && !/tier\s*1\b[^,.]/.test(n)) return 'lower';
   if (/tier\s*1\b/.test(n)) return 'tier1';
