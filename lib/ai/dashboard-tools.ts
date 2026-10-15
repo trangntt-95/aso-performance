@@ -16,6 +16,7 @@ import {
 } from '@/components/overview/aggregate';
 import { expectedAdsInstalls, runrateAdsToMonthEnd } from '@/lib/config/ads-targets';
 import { analyseCampHealth } from '@/lib/market/campHealth';
+import { buildCampBenchmark } from '@/lib/market/overbid';
 import { buildCpiCapOverview } from '@/lib/market/cpiCapOverview';
 import { buildGoogleAdsReport } from '@/lib/market/googleAdsReport';
 import { buildGoogleAdsDeep } from '@/lib/market/googleAdsDeep';
@@ -411,10 +412,21 @@ export function makeDashboardTools(data: SheetPayload) {
         limit: z.number().min(1).max(40).default(12),
       }),
       execute: async ({ days, bucket, limit }) => {
+        // Cùng trần với trang Camp Health / Overbid (NPI × 90% các nước camp
+        // target từ Max bid cap). Thiếu nó, 'pricey' so với trung vị tài khoản
+        // và câu trả lời nói "không có trần" dù trang đang hiện trần (15/10/2026).
+        const benchmarkOf = buildCampBenchmark(data.bidCap ?? [], data.campLinks ?? []);
         const health = analyseCampHealth(data.shopifyDaily ?? [], {
           windowDays: days,
+          capOf: (camp) => benchmarkOf(camp).targetCpi,
           canonicalNames: data.campLinks ?? [],
           pausedCamps: (data.pausedKw ?? []).map((r) => r.camp),
+          aggregate: data.shopifyCamps ?? [],
+          aggregateRange: data.shopifyDateRange ?? '',
+          knownCamps: [
+            ...(data.campLinks ?? []).map((c) => c.camp),
+            ...(data.masterKwLookup ?? []).map((m) => m.camp),
+          ],
         });
         const rows = bucket === 'all' ? health.rows : health.rows.filter((r) => r.bucket === bucket);
         return {
