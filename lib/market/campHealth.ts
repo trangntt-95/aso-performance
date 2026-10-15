@@ -140,6 +140,9 @@ export interface CampHealthOptions {
    * đắt hay rẻ giống nhau. Không có thì lùi về trung vị như cũ.
    */
   capOf?: (camp: string) => number | null;
+  /** Giải thích trần của camp (CampBenchmark.capNote) để câu lý do nói đúng mốc:
+   *  NPI × 90% hay trần cứng theo loại camp (lib/config/camp-cpi-limits). */
+  capNoteOf?: (camp: string) => string | null;
 }
 
 /**
@@ -151,6 +154,7 @@ function priceyCheck(
   cur: HealthWindow,
   cap: number | null,
   medianCpi: number | null,
+  capNote?: string | null,
 ): { atRisk: number; reason: string } | null {
   if (cur.cpi === null) return null;
   if (cap !== null && cap > 0) {
@@ -158,7 +162,7 @@ function priceyCheck(
     const atRisk = Math.max(0, cur.spend - cur.installs * cap);
     return {
       atRisk,
-      reason: `CPI $${cur.cpi.toFixed(2)} cao hơn trần cho phép $${cap.toFixed(2)} (NPI × 90% các nước camp target, +${Math.round((cur.cpi / cap - 1) * 100)}%) — mỗi install đang mua đắt hơn giá trị. Kéo về trần tiết kiệm ~$${Math.round(atRisk)}.`,
+      reason: `CPI $${cur.cpi.toFixed(2)} cao hơn trần cho phép $${cap.toFixed(2)} (${capNote || 'NPI × 90% các nước camp target'}, +${Math.round((cur.cpi / cap - 1) * 100)}%) — mỗi install đang mua đắt hơn giá trị. Kéo về trần tiết kiệm ~$${Math.round(atRisk)}.`,
     };
   }
   if (medianCpi !== null && cur.cpi > medianCpi * 1.5) {
@@ -381,11 +385,11 @@ export function analyseCampHealth(
       atRisk = cur.spend;
       const spendUp = prev.spend > 0 && cur.spend > prev.spend;
       reason = `Hiển thị/ngày rơi ${Math.round(impDelta * 100)}% (${Math.round(prev.impPerDay)}→${Math.round(cur.impPerDay)})${spendUp ? ' TRONG KHI tiền tăng — đang bị đẩy giá trong đấu giá' : ''}.`;
-    } else if (priceyCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi)) {
+    } else if (priceyCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi, opts.capNoteOf?.(a.camp))) {
       // Đứng TRƯỚC 'rising' (15/09/2026): camp đang lên mà mỗi install mua đắt
       // hơn giá trị thì lời khuyên "nới ngân sách" là sai chiều — Overbid đỏ
       // camp ES đúng lúc Camp Health bảo nó có tiềm năng.
-      const pc = priceyCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi)!;
+      const pc = priceyCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi, opts.capNoteOf?.(a.camp))!;
       bucket = 'pricey';
       atRisk = pc.atRisk;
       reason = pc.reason + (rising ? ` Hiển thị/ngày +${Math.round((impDelta ?? 0) * 100)}% và install ${prev.installs}→${cur.installs} — đang lên, nhưng siết bid trước khi nới ngân sách.` : '');
@@ -547,8 +551,8 @@ function analyseFromTotals(
       bucket = 'wasted-imp';
       atRisk = cur.spend;
       reason = `${Math.round(cur.impressions).toLocaleString()} lượt hiển thị nhưng chỉ ${cur.clicks} click (CTR ${((cur.ctr ?? 0) * 100).toFixed(2)}%). Keyword/creative lệch nhu cầu.`;
-    } else if (priceyCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi)) {
-      const pc = priceyCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi)!;
+    } else if (priceyCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi, opts.capNoteOf?.(a.camp))) {
+      const pc = priceyCheck(cur, opts.capOf?.(a.camp) ?? null, medianCpi, opts.capNoteOf?.(a.camp))!;
       bucket = 'pricey';
       atRisk = pc.atRisk;
       reason = pc.reason;
@@ -650,7 +654,7 @@ export const BUCKET_META: Record<
   pricey: {
     label: '💸 CPI cao', short: 'CPI cao',
     tone: 'warn',
-    help: 'Có install nhưng CPI cao hơn trần cho phép — NPI × 90% trung bình trên các nước camp target trong Max bid cap, cùng mốc Overbid dùng. Mỗi install mua về đắt hơn giá trị của nó. Camp không có trần thì so với 1,5 lần trung vị tài khoản, và lời giải thích ghi rõ.',
+    help: 'Có install nhưng CPI cao hơn trần cho phép — NPI × 90% trung bình trên các nước camp target trong Max bid cap, hoặc trần cứng theo loại camp nếu thấp hơn (Feature Exact tier 1 $45, tier 2–3 $30, CPM Broad Feature $15 — chốt 15/10/2026), cùng mốc Overbid dùng. Mỗi install mua về đắt hơn giá trị của nó. Camp không có trần thì so với 1,5 lần trung vị tài khoản, và lời giải thích ghi rõ.',
   },
   rising: {
     label: '📈 Đang lên', short: 'Đang lên',

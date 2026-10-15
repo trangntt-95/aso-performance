@@ -3,6 +3,7 @@ import { buildCampGeoIndex, isNeverTargeted, type CampGeo } from '@/lib/sheets/c
 import { aggregateBidCapCells, bidCapCellsByCategory } from '@/lib/market/bidCapAgg';
 import { normalizeCampName, buildCampNameResolver, buildCampLinkResolver } from '@/lib/sheets/campName';
 import { sumCountryNetValue, type NetValueAgg } from '@/lib/market/keywordNetValue';
+import { hardCpiLimitFor, tierHintFromLabel, type CampCpiLimit, type CampTierHint } from '@/lib/config/camp-cpi-limits';
 
 // Detect OVERBID campaigns: paid camps (from Shopify_daily) whose effective
 // CPC (Spend/Clicks) and/or CPI (Spend/Installs) run ABOVE the allowed bid /
@@ -148,8 +149,14 @@ export interface CampBenchmark {
   geo: CampGeo | undefined;
   /** Allowed bid — mean Bid Rec ⭐ over the camp's target cells. */
   targetBid: number | null;
-  /** Allowed CPI — mean NPI×90% (trần sheet) over the same cells. */
+  /** Allowed CPI — min(NPI×90% trung bình các ô, trần cứng theo loại camp). */
   targetCpi: number | null;
+  /** NPI×90% trung bình các ô, trước khi áp trần cứng (null khi không có ô). */
+  npiCpi: number | null;
+  /** Trần cứng theo loại camp (lib/config/camp-cpi-limits), null khi loại camp chưa có rule. */
+  hardCap: CampCpiLimit | null;
+  /** Giải thích trần đang dùng, để lý do ở Camp Health / tooltip Overbid nói đúng mốc. */
+  capNote: string;
   countries: string[];
   matchLevel: 'country' | 'category';
   countryLabel: string;
@@ -211,11 +218,37 @@ export function buildCampBenchmark(
     }
   });
 
+  // Tier của từng nước theo Max bid cap, để biết camp target nước tier 1 hay thấp hơn.
+  const tierByCountry = new Map<string, string>();
+  for (const r of bidCap) if (r.country && r.tier && !tierByCountry.has(r.country)) tierByCountry.set(r.country, r.tier);
+  const tierOfGeo = (geo: CampGeo | undefined): CampTierHint => {
+    if (!geo || geo.mode !== 'include' || geo.countries.length === 0) return 'unknown';
+    const hints = geo.countries.map((c) => tierHintFromLabel(tierByCountry.get(c)));
+    if (hints.includes('tier1')) return 'tier1';
+    if (hints.some((h) => h === 'lower')) return 'lower';
+    return 'unknown';
+  };
+  // Áp trần cứng theo loại camp lên mốc NPI: trần hiệu lực = min(NPI×90%, trần cứng).
+  // Bid cho phép co theo cùng tỷ lệ, vì Bid Rec của sheet = trần CPI × CR.
+  const finalize = (camp: string, bm: Omit<CampBenchmark, 'npiCpi' | 'hardCap' | 'capNote'>): CampBenchmark => {
+    const hard = hardCpiLimitFor(camp, bm.category, tierOfGeo(bm.geo));
+    const npiCpi = bm.targetCpi;
+    const npiNote = 'NPI × 90% các nước camp target';
+    if (!hard || (npiCpi !== null && npiCpi <= hard.limit)) {
+      return { ...bm, npiCpi, hardCap: hard, capNote: npiNote };
+    }
+    const targetBid = bm.targetBid !== null && npiCpi !== null && npiCpi > 0 ? bm.targetBid * (hard.limit / npiCpi) : bm.targetBid;
+    const capNote = npiCpi === null
+      ? `trần cứng ${hard.label} $${hard.limit}`
+      : `trần cứng ${hard.label} $${hard.limit}, thấp hơn NPI × 90% = $${npiCpi.toFixed(0)}`;
+    return { ...bm, targetBid, targetCpi: hard.limit, npiCpi, hardCap: hard, capNote, countryLabel: `${bm.countryLabel} · ${capNote}` };
+  };
+
   return (camp: string): CampBenchmark => {
     const campKey = linkResolver.resolve(camp) ?? normalizeCampName(camp);
     const geo = geoIndex.get(campKey);
     const category = campCategory(camp);
-    const none: CampBenchmark = {
+    const none = finalize(camp, {
       category,
       geo,
       targetBid: null,
@@ -223,7 +256,7 @@ export function buildCampBenchmark(
       countries: [],
       matchLevel: 'category',
       countryLabel: category ? `general · avg ${category}` : 'không rõ category',
-    };
+    });
     if (!category) return none;
     const catCells = cellsByCat.get(category);
     if (!catCells || catCells.length === 0) return none;
@@ -262,7 +295,7 @@ export function buildCampBenchmark(
     // mode 'all' / 'unknown' / not-in-Camp_Links → general (category avg minus
     // the never-targeted markets).
 
-    return {
+    return finalize(camp, {
       category,
       geo,
       targetBid: avg(targetCells, (x) => x.bid) || null,
@@ -270,7 +303,7 @@ export function buildCampBenchmark(
       countries,
       matchLevel,
       countryLabel,
-    };
+    });
   };
 }
 

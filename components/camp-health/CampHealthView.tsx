@@ -185,6 +185,7 @@ export function CampHealthView() {
       analyseCampHealth(data?.shopifyDaily ?? [], {
         windowDays,
         capOf: (camp) => benchmarkOf(camp).targetCpi,
+        capNoteOf: (camp) => benchmarkOf(camp).capNote,
         canonicalNames: data?.campLinks ?? [],
         pausedCamps: (data?.pausedKw ?? []).map((r) => r.camp),
         // Fallback when the export has no date column: campaign totals still
@@ -386,7 +387,7 @@ export function CampHealthView() {
             </>
           )}{' '}
           Bảng sắp theo <b>số tiền đang gặp vấn đề</b>, không phải theo tổng chi. Nhóm <b>CPI đắt</b>{' '}
-          so với <b>trần cho phép của từng camp</b> (NPI × 90% trên các nước camp target, tab Max bid cap) —
+          so với <b>trần cho phép của từng camp</b> (NPI × 90% trên các nước camp target, tab Max bid cap; Feature có thêm trần cứng: Exact tier 1 $45, tier 2–3 $30, CPM Broad $15) —
           cùng mốc Overbid dùng; camp không có trần thì so 1,5 lần trung vị.
           <div className="mt-1">
             Tổng chi kỳ này <b>${formatNumber(Math.round(result.totalSpend))}</b> · CPI trung vị{' '}

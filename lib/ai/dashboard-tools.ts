@@ -419,6 +419,7 @@ export function makeDashboardTools(data: SheetPayload) {
         const health = analyseCampHealth(data.shopifyDaily ?? [], {
           windowDays: days,
           capOf: (camp) => benchmarkOf(camp).targetCpi,
+          capNoteOf: (camp) => benchmarkOf(camp).capNote,
           canonicalNames: data.campLinks ?? [],
           pausedCamps: (data.pausedKw ?? []).map((r) => r.camp),
           aggregate: data.shopifyCamps ?? [],
