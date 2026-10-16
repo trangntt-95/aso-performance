@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { GoogleAdsView } from '@/components/google-ads/GoogleAdsView';
 import { DataGapNote } from '@/components/shared/DataGapNote';
 import { SheetSources } from '@/components/shared/SheetSources';
@@ -13,7 +14,10 @@ const SOURCES: readonly DataSourceKey[] = [
 export default function GoogleAdsPage() {
   return (
     <div className="space-y-4">
-      <GoogleAdsView />
+      {/* useSearchParams (loc ngay ?from&to) can Suspense khi render tinh. */}
+      <Suspense fallback={null}>
+        <GoogleAdsView />
+      </Suspense>
       <DataGapNote sources={SOURCES} />
       <SheetSources sources={SOURCES} />
     </div>

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
+import type { SheetPayload } from '@/lib/sheets/types';
 import {
   buildGoogleAdsDeep,
   type GadsCountryRow,
@@ -169,8 +170,10 @@ function QsBadge({ value }: { value: string }) {
 
 // ---------------------------------------------------------------------------
 
-export function GoogleAdsDeepSections() {
-  const { data } = useSheetData();
+export function GoogleAdsDeepSections({ data: dataProp }: { data?: SheetPayload } = {}) {
+  // Export đã lọc ngày từ GoogleAdsView; không truyền thì đọc toàn bộ như cũ.
+  const { data: dataHook } = useSheetData();
+  const data = dataProp ?? dataHook;
   const deep = useMemo(() => buildGoogleAdsDeep(data), [data]);
   const [qsFilter, setQsFilter] = useState<QsFilter>('weak');
   const [bidFilter, setBidFilter] = useState<BidFilter>('all');

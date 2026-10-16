@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
+import type { SheetPayload } from '@/lib/sheets/types';
 import { brandDemand } from '@/lib/market/crossChannel';
 import { formatNumber, formatPercent } from '@/lib/utils/format';
 import { FX_NOTE } from '@/lib/config/fx';
@@ -24,8 +25,10 @@ import { SortableTh } from '@/components/shared/SortableTh';
 type SortKey = 'term' | 'gCost' | 'gClicks' | 'cpc' | 'paidUsers' | 'paidInstalls' | 'organicUsers' | 'organicInstalls';
 const ASC_FIRST: readonly SortKey[] = ['term', 'cpc'];
 
-export function BrandDemandTable() {
-  const { data } = useSheetData();
+export function BrandDemandTable({ data: dataProp }: { data?: SheetPayload } = {}) {
+  // Export đã lọc ngày từ GoogleAdsView; không truyền thì đọc toàn bộ như cũ.
+  const { data: dataHook } = useSheetData();
+  const data = dataProp ?? dataHook;
   const demand = useMemo(() => brandDemand(data), [data]);
   const [onlyPaidGoogle, setOnlyPaidGoogle] = useState(true);
 

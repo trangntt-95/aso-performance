@@ -2,6 +2,9 @@
  * Monthly install targets cho paid search ads.
  * Update mỗi đầu quý — chỉnh ở đây, không hardcode rải rác trong UI.
  */
+/** Trần CPI Google Ads (USD / install thật) — Trang 15/10/2026: "CPI đã vượt mức $32 chưa". */
+export const GOOGLE_ADS_CPI_LIMIT_USD = 32;
+
 // Shopify Ads monthly install targets (search_ad surface only).
 export const ADS_MONTHLY_TARGETS: Record<string, number> = {
   '2026-03': 178,

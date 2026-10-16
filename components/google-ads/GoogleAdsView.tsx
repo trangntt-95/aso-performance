@@ -1,14 +1,18 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, Megaphone, Search, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
+import { DateFieldDMY } from '@/components/shared/DateFieldDMY';
+import { filterGoogleAdsPayload, googleAdsDateBounds, presetRange, type DateRange, type GadsPreset } from '@/lib/market/googleAdsFilter';
+import { GoogleAdsPulse } from './GoogleAdsPulse';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sparkline } from '@/components/shared/Sparkline';
 import { CopyKeywordsButton } from '@/components/shared/CopyKeywordsButton';
-import { formatDMYRange, formatNumber, formatPercent } from '@/lib/utils/format';
+import { formatDMY, formatDMYRange, formatNumber, formatPercent } from '@/lib/utils/format';
 import {
   buildGoogleAdsReport,
   VERDICT_META,
@@ -72,7 +76,51 @@ function Group({ n, title, sub }: { n: number; title: string; sub: string }) {
 
 export function GoogleAdsView() {
   const { data, isLoading, error } = useSheetData();
-  const report = useMemo(() => (data ? buildGoogleAdsReport(data.googleAds) : null), [data]);
+
+  // ── Lọc ngày cho CẢ tab (Trang 16/10/2026). Mặc định tháng này (tới ngày cuối
+  // có data); deep-link ?from&to. Mọi bảng bên dưới đọc export đã lọc; riêng khối
+  // "Trả lời nhanh" nhận export đầy đủ vì nó cần cả kỳ liền trước. ──
+  const bounds = useMemo(() => googleAdsDateBounds(data?.googleAds), [data]);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [range, setRange] = useState<DateRange | null>(() => {
+    const f = searchParams.get('from'), t = searchParams.get('to');
+    return f && t && f <= t ? { from: f, to: t } : null;
+  });
+  const [touched, setTouched] = useState(() => !!(searchParams.get('from') && searchParams.get('to')));
+  useEffect(() => {
+    if (!touched && bounds) setRange(presetRange('MTD', bounds));
+  }, [bounds, touched]);
+  const applyRange = (r: DateRange | null) => {
+    setTouched(true);
+    setRange(r);
+    const p = new URLSearchParams(searchParams.toString());
+    if (r) { p.set('from', r.from); p.set('to', r.to); } else { p.delete('from'); p.delete('to'); }
+    const qs = p.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+  const PRESETS: { k: GadsPreset; label: string; title: string }[] = [
+    { k: 'MTD', label: 'Tháng này', title: 'Từ ngày 1 tới ngày cuối có data' },
+    { k: 'L7', label: 'L7', title: '7 ngày cuối có data' },
+    { k: 'L14', label: 'L14', title: '14 ngày cuối có data' },
+    { k: 'L30', label: 'L30', title: '30 ngày cuối có data' },
+    { k: 'ALL', label: 'Tất cả', title: 'Toàn bộ export' },
+  ];
+  const activePreset = useMemo<GadsPreset | null>(() => {
+    if (!bounds || !range) return null;
+    for (const { k } of PRESETS) {
+      const r = presetRange(k, bounds);
+      if (r.from === range.from && r.to === range.to) return k;
+    }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bounds, range]);
+  const filteredData = useMemo(
+    () => (data ? { ...data, googleAds: filterGoogleAdsPayload(data.googleAds, range) } : undefined),
+    [data, range],
+  );
+  const report = useMemo(() => (filteredData ? buildGoogleAdsReport(filteredData.googleAds) : null), [filteredData]);
 
   const [search, setSearch] = useState('');
   const [verdictFilter, setVerdictFilter] = useState<ShareVerdict | 'all'>('all');
@@ -193,6 +241,52 @@ export function GoogleAdsView() {
           </div>
         </div>
       </div>
+
+      {/* Lọc ngày — áp cho mọi bảng bên dưới. */}
+      <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px]">
+        <span className="text-slate-500">Khoảng ngày:</span>
+        {PRESETS.map(({ k, label, title }) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => bounds && applyRange(presetRange(k, bounds))}
+            title={title}
+            className={cn(
+              'rounded border px-1.5 py-0.5 font-medium transition',
+              activePreset === k
+                ? 'border-indigo-300 bg-indigo-100 text-indigo-800'
+                : 'border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-900',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+        <DateFieldDMY
+          value={range?.from ?? ''}
+          min={bounds?.from}
+          max={range?.to ?? bounds?.to}
+          onChange={(v) => {
+            if (!v || !bounds) return;
+            applyRange({ from: v, to: range && v <= range.to ? range.to : bounds.to });
+          }}
+          title={bounds ? `Có data từ ${formatDMY(bounds.from)} đến ${formatDMY(bounds.to)}` : 'Chưa có data'}
+        />
+        <span className="text-slate-400">→</span>
+        <DateFieldDMY
+          value={range?.to ?? ''}
+          min={range?.from ?? bounds?.from}
+          max={bounds?.to}
+          onChange={(v) => {
+            if (!v || !bounds) return;
+            applyRange({ from: range && range.from <= v ? range.from : bounds.from, to: v });
+          }}
+        />
+        <span className="ml-auto text-[10px] text-slate-400">
+          {range ? `${formatDMYRange(range.from, range.to)} · mọi bảng bên dưới theo khoảng này` : ''}
+        </span>
+      </div>
+
+      {data && <GoogleAdsPulse data={data} range={range} />}
 
       <Group n={1} title="Tài khoản đang tiêu bao nhiêu, đổi lại được gì" sub="tổng quan · con số nào là install thật" />
 
@@ -465,7 +559,7 @@ export function GoogleAdsView() {
       />
 
       {/* Năm tab chẩn đoán: nước, Quality Score, chiến lược bid, thiết bị, asset. */}
-      <GoogleAdsDeepSections />
+      <GoogleAdsDeepSections data={filteredData} />
 
       <Group
         n={4}
@@ -474,7 +568,7 @@ export function GoogleAdsView() {
       />
 
       {/* Same phrase on both surfaces — the cross-channel view. */}
-      <BrandDemandTable />
+      <BrandDemandTable data={filteredData} />
 
       {/* Search terms */}
       <div className="rounded-lg border border-slate-200 bg-white p-3">

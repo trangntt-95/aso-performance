@@ -20,6 +20,8 @@ import { buildCampBenchmark } from '@/lib/market/overbid';
 import { buildCpiCapOverview } from '@/lib/market/cpiCapOverview';
 import { buildGoogleAdsReport } from '@/lib/market/googleAdsReport';
 import { buildGoogleAdsDeep } from '@/lib/market/googleAdsDeep';
+import { filterGoogleAdsPayload, googleAdsDateBounds, presetRange } from '@/lib/market/googleAdsFilter';
+import { buildGoogleAdsPulse } from '@/lib/market/googleAdsPulse';
 import { buildInstallOrigin } from '@/lib/market/installOrigin';
 
 const WindowSchema = z.enum(['L3', 'L7', 'L14', 'L30', 'L90']);
@@ -532,11 +534,14 @@ export function makeDashboardTools(data: SheetPayload) {
           .enum(['summary', 'countries', 'quality', 'bidding'])
           .default('summary'),
         limit: z.number().min(1).max(40).default(12),
+        from: z.string().nullish().describe('ISO date. With `to`, limits every figure to this range (default: whole export).'),
+        to: z.string().nullish().describe('ISO date, inclusive.'),
       }),
-      execute: async ({ area, limit }) => {
-        const report = buildGoogleAdsReport(data.googleAds);
+      execute: async ({ area, limit, from, to }) => {
+        const gads = from && to ? filterGoogleAdsPayload(data.googleAds, { from, to }) : data.googleAds;
+        const report = buildGoogleAdsReport(gads);
         if (!report) return { error: 'Chưa có dữ liệu Google Ads.' };
-        const deep = buildGoogleAdsDeep(data);
+        const deep = buildGoogleAdsDeep({ ...data, googleAds: gads });
         if (area === 'countries' && deep.country) {
           return {
             currency_note: `Chi phí gốc bằng ${report.currency}, đã quy về USD.`,
@@ -608,6 +613,65 @@ export function makeDashboardTools(data: SheetPayload) {
             impression_share: round((c.is ?? 0) * 100),
             verdict: c.verdict,
           })),
+        };
+      },
+    }),
+
+    get_google_ads_pulse: tool({
+      description:
+        'Google Ads quick answers for a date range (default: month-to-date): is CPI over the $32 limit, how far along the monthly paid-install target is (Google + App Store Ads vs the blended target), how installs and CPI compare with the previous equal-length period, and what drove the change — by metric (traffic / CTR / CR, CPC / CR), country, campaign and keyword. Use for "Google Ads tháng này thế nào", "CPI vượt 32 chưa", "vì sao install giảm".',
+      inputSchema: z.object({
+        from: z.string().nullish().describe('ISO date; omit both for month-to-date'),
+        to: z.string().nullish(),
+        limit: z.number().min(1).max(15).default(5).describe('Rows per breakdown list'),
+      }),
+      execute: async ({ from, to, limit }) => {
+        const bounds = googleAdsDateBounds(data.googleAds);
+        if (!bounds) return { error: 'Chưa có dữ liệu Google Ads.' };
+        const range = from && to ? { from, to } : presetRange('MTD', bounds);
+        const p = buildGoogleAdsPulse(data, range);
+        if (!p) return { error: 'Không tính được.' };
+        const ent = (rows: typeof p.byCountry, mode: 'installs' | 'cpi') =>
+          (mode === 'installs' ? rows.filter((r) => Math.abs(r.dInstalls) >= 0.5) : [...rows].filter((r) => r.cpiContribUsd !== null).sort((a, b) => Math.abs(b.cpiContribUsd ?? 0) - Math.abs(a.cpiContribUsd ?? 0)))
+            .slice(0, limit)
+            .map((r) => ({
+              name: r.name,
+              installs_prev: round(r.prev.installs, 1),
+              installs_cur: round(r.cur.installs, 1),
+              delta_installs: round(r.dInstalls, 1),
+              cpi_prev_usd: round(r.prev.cpiUsd, 1),
+              cpi_cur_usd: round(r.cur.cpiUsd, 1),
+              share_of_cpi_change_usd: round(r.cpiContribUsd, 2),
+              cost_cur_usd: round(r.cur.costUsd, 0),
+            }));
+        return {
+          period: p.cur,
+          previous_period: p.prev,
+          cpi: { limit_usd: p.cpi.limitUsd, current_usd: round(p.cpi.cur, 2), previous_usd: round(p.cpi.prev, 2), over_limit: p.cpi.over, delta_pct: round((p.cpi.deltaPct ?? 0) * 100) },
+          monthly_target: {
+            month: p.target.monthKey,
+            target_installs: p.target.monthlyTarget,
+            expected_to_date: round(p.target.expectedToDate, 1),
+            google_installs: round(p.target.googleInstalls, 1),
+            appstore_installs: p.target.shopifyInstalls,
+            appstore_export_to: p.target.shopifyTo,
+            paid_installs_total: round(p.target.paidInstalls, 1),
+            achievement_pct: round((p.target.pct ?? 0) * 100),
+            runrate_month_end: p.target.runrate ? { projected: round(p.target.runrate.projected), pct: round(p.target.runrate.pct * 100) } : null,
+            google_share_pct: round((p.target.googleShare ?? 0) * 100),
+          },
+          vs_previous: {
+            installs: { prev: round(p.totals.prev.installs, 1), cur: round(p.totals.cur.installs, 1) },
+            cost_usd: { prev: round(p.totals.prev.costUsd, 0), cur: round(p.totals.cur.costUsd, 0) },
+            ctr_pct: { prev: round((p.totals.prev.ctr ?? 0) * 100, 2), cur: round((p.totals.cur.ctr ?? 0) * 100, 2) },
+            cr_click_to_install_pct: { prev: round((p.totals.prev.cr ?? 0) * 100, 2), cur: round((p.totals.cur.cr ?? 0) * 100, 2) },
+            cpc_usd: { prev: round(p.totals.prev.cpcUsd, 2), cur: round(p.totals.cur.cpcUsd, 2) },
+          },
+          install_change_drivers: { by_traffic: round(p.installDrivers.traffic, 1), by_ctr: round(p.installDrivers.ctr, 1), by_cr: round(p.installDrivers.cr, 1), total: round(p.installDrivers.total, 1) },
+          cpi_change_drivers_usd: p.cpiDrivers ? { by_cpc: round(p.cpiDrivers.cpc, 2), by_cr: round(p.cpiDrivers.cr, 2), total: round(p.cpiDrivers.total, 2) } : null,
+          install_change_by: { country: ent(p.byCountry, 'installs'), campaign: ent(p.byCampaign, 'installs'), keyword: ent(p.byKeyword, 'installs') },
+          cpi_change_by: { country: ent(p.byCountry, 'cpi'), campaign: ent(p.byCampaign, 'cpi'), keyword: ent(p.byKeyword, 'cpi') },
+          note: 'Install theo nước / keyword là ước tính (chia install của campaign-ngày theo tỷ lệ conversions). Tiền quy USD theo lib/config/fx.',
         };
       },
     }),
