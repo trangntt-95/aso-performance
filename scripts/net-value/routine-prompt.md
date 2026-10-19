@@ -177,7 +177,7 @@ Bước 14 — Tổng hợp trong BigQuery. Gọi `mcp__claude_ai_TrueProfit_DA_
 SQL daily:
 WITH u AS (SELECT date, landing_page_plus_query_string AS lp, total_users, sessions FROM `trueda.trueprofit.ga_daily_lp_current`),
 i AS (SELECT date, landing_page_plus_query_string AS lp, event_count FROM `trueda.trueprofit.ga_daily_install_current`),
-pu AS (SELECT date, REGEXP_EXTRACT(lp, r'surface_type=([^&]+)') AS surface, REGEXP_EXTRACT(lp, r'surface_detail=([^&]+)') AS kw_raw, SAFE_CAST(REGEXP_EXTRACT(lp, r'surface_inter_position=([^&]+)') AS FLOAT64) AS pos, total_users, sessions FROM u),
+pu AS (SELECT date, REGEXP_EXTRACT(lp, r'surface_type=([^&]+)') AS surface, REGEXP_EXTRACT(lp, r'surface_detail=([^&]+)') AS kw_raw, SAFE_CAST(REGEXP_EXTRACT(lp, r'surface_intra_position=([^&]+)') AS FLOAT64) AS pos, total_users, sessions FROM u),
 pi AS (SELECT date, REGEXP_EXTRACT(lp, r'surface_type=([^&]+)') AS surface, REGEXP_EXTRACT(lp, r'surface_detail=([^&]+)') AS kw_raw, event_count FROM i),
 ug AS (SELECT date, surface, kw_raw, SUM(total_users) AS users, SUM(sessions) AS sessions, SAFE_DIVIDE(SUM(IF(pos IS NOT NULL, pos * total_users, 0)), SUM(IF(pos IS NOT NULL, total_users, 0))) AS pos FROM pu WHERE surface IN ('search','search_ad') AND kw_raw IS NOT NULL GROUP BY 1,2,3),
 ig AS (SELECT date, surface, kw_raw, SUM(event_count) AS installs FROM pi WHERE surface IN ('search','search_ad') AND kw_raw IS NOT NULL GROUP BY 1,2,3)
@@ -187,7 +187,7 @@ FROM ug FULL OUTER JOIN ig ON ug.date = ig.date AND ug.surface = ig.surface AND 
 SQL country: y hệt nhưng đọc `ga_daily_lp_country_current` / `ga_daily_install_country_current`, thêm cột `country` vào mọi SELECT/GROUP BY/JOIN (không có sessions).
 
 Bước 15 — Dựng và đẩy: copy hai file kết quả vào `.net-value-run/ga4-daily.json` và `.net-value-run/ga4-daily-country.json` (Bash `cp`), rồi
-`node scripts/net-value/build-ga4-daily.mjs .net-value-run/ga4-daily.json .net-value-run/ga4-daily-country.json .net-value-run 100`
+`node scripts/net-value/build-ga4-daily.mjs .net-value-run/ga4-daily.json .net-value-run/ga4-daily-country.json .net-value-run 200`
 Kỳ vọng rows >= 1500. Rồi `node scripts/net-value/push-ga4-daily.mjs .net-value-run/ga4-daily-body.json .net-value-run/ga4-daily-country-body.json` → hai dòng `200 {"ok":true,...}`.
 
 Bước 16 — Xác nhận: chạy Bash

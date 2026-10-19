@@ -25,6 +25,7 @@ import {
 import { languageOnlyKeywords, overrideToLanguage } from '@/lib/sheets/languageOverride';
 import { overrideCategoryExact } from '@/lib/sheets/categoryOverride';
 import type { SheetPayload } from '@/lib/sheets/types';
+import { historyFromDaily, mergeHistory } from '@/lib/sheets/historyFromDaily';
 import { makeDashboardTools } from '@/lib/ai/dashboard-tools';
 
 export const dynamic = 'force-dynamic';
@@ -103,7 +104,7 @@ async function fetchPayload(): Promise<SheetPayload> {
     countryL90: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['Country_L90'] ?? [], true), langKws)),
     allL365: overrideCategoryExact(overrideToLanguage(parseSnapshot(raw['All_L365'] ?? [], false), langKws)),
     countryL365: overrideCategoryExact(overrideToLanguage(parseSnapshot(raw['Country_L365'] ?? [], true), langKws)),
-    history: parseHistory(raw['History'] ?? []),
+    history: ga4Daily.length >= 500 ? mergeHistory(historyFromDaily(ga4Daily), parseHistory(raw['History'] ?? [])) : parseHistory(raw['History'] ?? []),
     historyDaily: ga4Daily.length >= 500 ? ga4Daily : parseHistoryDaily(raw['History_Daily'] ?? []),
     historyDailySource: ga4Daily.length >= 500 ? 'ga4_bq' : 'apps_script',
     keywordTabsSource: {},

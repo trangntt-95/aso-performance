@@ -3,6 +3,7 @@ import { fetchAllTabs, fetchShopifyDailyRows, fetchShopifyByCategoryRows, getMis
 import { parsePaidCategoryBoard } from '@/lib/sheets/paidCategoryBoard';
 import { fetchGoogleAdsTabs, parseGoogleAds } from '@/lib/sheets/googleAds';
 import { normalizeCampName } from '@/lib/sheets/campName';
+import { historyFromDaily, mergeHistory } from '@/lib/sheets/historyFromDaily';
 import {
   parseActionQueue,
   parseAlertLog,
@@ -171,7 +172,9 @@ export async function GET() {
       allL365: fixSnap(parseSnapshot(winTab('All', '365'), false)),
       countryL365: fixSnap(parseSnapshot(winTab('Country', '365'), true)),
       keywordTabsSource,
-      history: parseHistory(raw['History'] ?? []),
+      // Chuỗi L7 dựng từ GA4 gốc theo ngày; tab History của Apps Script chỉ còn bù
+      // phần trước ngày đầu GA4 (Trang 19/10/2026: bỏ phụ thuộc Apps Script).
+      history: ga4Daily.length >= 500 ? mergeHistory(historyFromDaily(ga4Daily), parseHistory(raw['History'] ?? [])) : parseHistory(raw['History'] ?? []),
       historyDaily: ga4Daily.length >= 500 ? ga4Daily : parseHistoryDaily(raw['History_Daily'] ?? []),
       historyDailySource: ga4Daily.length >= 500 ? 'ga4_bq' : 'apps_script',
       historyDailyCountry: ga4DailyCountry.length >= 500 ? ga4DailyCountry : parseHistoryDailyCountry(raw['History_Daily_Country'] ?? []),
