@@ -284,5 +284,9 @@ export function actionQueueFromGa4(input: ActionQueueInput): ActionQueueRow[] {
   return Array.from(best.values())
     .sort((a, b) => b.score - a.score || a.keyword.localeCompare(b.keyword))
     .slice(0, LIMIT)
-    .map(({ dedupeKey: _k, ...row }) => row);
+    .map((c) => {
+      const row: ActionQueueRow & { dedupeKey?: string } = { ...c };
+      delete row.dedupeKey;
+      return row as ActionQueueRow;
+    });
 }
