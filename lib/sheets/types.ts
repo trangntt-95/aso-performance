@@ -594,6 +594,9 @@ export interface SheetPayload {
   historyDailySource: 'ga4_bq' | 'apps_script';
   /** Từng cửa sổ (L3…L365) lấy từ tab GA4_All/Country_Lx_auto (ga4_bq) hay tab All_L, Country_L của Apps Script. */
   keywordTabsSource: Record<string, 'ga4_bq' | 'apps_script'>;
+  /** Market_Index / Action_Queue tính từ tab GA4 window (lib/sheets/*FromGa4.ts)
+   *  thay vì đọc tab Apps Script; thiếu = đang đọc tab Apps Script. */
+  derivedSources?: { marketIndex: 'ga4_bq'; actionQueue: 'ga4_bq' };
   /** Per-day metrics split by country, Tier-1 markets only. Empty until the
    *  Apps Script job has run — every reader must tolerate that. */
   historyDailyCountry: HistoryDailyCountryRow[];

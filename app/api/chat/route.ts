@@ -21,11 +21,14 @@ import {
   parseSnapshot,
   parseWindowDateRange,
   parseTier1Watch,
+  parseExcludedCountries,
 } from '@/lib/sheets/parsers';
 import { languageOnlyKeywords, overrideToLanguage } from '@/lib/sheets/languageOverride';
 import { overrideCategoryExact } from '@/lib/sheets/categoryOverride';
 import type { SheetPayload } from '@/lib/sheets/types';
 import { historyFromDaily, mergeHistory } from '@/lib/sheets/historyFromDaily';
+import { marketIndexFromGa4 } from '@/lib/sheets/marketIndexFromGa4';
+import { actionQueueFromGa4 } from '@/lib/sheets/actionQueueFromGa4';
 import { makeDashboardTools } from '@/lib/ai/dashboard-tools';
 
 export const dynamic = 'force-dynamic';
@@ -88,26 +91,34 @@ async function fetchPayload(): Promise<SheetPayload> {
   // GA4 gốc theo ngày (tab GA4_daily_auto*) ưu tiên, như app/api/sheets/route.ts.
   const ga4Daily = parseHistoryDaily(raw['GA4_daily_auto'] ?? []);
   const ga4DailyCountry = parseHistoryDailyCountry(raw['GA4_daily_country_auto'] ?? []);
-  return {
+  // Tab cửa sổ: ưu tiên GA4_*_auto như app/api/sheets/route.ts.
+  const keywordTabsSource: Record<string, 'ga4_bq' | 'apps_script'> = {};
+  const winTab = (kind: 'All' | 'Country', w: string): string[][] => {
+    const ga4 = raw[`GA4_${kind}_L${w}_auto`] ?? [];
+    const ok = ga4.length >= 23;
+    keywordTabsSource[`${kind}_L${w}`] = ok ? 'ga4_bq' : 'apps_script';
+    return ok ? ga4 : raw[`${kind}_L${w}`] ?? [];
+  };
+  const payload: SheetPayload = {
     actionQueue: parseActionQueue(raw['Action_Queue'] ?? []),
     marketIndex: parseMarketIndex(raw['Market_Index'] ?? []),
     tier1Watch: parseTier1Watch(raw['Tier1_Market_Watch'] ?? []),
-    allL3: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['All_L3'] ?? [], false), langKws)),
-    allL7: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['All_L7'] ?? [], false), langKws)),
-    allL14: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['All_L14'] ?? [], false), langKws)),
-    allL30: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['All_L30'] ?? [], false), langKws)),
-    allL90: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['All_L90'] ?? [], false), langKws)),
-    countryL3: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['Country_L3'] ?? [], true), langKws)),
-    countryL7: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['Country_L7'] ?? [], true), langKws)),
-    countryL14: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['Country_L14'] ?? [], true), langKws)),
-    countryL30: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['Country_L30'] ?? [], true), langKws)),
-    countryL90: overrideCategoryExact(overrideToLanguage(parseKeywordTab(raw['Country_L90'] ?? [], true), langKws)),
-    allL365: overrideCategoryExact(overrideToLanguage(parseSnapshot(raw['All_L365'] ?? [], false), langKws)),
-    countryL365: overrideCategoryExact(overrideToLanguage(parseSnapshot(raw['Country_L365'] ?? [], true), langKws)),
+    allL3: overrideCategoryExact(overrideToLanguage(parseKeywordTab(winTab('All', '3'), false), langKws)),
+    allL7: overrideCategoryExact(overrideToLanguage(parseKeywordTab(winTab('All', '7'), false), langKws)),
+    allL14: overrideCategoryExact(overrideToLanguage(parseKeywordTab(winTab('All', '14'), false), langKws)),
+    allL30: overrideCategoryExact(overrideToLanguage(parseKeywordTab(winTab('All', '30'), false), langKws)),
+    allL90: overrideCategoryExact(overrideToLanguage(parseKeywordTab(winTab('All', '90'), false), langKws)),
+    countryL3: overrideCategoryExact(overrideToLanguage(parseKeywordTab(winTab('Country', '3'), true), langKws)),
+    countryL7: overrideCategoryExact(overrideToLanguage(parseKeywordTab(winTab('Country', '7'), true), langKws)),
+    countryL14: overrideCategoryExact(overrideToLanguage(parseKeywordTab(winTab('Country', '14'), true), langKws)),
+    countryL30: overrideCategoryExact(overrideToLanguage(parseKeywordTab(winTab('Country', '30'), true), langKws)),
+    countryL90: overrideCategoryExact(overrideToLanguage(parseKeywordTab(winTab('Country', '90'), true), langKws)),
+    allL365: overrideCategoryExact(overrideToLanguage(parseSnapshot(winTab('All', '365'), false), langKws)),
+    countryL365: overrideCategoryExact(overrideToLanguage(parseSnapshot(winTab('Country', '365'), true), langKws)),
     history: ga4Daily.length >= 500 ? mergeHistory(historyFromDaily(ga4Daily), parseHistory(raw['History'] ?? [])) : parseHistory(raw['History'] ?? []),
     historyDaily: ga4Daily.length >= 500 ? ga4Daily : parseHistoryDaily(raw['History_Daily'] ?? []),
     historyDailySource: ga4Daily.length >= 500 ? 'ga4_bq' : 'apps_script',
-    keywordTabsSource: {},
+    keywordTabsSource,
     historyDailyCountry: ga4DailyCountry.length >= 500 ? ga4DailyCountry : parseHistoryDailyCountry(raw['History_Daily_Country'] ?? []),
     // The chat context doesn't reason over per-day spend; skip the second-sheet
     // fetch so the assistant stays fast.
@@ -123,7 +134,7 @@ async function fetchPayload(): Promise<SheetPayload> {
     perGeoCpiCap: [],
     perGeoRevenue: [],
     perGeoRevenuePeriod: '',
-    excludedCountries: [],
+    excludedCountries: parseExcludedCountries(raw['Countries performance'] ?? []),
     marketTiers: [],
     shopifyCamps: parseShopifyCamps(raw['Shopify_daily'] ?? []),
     // The chat context doesn't render the hand-built pivot; it reasons over the
@@ -148,6 +159,13 @@ async function fetchPayload(): Promise<SheetPayload> {
     })(),
     fetchedAt: new Date().toISOString(),
   };
+  // Market_Index + Action_Queue tính từ tab GA4 window, như app/api/sheets/route.ts.
+  if (keywordTabsSource['All_L90'] === 'ga4_bq' && keywordTabsSource['Country_L90'] === 'ga4_bq') {
+    payload.marketIndex = marketIndexFromGa4(payload);
+    payload.actionQueue = actionQueueFromGa4(payload);
+    payload.derivedSources = { marketIndex: 'ga4_bq', actionQueue: 'ga4_bq' };
+  }
+  return payload;
 }
 
 interface DashboardContext {

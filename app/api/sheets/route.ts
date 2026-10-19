@@ -4,6 +4,8 @@ import { parsePaidCategoryBoard } from '@/lib/sheets/paidCategoryBoard';
 import { fetchGoogleAdsTabs, parseGoogleAds } from '@/lib/sheets/googleAds';
 import { normalizeCampName } from '@/lib/sheets/campName';
 import { historyFromDaily, mergeHistory } from '@/lib/sheets/historyFromDaily';
+import { marketIndexFromGa4 } from '@/lib/sheets/marketIndexFromGa4';
+import { actionQueueFromGa4 } from '@/lib/sheets/actionQueueFromGa4';
 import {
   parseActionQueue,
   parseAlertLog,
@@ -211,6 +213,14 @@ export async function GET() {
       missingTabs: getMissingTabs(),
       fetchedAt: new Date().toISOString(),
     };
+    // Market_Index + Action_Queue tính từ tab GA4 window ngay tại đây (Trang
+    // 19/10/2026: bỏ phụ thuộc Apps Script); tab Apps Script chỉ còn là đường lùi
+    // khi GA4 window thiếu.
+    if (keywordTabsSource['All_L90'] === 'ga4_bq' && keywordTabsSource['Country_L90'] === 'ga4_bq') {
+      payload.marketIndex = marketIndexFromGa4(payload);
+      payload.actionQueue = actionQueueFromGa4(payload);
+      payload.derivedSources = { marketIndex: 'ga4_bq', actionQueue: 'ga4_bq' };
+    }
     // Guard: a transient Google API failure makes fetchAllTabs swallow the
     // error and return every tab empty. That still parses into a valid-looking
     // payload, and if we cache it (s-maxage + stale-while-revalidate=24h) the
