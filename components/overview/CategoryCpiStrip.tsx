@@ -94,6 +94,41 @@ export function CategoryCpiStrip({
   const max = report.rows.reduce((m, r) => Math.max(m, r.spend), 0);
   const focused = (c: string) => !activeCategory || c === activeCategory;
 
+  // Dòng TOTAL (Trang 20/10/2026): cộng thẳng các dòng ở trên. CPI tổng = chi ÷
+  // install (chính là report.cpi, có trọng số theo chi). Value/inst tổng = tổng
+  // net ÷ tổng install của các category có trong bảng, cũng là trọng số theo
+  // install chứ không phải trung bình các ô.
+  const total = (() => {
+    const spend = report.rows.reduce((s, r) => s + r.spend, 0);
+    const installs = report.rows.reduce((s, r) => s + r.installs, 0);
+    const installsPrev = report.rows.reduce((s, r) => s + r.installsPrev, 0);
+    const spendPrev = report.rows.reduce((s, r) => s + r.spendPrev, 0);
+    let nvNet = 0;
+    let nvInstalls = 0;
+    for (const r of report.rows) {
+      const nv = netValueByCat.get(r.category.trim().toLowerCase());
+      if (nv && nv.netPerInstall !== null) {
+        nvNet += nv.netValue;
+        nvInstalls += nv.installs;
+      }
+    }
+    const cpi = installs > 0 ? spend / installs : null;
+    const netPerInstall = nvInstalls > 0 ? nvNet / nvInstalls : null;
+    return {
+      spend,
+      installs,
+      installsPrev,
+      spendPrev,
+      installDelta: report.hasPrev && installsPrev > 0 ? (installs - installsPrev) / installsPrev : null,
+      cpi,
+      cpiPrev: installsPrev > 0 ? spendPrev / installsPrev : null,
+      netPerInstall,
+      nvInstalls,
+      nvNet,
+      over: cpi !== null && netPerInstall !== null && cpi > netPerInstall,
+    };
+  })();
+
   return (
     <div className="mt-3 border-t border-slate-200 pt-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -262,6 +297,52 @@ export function CategoryCpiStrip({
           </li>
           );
         })}
+        <li className="mt-1 flex items-center gap-2 border-t border-slate-200 pt-1.5 text-[11px] font-semibold text-slate-900">
+          <span className="w-28 shrink-0">TOTAL</span>
+          <div className="min-w-0 flex-1 text-[9px] font-normal text-slate-400">
+            {report.rows.length} category
+          </div>
+          <span className="w-14 shrink-0 text-right font-mono tabular-nums">{money(total.spend)}</span>
+          <span className="w-10 shrink-0 text-right font-mono tabular-nums text-slate-400">100%</span>
+          <span className="w-12 shrink-0 text-right font-mono tabular-nums">{total.installs || '—'} ins</span>
+          <span
+            className={cn('w-20 shrink-0 text-right font-mono tabular-nums', deltaTone(total.installDelta))}
+            title={
+              report.hasPrev
+                ? `Install ${total.installsPrev} → ${total.installs} (${delta(total.installDelta)})` +
+                  `\nChi ${money(total.spendPrev)} → ${money(total.spend)}` +
+                  `\nCPI ${total.cpiPrev === null ? '—' : `$${total.cpiPrev.toFixed(2)}`} → ${total.cpi === null ? '—' : `$${total.cpi.toFixed(2)}`}`
+                : 'Kỳ trước không có dữ liệu nên chưa so được.'
+            }
+          >
+            {total.installDelta === null ? (
+              <span className="text-slate-300">—</span>
+            ) : (
+              <>
+                {delta(total.installDelta)}
+                <span className="ml-1 text-[9px] font-normal text-slate-400">
+                  {total.installsPrev}→{total.installs}
+                </span>
+              </>
+            )}
+          </span>
+          <span
+            className={cn('w-16 shrink-0 text-right font-mono tabular-nums', total.over ? 'text-rose-600' : 'text-slate-900')}
+            title="Tổng chi ÷ tổng install, trọng số theo chi"
+          >
+            {total.cpi === null ? '—' : `$${total.cpi.toFixed(2)}`}
+          </span>
+          <span
+            className={cn('w-16 shrink-0 text-right font-mono tabular-nums', total.over ? 'text-rose-600' : 'text-indigo-700')}
+            title={
+              total.netPerInstall === null
+                ? 'Chưa có category nào có value'
+                : `Tổng net $${Math.round(total.nvNet).toLocaleString()} ÷ ${total.nvInstalls} install của các category trong bảng (${pickLabel}), trọng số theo install`
+            }
+          >
+            {total.netPerInstall === null ? '—' : `$${total.netPerInstall.toFixed(0)}`}
+          </span>
+        </li>
       </ul>
       <div className="mt-1.5 text-[9px] leading-snug text-slate-400">
         <b>Value/inst</b> = một install của category đáng bao nhiêu (tab Net value per install, {pickLabel}
