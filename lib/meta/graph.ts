@@ -28,6 +28,8 @@ const INSIGHT_FIELDS = [
   'inline_link_clicks',
   'actions',
   'action_values',
+  'conversions',
+  'conversion_values',
   'video_play_actions',
   'video_thruplay_watched_actions',
   'video_p25_watched_actions',
@@ -43,8 +45,9 @@ const EV = {
   firstVideoCreated: ['offsite_conversion.fb_pixel_custom.FirstVideoCreated'],
   createVideo: ['offsite_conversion.custom.1127476886367994'],
   visitApp: ['offsite_conversion.custom.4053074454987565'],
-  startTrial: ['start_trial_total', 'offsite_conversion.fb_pixel_start_trial', 'start_trial'],
-  subscribe: ['subscribe_total', 'offsite_conversion.fb_pixel_subscribe', 'subscribe'],
+  startTrial: ['start_trial_total', 'start_trial_website', 'offsite_conversion.fb_pixel_start_trial', 'start_trial'],
+  subscribe: ['subscribe_total', 'subscribe_website', 'offsite_conversion.fb_pixel_subscribe', 'subscribe'],
+  registration: ['complete_registration', 'omni_complete_registration', 'offsite_conversion.fb_pixel_complete_registration'],
   purchase: ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase'],
   lpv: ['landing_page_view', 'omni_landing_page_view'],
   engagement: ['post_engagement'],
@@ -62,6 +65,9 @@ interface RawInsight {
   inline_link_clicks?: string;
   actions?: Action[];
   action_values?: Action[];
+  /** Pixel standard/custom events (FirstVideoCreated, start_trial, subscribe) come back here, not in actions. */
+  conversions?: Action[];
+  conversion_values?: Action[];
   video_play_actions?: Action[];
   video_thruplay_watched_actions?: Action[];
   video_p25_watched_actions?: Action[];
@@ -90,15 +96,19 @@ const act = (list: Action[] | undefined, types: readonly string[]): number => {
   }
   return 0;
 };
+// FirstVideoCreated / start_trial / subscribe live in `conversions`; custom
+// conversions (Create Video, Visit App) and purchase live in `actions`. Look in both.
+const conv = (r: RawInsight, types: readonly string[]): number => act(r.conversions, types) || act(r.actions, types);
+
 // Video metrics come back as a one-element list keyed 'video_view'.
 const vid = (list: Action[] | undefined): number => (list && list[0] ? n(list[0].value) : 0);
 
-function primaryResult(actions: Action[] | undefined): { type: string; value: number } {
-  const fvc = act(actions, EV.firstVideoCreated);
+function primaryResult(r: RawInsight): { type: string; value: number } {
+  const fvc = conv(r, EV.firstVideoCreated);
   if (fvc > 0) return { type: 'FirstVideoCreated', value: fvc };
-  const cv = act(actions, EV.createVideo);
+  const cv = conv(r, EV.createVideo);
   if (cv > 0) return { type: 'Create Video', value: cv };
-  const va = act(actions, EV.visitApp);
+  const va = conv(r, EV.visitApp);
   if (va > 0) return { type: 'Visit App', value: va };
   return { type: 'FirstVideoCreated', value: 0 };
 }
@@ -204,16 +214,17 @@ export async function fetchMetaProvenyFromGraph(): Promise<MetaProvenyPayload> {
       ...base(r),
       purchases: act(r.actions, EV.purchase),
       purchaseValue: act(r.action_values, EV.purchase),
-      firstVideoCreated: act(r.actions, EV.firstVideoCreated),
-      startTrials: act(r.actions, EV.startTrial),
-      subscribes: act(r.actions, EV.subscribe),
+      firstVideoCreated: conv(r, EV.firstVideoCreated),
+      startTrials: conv(r, EV.startTrial),
+      subscribes: conv(r, EV.subscribe),
+      registrations: conv(r, EV.registration),
     }))
     .filter((r) => r.date)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const campaigns: MetaCampaignRow[] = campaignsRaw.map((c) => {
     const r = c.insights?.data?.[0] ?? {};
-    const pr = primaryResult(r.actions);
+    const pr = primaryResult(r);
     return {
       id: c.id,
       name: c.name,
@@ -225,15 +236,16 @@ export async function fetchMetaProvenyFromGraph(): Promise<MetaProvenyPayload> {
       resultType: pr.type,
       results: pr.value,
       purchases: act(r.actions, EV.purchase),
-      startTrials: act(r.actions, EV.startTrial),
-      subscribes: act(r.actions, EV.subscribe),
-      firstVideoCreated: act(r.actions, EV.firstVideoCreated),
+      startTrials: conv(r, EV.startTrial),
+      subscribes: conv(r, EV.subscribe),
+      firstVideoCreated: conv(r, EV.firstVideoCreated),
+      registrations: conv(r, EV.registration),
     };
   });
 
   const ads: MetaAdRow[] = adsRaw.map((a) => {
     const r = a.insights?.data?.[0] ?? {};
-    const pr = primaryResult(r.actions);
+    const pr = primaryResult(r);
     return {
       id: a.id,
       name: a.name,

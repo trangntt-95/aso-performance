@@ -24,6 +24,8 @@ export interface MetaDailyRow {
   startTrials: number;
   /** Pixel event subscribe. */
   subscribes: number;
+  /** Pixel complete_registration (đăng ký tài khoản). Snapshot cũ không có. */
+  registrations?: number;
 }
 
 export interface MetaCampaignRow {
@@ -51,6 +53,7 @@ export interface MetaCampaignRow {
   startTrials: number;
   subscribes: number;
   firstVideoCreated: number;
+  registrations?: number;
 }
 
 export interface MetaAdRow {

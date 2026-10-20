@@ -34,6 +34,7 @@ export interface Kpis {
   firstVideoCreated: number;
   startTrials: number;
   subscribes: number;
+  registrations: number;
   purchases: number;
   ctr: number | null;
   cpm: number | null;
@@ -73,6 +74,7 @@ export function kpis(rows: MetaDailyRow[]): Kpis {
     firstVideoCreated,
     startTrials,
     subscribes: s('subscribes'),
+    registrations: rows.reduce((t, r) => t + (r.registrations ?? 0), 0),
     purchases: s('purchases'),
     ctr: ratio(clicks, impressions),
     cpm: impressions > 0 ? (spend / impressions) * 1000 : null,

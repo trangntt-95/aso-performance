@@ -19,8 +19,8 @@ export async function GET() {
     g('me?fields=id,name', token),
     g('me/permissions', token),
     g('me/adaccounts?fields=id,name,account_status&limit=50', token),
-    g(`act_${account}?fields=id,name,account_status,business`, token),
-    g(`act_${account}/insights?date_preset=last_7d&fields=spend`, token),
+    g(`act_${account}?fields=id,name,account_status`, token),
+    g(`act_${account}/insights?date_preset=last_30d&fields=spend,actions,action_values,conversions,conversion_values`, token),
   ]);
   return NextResponse.json({ tokenLength: token.length, tokenPrefix: token.slice(0, 4), accountId: account, me, perms, accounts, act, insights });
 }

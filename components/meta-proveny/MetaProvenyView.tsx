@@ -143,6 +143,7 @@ function Funnel({ k, campaigns }: { k: ReturnType<typeof kpis>; campaigns: MetaC
     { label: 'Clicks', value: k.clicks },
     { label: 'Link clicks', value: k.linkClicks },
     { label: 'Landing page view', value: k.lpv },
+    { label: 'Đăng ký', value: k.registrations, note: 'Pixel complete_registration' },
     { label: 'Kết quả camp (30d)', value: results, note: 'Create Video / FirstVideoCreated / Visit App' },
     { label: 'Start trial', value: k.startTrials },
     { label: 'Subscribe', value: k.subscribes },

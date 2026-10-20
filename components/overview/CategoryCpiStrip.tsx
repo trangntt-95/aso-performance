@@ -29,6 +29,14 @@ const delta = (v: number | null) =>
 /** Spend and installs moving the SAME way is normal; moving apart is the signal.
  *  Colour follows installs, since that's the outcome — but the pair is what the
  *  reader is being pointed at, so both are shown together. */
+/** ROAS dự kiến: dưới 1 là lỗ trong 120 ngày, 1–1.5 mới hoà, từ 1.5 mới đáng scale. */
+function roasTone(roas: number | null): string {
+  if (roas === null) return 'text-slate-300';
+  if (roas < 1) return 'font-semibold text-rose-600';
+  if (roas < 1.5) return 'text-amber-700';
+  return 'font-semibold text-emerald-700';
+}
+
 function deltaTone(installDelta: number | null): string {
   if (installDelta === null) return 'text-slate-300';
   if (installDelta > 0.05) return 'text-emerald-600';
@@ -114,7 +122,16 @@ export function CategoryCpiStrip({
     }
     const cpi = installs > 0 ? spend / installs : null;
     const netPerInstall = nvInstalls > 0 ? nvNet / nvInstalls : null;
+    // ROAS tổng: cộng giá trị dự kiến của TỪNG category (install × value/inst
+    // của chính nó) rồi chia tổng chi, không lấy value/inst chung nhân tổng install.
+    let expectedValue = 0;
+    for (const r of report.rows) {
+      const nv = netValueByCat.get(r.category.trim().toLowerCase());
+      if (nv && nv.netPerInstall !== null) expectedValue += r.installs * nv.netPerInstall;
+    }
     return {
+      expectedValue,
+      roas: spend > 0 && expectedValue > 0 ? expectedValue / spend : null,
       spend,
       installs,
       installsPrev,
@@ -191,6 +208,12 @@ export function CategoryCpiStrip({
           title={`Một install của category này ĐÁNG bao nhiêu: net value (doanh thu − phí Shopify, chưa trừ ads) ÷ installs, gộp mọi nước và mọi keyword của category, ${pickLabel}. Nguồn: tab Net value per install${nvScope ? ` — ${nvScope}` : ''} (không đổi theo khoảng ngày của trang). Đỏ = CPI đang trả cao hơn giá trị. 'mỏng' = dưới 3 shop trả tiền.`}
         >
           Value/inst
+        </span>
+        <span
+          className="w-12 shrink-0 text-right"
+          title="ROAS dự kiến = (install × Value/inst) ÷ chi. Tức giá trị 4 tháng của số install mua được chia cho tiền đã trả. Dưới 1 = chưa hoàn vốn trong 120 ngày."
+        >
+          ROAS
         </span>
       </div>
 
@@ -294,6 +317,22 @@ export function CategoryCpiStrip({
                 </span>
               );
             })()}
+            {(() => {
+              const nv = netValueByCat.get(r.category.trim().toLowerCase()) ?? null;
+              const roas = nv && nv.netPerInstall !== null && r.spend > 0 ? (r.installs * nv.netPerInstall) / r.spend : null;
+              return (
+                <span
+                  className={cn('w-12 shrink-0 text-right font-mono tabular-nums', roasTone(roas))}
+                  title={
+                    roas === null
+                      ? 'Chưa có value hoặc chưa có chi để tính'
+                      : `${r.installs} install × $${nv!.netPerInstall!.toFixed(0)} = $${Math.round(r.installs * nv!.netPerInstall!).toLocaleString()} giá trị 4 tháng ÷ chi ${money(r.spend)}`
+                  }
+                >
+                  {roas === null ? '—' : `${roas.toFixed(1)}x`}
+                </span>
+              );
+            })()}
           </li>
           );
         })}
@@ -341,6 +380,16 @@ export function CategoryCpiStrip({
             }
           >
             {total.netPerInstall === null ? '—' : `$${total.netPerInstall.toFixed(0)}`}
+          </span>
+          <span
+            className={cn('w-12 shrink-0 text-right font-mono tabular-nums', roasTone(total.roas))}
+            title={
+              total.roas === null
+                ? 'Chưa đủ dữ liệu'
+                : `Tổng giá trị 4 tháng của install từng category cộng lại ($${Math.round(total.expectedValue).toLocaleString()}) ÷ tổng chi ${money(total.spend)}`
+            }
+          >
+            {total.roas === null ? '—' : `${total.roas.toFixed(1)}x`}
           </span>
         </li>
       </ul>
