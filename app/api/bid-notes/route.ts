@@ -19,13 +19,21 @@ function rowKey(country: string, category: string): string {
 }
 
 // Create the tab + header row if it doesn't exist yet. Idempotent.
+let tabEnsured = false;
+
 async function ensureTab(
   sheets: ReturnType<typeof getWriteSheetsClient>,
   spreadsheetId: string,
 ): Promise<void> {
-  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  // Nhớ trong instance: trước đây mỗi lần GET đều tải toàn bộ metadata sheet
+  // (1 read quota) chỉ để biết tab đã có — 4 store × mỗi trang mở (20/10/2026).
+  if (tabEnsured) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties.title' });
   const exists = (meta.data.sheets ?? []).some((s) => s.properties?.title === TAB);
-  if (exists) return;
+  if (exists) {
+    tabEnsured = true;
+    return;
+  }
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId,
     requestBody: { requests: [{ addSheet: { properties: { title: TAB } } }] },
@@ -36,6 +44,7 @@ async function ensureTab(
     valueInputOption: 'RAW',
     requestBody: { values: [HEADER] },
   });
+  tabEnsured = true;
 }
 
 async function readRows(

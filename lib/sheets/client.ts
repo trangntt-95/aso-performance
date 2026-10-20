@@ -343,7 +343,14 @@ export async function probeShopifyWide(tab?: string, range?: string): Promise<un
  * người ta gõ tay: 'Countries performance' với 'Countries Performance' là cùng
  * một tab, và im lặng trả 0 dòng vì một chữ hoa là kiểu hỏng tệ nhất.
  */
+// Tên tab đổi hiếm khi → nhớ 15 phút trong instance. Google lỗi thì dùng bản
+// nhớ; chưa có bản nhớ mà lỗi quota thì ném lỗi (20/10/2026: trả null ở đây làm
+// batchGet chạy với tên tab cũ → 400 → gọi lẻ 45 tab → quota không bao giờ hồi).
+let titlesCache: { at: number; map: Map<TabName, string> } | null = null;
+const TITLES_TTL_MS = 15 * 60 * 1000;
+
 async function resolveTabTitles(): Promise<Map<TabName, string> | null> {
+  if (titlesCache && Date.now() - titlesCache.at < TITLES_TTL_MS) return titlesCache.map;
   try {
     const sheets = getSheetsClient();
     const info = await sheets.spreadsheets.get({
@@ -366,8 +373,11 @@ async function resolveTabTitles(): Promise<Map<TabName, string> | null> {
         }
       }
     }
+    titlesCache = { at: Date.now(), map: out };
     return out;
-  } catch {
+  } catch (err) {
+    if (titlesCache) return titlesCache.map;
+    if (isQuotaError(err)) throw err;
     return null;
   }
 }
@@ -401,7 +411,19 @@ async function fillFromLegacyNames(result: Record<string, string[][]>): Promise<
 let lastMissingTabs: string[] = [];
 export const getMissingTabs = (): string[] => [...lastMissingTabs];
 
-export async function fetchAllTabs(): Promise<Record<string, string[][]>> {
+// Nhiều request /api/sheets cùng lúc (2 tab trình duyệt, prefetch) dùng chung
+// một lượt đọc Google.
+let inflight: Promise<Record<string, string[][]>> | null = null;
+export function fetchAllTabs(): Promise<Record<string, string[][]>> {
+  if (!inflight) {
+    inflight = fetchAllTabsOnce().finally(() => {
+      inflight = null;
+    });
+  }
+  return inflight;
+}
+
+async function fetchAllTabsOnce(): Promise<Record<string, string[][]>> {
   const sheets = getSheetsClient();
   const result: Record<string, string[][]> = {};
   const titles = await resolveTabTitles();
@@ -443,21 +465,10 @@ export async function fetchAllTabs(): Promise<Record<string, string[][]>> {
       console.error(`[sheets] quota Google (${waitMs > 0 ? 'sau khi chờ ' + waitMs + 'ms' : 'lần đầu'}):`, (err as Error).message);
     }
   }
-  if (isQuotaError(lastErr)) throw lastErr;
-  {
-    // Chỉ tới đây khi batchGet hỏng vì lý do KHÁC quota (mạng, tab lạ).
-    await Promise.all(
-      wanted.map(async (w) => {
-        try {
-          result[w.tab] = await fetchTab(w.title);
-        } catch {
-          result[w.tab] = [];
-        }
-      }),
-    );
-    if (!titles) await fillFromLegacyNames(result);
-    return result;
-  }
+  // Không còn gọi lẻ từng tab khi batchGet hỏng: 45 request một lượt là thứ
+  // làm quota (60/phút) không hồi được. Lỗi gì cũng ném lên để route trả bản
+  // gần nhất.
+  throw lastErr instanceof Error ? lastErr : new Error('batchGet thất bại');
 }
 
 /**
