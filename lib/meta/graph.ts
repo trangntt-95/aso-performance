@@ -103,14 +103,31 @@ const conv = (r: RawInsight, types: readonly string[]): number => act(r.conversi
 // Video metrics come back as a one-element list keyed 'video_view'.
 const vid = (list: Action[] | undefined): number => (list && list[0] ? n(list[0].value) : 0);
 
-function primaryResult(r: RawInsight): { type: string; value: number } {
-  const fvc = conv(r, EV.firstVideoCreated);
-  if (fvc > 0) return { type: 'FirstVideoCreated', value: fvc };
-  const cv = conv(r, EV.createVideo);
-  if (cv > 0) return { type: 'Create Video', value: cv };
-  const va = conv(r, EV.visitApp);
-  if (va > 0) return { type: 'Visit App', value: va };
-  return { type: 'FirstVideoCreated', value: 0 };
+type PromotedObject = { custom_conversion_id?: string; custom_event_type?: string; custom_event_str?: string; pixel_rule?: string };
+
+/** Event mà adset tối ưu, đọc từ promoted_object; null khi không nhận ra. */
+function optimisedEvent(po: PromotedObject | undefined): 'FirstVideoCreated' | 'Create Video' | 'Visit App' | null {
+  if (!po) return null;
+  if (po.custom_conversion_id === '1127476886367994') return 'Create Video';
+  if (po.custom_conversion_id === '4053074454987565') return 'Visit App';
+  const s = `${po.custom_event_str ?? ''} ${po.pixel_rule ?? ''}`;
+  if (/FirstVideoCreated/i.test(s)) return 'FirstVideoCreated';
+  return null;
+}
+
+// Kết quả chính = event campaign/adset đang tối ưu (promoted_object). Không
+// đọc được thì lấy event có số lớn nhất trong ba event của Proveny.
+function primaryResult(r: RawInsight, po?: PromotedObject): { type: string; value: number } {
+  const counts = {
+    FirstVideoCreated: conv(r, EV.firstVideoCreated),
+    'Create Video': conv(r, EV.createVideo),
+    'Visit App': conv(r, EV.visitApp),
+  } as const;
+  const chosen = optimisedEvent(po);
+  if (chosen) return { type: chosen, value: counts[chosen] };
+  let best: keyof typeof counts = 'FirstVideoCreated';
+  for (const k of Object.keys(counts) as (keyof typeof counts)[]) if (counts[k] > counts[best]) best = k;
+  return { type: best, value: counts[best] };
 }
 
 function base(r: RawInsight) {
@@ -181,9 +198,10 @@ export async function fetchMetaProvenyFromGraph(): Promise<MetaProvenyPayload> {
       effective_status: string;
       daily_budget?: string;
       created_time?: string;
+      adsets?: { data: { promoted_object?: PromotedObject }[] };
       insights?: { data: RawInsight[] };
     }>(`${act_}/campaigns`, {
-      fields: `id,name,effective_status,daily_budget,created_time,insights.date_preset(${DATE_PRESET}){${INSIGHT_FIELDS}}`,
+      fields: `id,name,effective_status,daily_budget,created_time,adsets.limit(5){promoted_object},insights.date_preset(${DATE_PRESET}){${INSIGHT_FIELDS}}`,
       limit: '100',
     }, token),
     getAll<{
@@ -192,10 +210,10 @@ export async function fetchMetaProvenyFromGraph(): Promise<MetaProvenyPayload> {
       effective_status: string;
       created_time?: string;
       campaign?: { id: string; name: string };
-      adset?: { name: string };
+      adset?: { name: string; promoted_object?: PromotedObject };
       insights?: { data: RawInsight[] };
     }>(`${act_}/ads`, {
-      fields: `id,name,effective_status,created_time,campaign{id,name},adset{name},insights.date_preset(${DATE_PRESET}){${INSIGHT_FIELDS}}`,
+      fields: `id,name,effective_status,created_time,campaign{id,name},adset{name,promoted_object},insights.date_preset(${DATE_PRESET}){${INSIGHT_FIELDS}}`,
       limit: '200',
     }, token),
     getAll<RawInsight>(`${act_}/insights`, { level: 'account', date_preset: DATE_PRESET, breakdowns: 'country', fields: INSIGHT_FIELDS }, token),
@@ -224,7 +242,7 @@ export async function fetchMetaProvenyFromGraph(): Promise<MetaProvenyPayload> {
 
   const campaigns: MetaCampaignRow[] = campaignsRaw.map((c) => {
     const r = c.insights?.data?.[0] ?? {};
-    const pr = primaryResult(r);
+    const pr = primaryResult(r, c.adsets?.data?.[0]?.promoted_object);
     return {
       id: c.id,
       name: c.name,
@@ -245,7 +263,7 @@ export async function fetchMetaProvenyFromGraph(): Promise<MetaProvenyPayload> {
 
   const ads: MetaAdRow[] = adsRaw.map((a) => {
     const r = a.insights?.data?.[0] ?? {};
-    const pr = primaryResult(r);
+    const pr = primaryResult(r, a.adset?.promoted_object);
     return {
       id: a.id,
       name: a.name,
