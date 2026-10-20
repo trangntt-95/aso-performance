@@ -597,6 +597,8 @@ export interface SheetPayload {
   /** Market_Index / Action_Queue tính từ tab GA4 window (lib/sheets/*FromGa4.ts)
    *  thay vì đọc tab Apps Script; thiếu = đang đọc tab Apps Script. */
   derivedSources?: { marketIndex: 'ga4_bq'; actionQueue: 'ga4_bq' };
+  /** Có = Google lỗi lúc gọi, đây là bản tốt gần nhất (fetchedAt cũ). */
+  stale?: { reason: string; servedAt: string };
   /** Per-day metrics split by country, Tier-1 markets only. Empty until the
    *  Apps Script job has run — every reader must tolerate that. */
   historyDailyCountry: HistoryDailyCountryRow[];

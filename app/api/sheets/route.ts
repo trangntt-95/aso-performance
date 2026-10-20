@@ -59,6 +59,20 @@ function sheetSources(): SheetSource[] {
   ].filter((x): x is SheetSource => x !== null);
 }
 
+// Bản payload tốt gần nhất của instance này. Google lỗi (quota, mạng) thì trả
+// bản này kèm cờ stale thay vì 503 — dashboard không trắng, fetchedAt vẫn là
+// giờ cũ để người xem biết. Trang 20/10/2026: "dashboard lỗi k mở được".
+let lastGood: SheetPayload | null = null;
+
+function serveStale(reason: string): NextResponse | null {
+  if (!lastGood) return null;
+  console.error('[sheets] trả bản gần nhất (' + lastGood.fetchedAt + ') vì: ' + reason);
+  return NextResponse.json(
+    { ...lastGood, stale: { reason, servedAt: new Date().toISOString() } },
+    { status: 200, headers: { 'Cache-Control': 'no-store', 'x-sheets-stale': '1' } },
+  );
+}
+
 export async function GET() {
   try {
     // The per-day Shopify export lives in a second spreadsheet; fetch it
@@ -235,12 +249,15 @@ export async function GET() {
       payload.marketIndex.summary.length > 0;
     if (!hasData) {
       console.error('Sheets fetch returned an empty payload — treating as upstream failure, not caching.');
+      const stale = serveStale('payload rỗng từ Google');
+      if (stale) return stale;
       return NextResponse.json(
         { error: 'Upstream sheet fetch returned no data — try again.' },
         { status: 503, headers: { 'Cache-Control': 'no-store' } },
       );
     }
 
+    lastGood = payload;
     return NextResponse.json(payload, {
       headers: {
         // stale-while-revalidate was a full day, so a refreshed sheet could
@@ -252,6 +269,8 @@ export async function GET() {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('Sheets fetch failed:', err);
+    const stale = serveStale(message);
+    if (stale) return stale;
     return NextResponse.json(
       { error: message },
       { status: 500, headers: { 'Cache-Control': 'no-store' } },

@@ -41,6 +41,14 @@ export { getSpreadsheetId };
 /** Tên tab trong A1 notation: luôn có nháy, nháy trong tên thì nhân đôi. */
 const a1Tab = (title: string): string => `'${title.replace(/'/g, "''")}'`;
 
+/** Lỗi vượt quota Sheets API (HTTP 429 / 'Quota exceeded'). */
+export function isQuotaError(err: unknown): boolean {
+  const e = err as { code?: number | string; status?: number; message?: string } | null;
+  if (!e) return false;
+  const code = Number(e.code ?? e.status);
+  return code === 429 || /quota exceeded|rate limit/i.test(String(e.message ?? ''));
+}
+
 export async function fetchTab(tabName: string): Promise<string[][]> {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
@@ -409,21 +417,35 @@ export async function fetchAllTabs(): Promise<Record<string, string[][]>> {
   lastMissingTabs = titles ? TABS.filter((t) => !titles.has(t)) : [];
   for (const t of TABS) result[t] = [];
 
-  try {
-    const res = await sheets.spreadsheets.values.batchGet({
-      spreadsheetId: getSpreadsheetId(),
-      ranges: wanted.map((w) => `${a1Tab(w.title)}!A:Z`),
-      valueRenderOption: 'UNFORMATTED_VALUE',
-    });
-    (res.data.valueRanges || []).forEach((vr, i) => {
-      const w = wanted[i];
-      if (w) result[w.tab] = (vr.values || []) as string[][];
-    });
-    if (!titles) await fillFromLegacyNames(result);
-    return result;
-  } catch {
-    // Chỉ tới đây khi chính batchGet hỏng (quota, mạng) — không còn vì một tab
-    // sai tên nữa.
+  // 20/10/2026: Google trả "Quota exceeded … Read requests per minute per user"
+  // (60 request/phút). Trước đây batchGet lỗi → gọi lẻ ~45 tab → càng vượt quota
+  // → mọi lượt mở dashboard sau đó đều 503. Nay: lỗi quota thì đợi rồi thử lại
+  // batchGet (1 request), tuyệt đối không gọi lẻ; hết lượt thì ném lỗi để route
+  // trả bản dữ liệu gần nhất.
+  let lastErr: unknown = null;
+  for (const waitMs of [0, 12000, 25000]) {
+    if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
+    try {
+      const res = await sheets.spreadsheets.values.batchGet({
+        spreadsheetId: getSpreadsheetId(),
+        ranges: wanted.map((w) => `${a1Tab(w.title)}!A:Z`),
+        valueRenderOption: 'UNFORMATTED_VALUE',
+      });
+      (res.data.valueRanges || []).forEach((vr, i) => {
+        const w = wanted[i];
+        if (w) result[w.tab] = (vr.values || []) as string[][];
+      });
+      if (!titles) await fillFromLegacyNames(result);
+      return result;
+    } catch (err) {
+      lastErr = err;
+      if (!isQuotaError(err)) break;
+      console.error(`[sheets] quota Google (${waitMs > 0 ? 'sau khi chờ ' + waitMs + 'ms' : 'lần đầu'}):`, (err as Error).message);
+    }
+  }
+  if (isQuotaError(lastErr)) throw lastErr;
+  {
+    // Chỉ tới đây khi batchGet hỏng vì lý do KHÁC quota (mạng, tab lạ).
     await Promise.all(
       wanted.map(async (w) => {
         try {

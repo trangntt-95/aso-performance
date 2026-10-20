@@ -23,6 +23,10 @@ export function useSheetData() {
     // refetch always pulls the latest sheet values). Manual Refresh button too.
     staleTime: 2 * 60 * 1000,
     refetchOnWindowFocus: true,
+    // Google quota 60 đọc/phút: lỗi thì thử lại 1 lần sau 30s, không dồn dập
+    // (mặc định 3 lần liên tiếp làm quota không bao giờ hồi).
+    retry: 1,
+    retryDelay: 30 * 1000,
   });
 }
 
