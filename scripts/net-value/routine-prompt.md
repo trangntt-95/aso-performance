@@ -11,6 +11,8 @@
 
 Bạn đang chạy headless trong repo C:\Users\trangkeke\aso-performance để cập nhật tab "Net value per install" của dashboard ASO. Làm đúng các bước, không hỏi lại, không sửa code. Mọi file tạm ghi vào thư mục `.net-value-run/` trong repo (tạo nếu chưa có). Hôm nay là ngày chạy; "hôm qua" = ngày hiện tại trừ 1, định dạng YYYY-MM-DD và dd/mm/yyyy.
 
+Bước 0 — Kiểm tra tool MCP đã nạp chưa. Connector claude.ai kết nối KHÔNG ĐỒNG BỘ: lúc phiên headless bắt đầu, hai tool `mcp__claude_ai_TrueProfit_GA_MCP__ga_report_to_bq` và `mcp__claude_ai_TrueProfit_DA__run_query` có thể chưa xuất hiện (20/10/2026: 5 lần rớt bước 1 vì thế). Gọi ToolSearch với query `select:mcp__claude_ai_TrueProfit_GA_MCP__ga_report_to_bq,mcp__claude_ai_TrueProfit_DA__run_query`. Nếu CHƯA thấy đủ cả hai: chạy Bash `node -e "setTimeout(()=>{},90000)"` (đợi 90 giây) rồi ToolSearch lại; lặp tối đa 8 lần (~12 phút). Chỉ khi đã đợi đủ 8 lần mà vẫn thiếu mới dừng và in `PIPELINE_FAIL: Bước 0 - tool MCP không nạp sau 12 phút`. KHÔNG được kết luận thiếu tool ngay ở lần kiểm tra đầu.
+
 Bước 1 — Kéo install GA4 của các tháng chưa có trong BigQuery.
 Bảng `trueda.trueprofit.ga_surface_attr_2526` đã phủ year_month 202501–202608. Gọi tool `mcp__claude_ai_TrueProfit_GA_MCP__ga_report_to_bq` với:
 - property_id: 348654457
@@ -203,4 +205,4 @@ Bước 18 — Xác nhận: chạy Bash
 `curl -s -m 120 https://appstore-performance.vercel.app/api/sheets | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);const q=p.data??p;console.log('keywordTabsSource',JSON.stringify(q.keywordTabsSource),'| allL30',q.allL30.length,'allL90',q.allL90.length)})"`
 Kỳ vọng mọi cửa sổ = ga4_bq. Dòng tóm tắt cuối bổ sung: GA4 windows 12 tab, OK hay lỗi.
 
-Kết thúc: nếu MỌI bước (1–18) đều thành công, dòng cuối cùng của câu trả lời phải là đúng chuỗi `PIPELINE_OK` (một mình trên một dòng). Bất kỳ bước nào lỗi hoặc bị bỏ qua thì KHÔNG in `PIPELINE_OK`, in `PIPELINE_FAIL: <bước> - <lý do>` để lần kích hoạt sau trong ngày chạy lại.
+Kết thúc: nếu MỌI bước (0–18) đều thành công, dòng cuối cùng của câu trả lời phải là đúng chuỗi `PIPELINE_OK` (một mình trên một dòng). Bất kỳ bước nào lỗi hoặc bị bỏ qua thì KHÔNG in `PIPELINE_OK`, in `PIPELINE_FAIL: <bước> - <lý do>` để lần kích hoạt sau trong ngày chạy lại.

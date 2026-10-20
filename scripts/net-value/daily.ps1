@@ -1,4 +1,4 @@
-# Chạy pipeline cập nhật Net value per install bằng Claude Code headless.
+﻿# Chạy pipeline cập nhật Net value per install bằng Claude Code headless.
 # Task Scheduler gọi file này mỗi sáng; log ở logs\net-value-YYYYMMDD.log.
 #
 # 23/09/2026: ba lần chạy theo lịch (18, 21, 23/09) chết với mã 0xC000013A
@@ -47,13 +47,29 @@ Remove-Item -Path $outFile, $errFile -ErrorAction SilentlyContinue
 # giới hạn độ dài / dấu nháy của Windows; claude -p đọc prompt từ stdin.
 # $allowed có khoảng trắng ("Bash(curl *)") nên phải bọc nháy kép, không thì
 # Start-Process tách thành nhiều tham số và claude bỏ qua các rule đó.
-$p = Start-Process -FilePath $claude -NoNewWindow -Wait -PassThru `
-  -ArgumentList @('-p', '--allowedTools', ('"' + $allowed + '"'), '--max-turns', '40') `
-  -RedirectStandardInput $promptFile -RedirectStandardOutput $outFile -RedirectStandardError $errFile
-if (Test-Path $outFile) { Get-Content $outFile -Raw | Out-File -FilePath $log -Encoding utf8 -Append }
-if (Test-Path $errFile) { $e = Get-Content $errFile -Raw; if ($e) { "--- stderr ---`n$e" | Out-File -FilePath $log -Encoding utf8 -Append } }
+# 20/10/2026: connector claude.ai nạp không đồng bộ, phiên headless hay bắt đầu
+# trước khi tool TrueProfit xuất hiện → PIPELINE_FAIL bước 0/1. Prompt đã tự đợi
+# tới 12 phút; thêm lớp ngoài: thấy FAIL vì MCP thì nghỉ 4 phút rồi chạy lại,
+# tối đa 3 lượt. Lỗi khác (SQL, build, push) không chạy lại.
+$maxAttempts = 3
+for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+  "--- attempt $attempt/$maxAttempts $(Get-Date -Format 'HH:mm:ss')" | Out-File -FilePath $log -Encoding utf8 -Append
+  Remove-Item -Path $outFile, $errFile -ErrorAction SilentlyContinue
+  $p = Start-Process -FilePath $claude -NoNewWindow -Wait -PassThru `
+    -ArgumentList @('-p', '--allowedTools', ('"' + $allowed + '"'), '--max-turns', '60') `
+    -RedirectStandardInput $promptFile -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+  if (Test-Path $outFile) { Get-Content $outFile -Raw | Out-File -FilePath $log -Encoding utf8 -Append }
+  if (Test-Path $errFile) { $e = Get-Content $errFile -Raw; if ($e) { "--- stderr ---`n$e" | Out-File -FilePath $log -Encoding utf8 -Append } }
+  $okNow = (Test-Path $outFile) -and (Select-String -Path $outFile -Pattern 'PIPELINE_OK' -Quiet)
+  if ($okNow) { break }
+  $mcpFail = (Test-Path $outFile) -and (Select-String -Path $outFile -Pattern 'PIPELINE_FAIL.*(MCP|connector|tool)' -Quiet)
+  if (-not $mcpFail -or $attempt -eq $maxAttempts) { break }
+  "--- MCP chưa nạp, nghỉ 240s rồi chạy lại" | Out-File -FilePath $log -Encoding utf8 -Append
+  Start-Sleep -Seconds 240
+}
 # claude -p trả 0 kể cả khi pipeline báo lỗi (24/09/2026: thiếu tool MCP, dừng bước 1,
 # vẫn exit=0 nên lần sau trong ngày bị "skip"). Thành công thật = có dòng PIPELINE_OK.
+# (Output từng lượt đã ghi vào log trong vòng lặp ở trên.)
 $ok = (Test-Path $outFile) -and (Select-String -Path $outFile -Pattern 'PIPELINE_OK' -Quiet)
 $code = if ($ok) { 0 } elseif ($p.ExitCode -ne 0) { $p.ExitCode } else { 1 }
 "=== end $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') exit=$code" | Out-File -FilePath $log -Encoding utf8 -Append
