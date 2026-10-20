@@ -14,6 +14,7 @@ const TITLES: Record<string, string> = {
   '/camp-health': 'Camp Health',
   '/install-origin': 'Nguồn Install',
   '/google-ads': 'Google Ads',
+  '/meta-proveny': 'Meta Ads · app Proveny',
   '/bid-cap': 'Bid Recommendations',
   '/paid-categories': 'By Category',
   '/changelog': 'Change log',
