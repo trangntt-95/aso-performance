@@ -103,7 +103,7 @@ export function renderPositionDigestHtml(d: PositionDigest, dashboardUrl: string
   const headline =
     all.length === 0
       ? `<span style="color:#047857"><b>Không có keyword chính nào đổi vị trí quá ${t} bậc trong 3/7/14/30 ngày.</b></span> Brand vẫn top 1.`
-      : `<b>Paid:</b> ${paidDrops} tụt, ${paid.length - paidDrops} lên. <b>Organic:</b> ${orgDrops} tụt, ${organic.length - orgDrops} lên. ${highCount > 0 ? `<span style="color:#b91c1c"><b>${highCount} ưu tiên</b> (brand, tụt ≥2 bậc hoặc nhiều users).</span>` : ''}`;
+      : `<b>Paid:</b> ${paidDrops} tụt, ${paid.length - paidDrops} lên. <b>Organic:</b> ${orgDrops} tụt, ${organic.length - orgDrops} lên. ${highCount > 0 ? `<span style="color:#b91c1c"><b>${highCount} ưu tiên</b>.</span>` : ''}`;
 
   const section = (title: string, sub: string, items: ActionItem[], empty: string) => `
     <div style="padding:12px 16px 2px">
@@ -132,7 +132,7 @@ export function renderPositionDigestHtml(d: PositionDigest, dashboardUrl: string
   const p7 = tot('paid', 7);
   const o14 = tot('organic', 14);
   const p14 = tot('paid', 14);
-  const trendLine = `Users keyword chính 7 ngày: organic <b>${o7.cur}</b> (${pctTxt(o7.cur, o7.prev)} so với 7 ngày trước), paid <b>${p7.cur}</b> (${pctTxt(p7.cur, p7.prev)}). 14 ngày: organic ${pctTxt(o14.cur, o14.prev)}, paid ${pctTxt(p14.cur, p14.prev)}.`;
+  const trendLine = `<b>Tổng lượt tìm (users) các keyword chính 7 ngày qua:</b> organic <b>${o7.cur}</b> (${pctTxt(o7.cur, o7.prev)} so với 7 ngày trước đó), paid <b>${p7.cur}</b> (${pctTxt(p7.cur, p7.prev)}). Tính 14 ngày: organic ${pctTxt(o14.cur, o14.prev)}, paid ${pctTxt(p14.cur, p14.prev)}.`;
 
   const posCell = (r: DigestRow, n: 7 | 14 | 30) =>
     `<td style="padding:3px 6px;text-align:right;white-space:nowrap"><b>${fmtPos(r.w[n].pos)}</b> <span style="font-size:11px">${deltaChip(r.w[n].delta, t)}</span></td>`;
@@ -172,8 +172,8 @@ export function renderPositionDigestHtml(d: PositionDigest, dashboardUrl: string
       <p style="margin:8px 0 0;font-size:13px;line-height:1.5">${headline}${d.daysAvailable < 28 ? ` <span style="color:#b45309">Mới có ${d.daysAvailable} ngày data nên Δ14 chưa so được.</span>` : ''}</p>
       <p style="margin:6px 0 0;font-size:12px;line-height:1.5;color:#334155">${trendLine}</p>
     </div>
-    ${section('1 · PAID · cần action', 'keyword paid đổi vị trí từ ' + t + ' bậc ở bất kỳ cửa sổ 3/7/14/30 ngày · tụt trước, lên sau · kèm camp đang chạy và gợi ý bid', paid, 'Không có keyword paid nào đổi vị trí quá ngưỡng.')}
-    ${section('2 · ORGANIC · biến động', 'keyword organic đổi vị trí từ ' + t + ' bậc ở bất kỳ cửa sổ 3/7/14/30 ngày · không action bid, chỉ theo dõi', organic, 'Không có keyword organic nào đổi vị trí quá ngưỡng.')}
+    ${section('1 · PAID · cần action', 'tụt trước, lên sau', paid, 'Không có keyword paid nào đổi vị trí quá ngưỡng.')}
+    ${section('2 · ORGANIC · biến động', 'tụt trước, lên sau · chỉ theo dõi, không action bid', organic, 'Không có keyword organic nào đổi vị trí quá ngưỡng.')}
     <div style="padding:12px 16px 2px;border-top:1px solid #e2e8f0">
       <div style="font-size:13px;font-weight:700;color:#0f172a">3 · Xu hướng 30 ngày <span style="font-weight:400;font-size:11px;color:#64748b">top keyword theo users, mọi nước gộp · vị trí và users, Δ so với kỳ liền trước · tụt/lên dưới ngưỡng vẫn hiện để thấy chiều đi</span></div>
     </div>
