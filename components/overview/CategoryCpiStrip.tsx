@@ -185,26 +185,28 @@ export function CategoryCpiStrip({
         </div>
       )}
 
+      <div className="overflow-x-auto">
+      <div className="min-w-[600px]">
       {/* Column headers. The rows are a flex strip, not a table, so the widths
           here are the same literals the cells use — they must move together.
           Without them the strip is seven unlabelled numbers and the reader has to
           guess which is spend and which is CPI. */}
       <div className="mt-2 flex items-center gap-2 border-b border-slate-100 pb-1 text-[9px] uppercase tracking-wide text-slate-400">
-        <span className="w-28 shrink-0">Category</span>
+        <span className="w-24 shrink-0">Category</span>
         <span className="min-w-0 flex-1">tỉ lệ chi</span>
         <span className="w-14 shrink-0 text-right">Chi</span>
         <span className="w-10 shrink-0 text-right" title="% chi phí của category này trên tổng chi">
           %
         </span>
         <span className="w-12 shrink-0 text-right">Install</span>
-        <span className="w-20 shrink-0 text-right" title="Thay đổi install so với kỳ trước liền kề, cùng độ dài">
+        <span className="w-14 shrink-0 text-right" title="Thay đổi install so với kỳ trước liền kề, cùng độ dài">
           Δ install
         </span>
-        <span className="w-16 shrink-0 text-right" title="Chi ÷ install. Đỏ = vượt trần CPI của category">
+        <span className="w-14 shrink-0 text-right" title="Chi ÷ install. Đỏ = vượt trần CPI của category">
           CPI
         </span>
         <span
-          className="w-16 shrink-0 text-right"
+          className="w-14 shrink-0 text-right"
           title={`Một install của category này ĐÁNG bao nhiêu: net value (doanh thu − phí Shopify, chưa trừ ads) ÷ installs, gộp mọi nước và mọi keyword của category, ${pickLabel}. Nguồn: tab Net value per install${nvScope ? ` — ${nvScope}` : ''} (không đổi theo khoảng ngày của trang). Đỏ = CPI đang trả cao hơn giá trị. 'mỏng' = dưới 3 shop trả tiền.`}
         >
           Value/inst
@@ -235,7 +237,7 @@ export function CategoryCpiStrip({
             title={clickable ? `Bấm để lọc cả trang theo category ${r.category}` : undefined}
           >
             <span
-              className={cn('w-28 shrink-0 truncate', isActive ? 'font-semibold text-indigo-800' : 'text-slate-700')}
+              className={cn('w-24 shrink-0 truncate', isActive ? 'font-semibold text-indigo-800' : 'text-slate-700')}
               title={r.category}
             >
               {r.category}
@@ -258,7 +260,7 @@ export function CategoryCpiStrip({
             {/* Install vs the equal-length period before, with spend's own move in
                 the tooltip: chi tăng mà install không theo là chỗ đáng xem. */}
             <span
-              className={cn('w-20 shrink-0 text-right font-mono tabular-nums', deltaTone(r.installDelta))}
+              className={cn('w-14 shrink-0 text-right font-mono tabular-nums', deltaTone(r.installDelta))}
               title={
                 report.hasPrev
                   ? `Install ${r.installsPrev} → ${r.installs} (${delta(r.installDelta)})` +
@@ -283,7 +285,7 @@ export function CategoryCpiStrip({
             </span>
             <span
               className={cn(
-                'w-16 shrink-0 text-right font-mono tabular-nums font-semibold',
+                'w-14 shrink-0 text-right font-mono tabular-nums font-semibold',
                 r.vsCap !== null && r.vsCap > 0 ? 'text-rose-600' : 'text-slate-800',
               )}
               title={r.cpi === null ? 'Chưa có install nào để tính CPI' : undefined}
@@ -294,7 +296,7 @@ export function CategoryCpiStrip({
               const nv = netValueByCat.get(r.category.trim().toLowerCase()) ?? null;
               if (!nv || nv.netPerInstall === null) {
                 return (
-                  <span className="w-16 shrink-0 text-right font-mono text-slate-300" title="Tab Net value per install chưa có keyword nào của category này">
+                  <span className="w-14 shrink-0 text-right font-mono text-slate-300" title="Tab Net value per install chưa có keyword nào của category này">
                     —
                   </span>
                 );
@@ -303,7 +305,7 @@ export function CategoryCpiStrip({
               return (
                 <span
                   className={cn(
-                    'w-16 shrink-0 text-right font-mono tabular-nums',
+                    'w-14 shrink-0 text-right font-mono tabular-nums',
                     over ? 'font-semibold text-rose-600' : nv.thin ? 'text-amber-700' : 'font-medium text-indigo-700',
                   )}
                   title={
@@ -337,7 +339,7 @@ export function CategoryCpiStrip({
           );
         })}
         <li className="mt-1 flex items-center gap-2 border-t border-slate-200 pt-1.5 text-[11px] font-semibold text-slate-900">
-          <span className="w-28 shrink-0">TOTAL</span>
+          <span className="w-24 shrink-0">TOTAL</span>
           <div className="min-w-0 flex-1 text-[9px] font-normal text-slate-400">
             {report.rows.length} category
           </div>
@@ -345,7 +347,7 @@ export function CategoryCpiStrip({
           <span className="w-10 shrink-0 text-right font-mono tabular-nums text-slate-400">100%</span>
           <span className="w-12 shrink-0 text-right font-mono tabular-nums">{total.installs || '—'} ins</span>
           <span
-            className={cn('w-20 shrink-0 text-right font-mono tabular-nums', deltaTone(total.installDelta))}
+            className={cn('w-14 shrink-0 text-right font-mono tabular-nums', deltaTone(total.installDelta))}
             title={
               report.hasPrev
                 ? `Install ${total.installsPrev} → ${total.installs} (${delta(total.installDelta)})` +
@@ -366,13 +368,13 @@ export function CategoryCpiStrip({
             )}
           </span>
           <span
-            className={cn('w-16 shrink-0 text-right font-mono tabular-nums', total.over ? 'text-rose-600' : 'text-slate-900')}
+            className={cn('w-14 shrink-0 text-right font-mono tabular-nums', total.over ? 'text-rose-600' : 'text-slate-900')}
             title="Tổng chi ÷ tổng install, trọng số theo chi"
           >
             {total.cpi === null ? '—' : `$${total.cpi.toFixed(2)}`}
           </span>
           <span
-            className={cn('w-16 shrink-0 text-right font-mono tabular-nums', total.over ? 'text-rose-600' : 'text-indigo-700')}
+            className={cn('w-14 shrink-0 text-right font-mono tabular-nums', total.over ? 'text-rose-600' : 'text-indigo-700')}
             title={
               total.netPerInstall === null
                 ? 'Chưa có category nào có value'
@@ -393,6 +395,8 @@ export function CategoryCpiStrip({
           </span>
         </li>
       </ul>
+      </div>
+      </div>
       <div className="mt-1.5 text-[9px] leading-snug text-slate-400">
         <b>Value/inst</b> = một install của category đáng bao nhiêu (tab Net value per install, {pickLabel}
         {nvScope ? `, ${nvScope}` : ''}); số LTV 4 tháng, không đổi theo khoảng ngày của trang · lọc surface ở trang chỉ tách được cột này, chi phí vẫn là toàn bộ paid ·{' '}
