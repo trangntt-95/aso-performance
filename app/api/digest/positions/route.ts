@@ -32,7 +32,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: `sheets ${res.status}` }, { status: 502 });
   }
   const data = (await res.json()) as SheetPayload;
-  const digest = buildPositionDigest(data);
+  // ?threshold=0.3 (chỉ preview) để xem format khi có biến động dù hôm nay yên.
+  const thrParam = Number(url.searchParams.get('threshold'));
+  const digest = buildPositionDigest(data, preview && thrParam > 0 ? { threshold: thrParam } : {});
   if (!digest) return NextResponse.json({ error: 'Không có GA4 daily để tính' }, { status: 503 });
 
   const publicUrl = process.env.DIGEST_DASHBOARD_URL ?? 'https://appstore-performance.vercel.app';
