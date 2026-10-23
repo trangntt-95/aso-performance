@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
-import { buildPositionDigest, type DigestGroup, type DigestRow, type Win } from '@/lib/digest/positions';
+import { biggestMove, buildPositionDigest, type DigestGroup, type DigestRow, type Win } from '@/lib/digest/positions';
 import { cn } from '@/lib/utils';
 
 // Biến động vị trí keyword chính theo nước (L3/L7/L14), cùng logic với email
@@ -54,14 +54,14 @@ function UsersCell({ r }: { r: DigestRow }) {
 }
 
 function SurfaceTable({ groups, threshold, onlyMoving }: { groups: DigestGroup[]; threshold: number; onlyMoving: boolean }) {
-  const moving = (r: DigestRow) => r.w[7].delta !== null && Math.abs(r.w[7].delta) >= threshold;
+  const moving = (r: DigestRow) => Math.abs(biggestMove(r)?.delta ?? 0) >= threshold;
   const shown = onlyMoving ? groups.filter((g) => moving(g.all) || g.countries.some(moving)) : groups;
   if (shown.length === 0) {
     return <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-500">Không có keyword nào {onlyMoving ? 'biến động quá ngưỡng' : ''}.</div>;
   }
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table className="w-full min-w-[820px] text-xs">
+      <table className="w-full min-w-[960px] text-xs">
         <thead className="bg-slate-50 text-[11px] text-slate-600">
           <tr>
             <th className="px-2 py-2 text-left font-medium">Keyword · nước</th>
@@ -71,6 +71,8 @@ function SurfaceTable({ groups, threshold, onlyMoving }: { groups: DigestGroup[]
             <th className="px-2 py-2 text-right font-medium" title="So với 7 ngày liền trước">Δ7</th>
             <th className="px-2 py-2 text-right font-medium">L14</th>
             <th className="px-2 py-2 text-right font-medium" title="So với 14 ngày liền trước">Δ14</th>
+            <th className="px-2 py-2 text-right font-medium">L30</th>
+            <th className="px-2 py-2 text-right font-medium" title="So với 30 ngày liền trước">Δ30</th>
             <th className="px-2 py-2 text-right font-medium" title="Users 7 ngày và % so với 7 ngày trước">Users L7</th>
           </tr>
         </thead>
@@ -100,6 +102,7 @@ function FragmentRows({ g, countries, threshold }: { g: DigestGroup; countries: 
         <WinCells r={g.all} n={3} threshold={threshold} />
         <WinCells r={g.all} n={7} threshold={threshold} />
         <WinCells r={g.all} n={14} threshold={threshold} />
+        <WinCells r={g.all} n={30} threshold={threshold} />
         <UsersCell r={g.all} />
       </tr>
       {countries.map((r) => (
@@ -108,12 +111,13 @@ function FragmentRows({ g, countries, threshold }: { g: DigestGroup; countries: 
           <WinCells r={r} n={3} threshold={threshold} />
           <WinCells r={r} n={7} threshold={threshold} />
           <WinCells r={r} n={14} threshold={threshold} />
+          <WinCells r={r} n={30} threshold={threshold} />
           <UsersCell r={r} />
         </tr>
       ))}
       {g.moreCountries > 0 && (
         <tr className="bg-slate-50/50">
-          <td colSpan={8} className="py-0.5 pl-6 text-[10px] text-slate-400">
+          <td colSpan={10} className="py-0.5 pl-6 text-[10px] text-slate-400">
             +{g.moreCountries} nước khác quá ít users để tính
           </td>
         </tr>
@@ -141,7 +145,7 @@ export function PositionDigestPanel() {
             Biến động vị trí keyword chính · theo nước {open ? '▾' : '▸'}
           </div>
           <div className="text-[11px] text-slate-500">
-            Data tới {dmy} · cùng logic với email 09:00 · {digest.summary.worsened7} dòng nước tụt, {digest.summary.improved7} lên trong 7 ngày (ngưỡng {t} bậc)
+            Data tới {dmy} · cùng logic với email 09:00 · {digest.summary.worsened} dòng nước tụt, {digest.summary.improved} lên ở bất kỳ cửa sổ 3/7/14/30 ngày (ngưỡng {t} bậc)
           </div>
         </button>
         <label className="flex items-center gap-1 text-[11px] text-slate-600">

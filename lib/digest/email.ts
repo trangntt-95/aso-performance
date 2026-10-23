@@ -6,6 +6,7 @@
 // tab Vị trí keyword trên dashboard.
 
 import type { ActionItem, DigestRow, PositionDigest } from './positions';
+import { WINDOWS } from './positions';
 
 const fmtPos = (p: number | null) => (p === null ? '—' : p.toFixed(1));
 const fmtDelta = (d: number | null) => (d === null ? '—' : `${d > 0 ? '+' : ''}${d.toFixed(1)}`);
@@ -38,8 +39,8 @@ function card(a: ActionItem, threshold: number): string {
       <span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:${tag}">${label}</span>
       &nbsp;<b>${r.keyword}</b>${r.isBrand ? ' <span style="font-size:10px;color:#4f46e5">BRAND</span>' : ''}
       <span style="color:#334155">· ${where(r)}</span>
-      <span style="color:#334155">· vị trí <b>${fmtPos(r.w[7].posPrev)} → ${fmtPos(r.w[7].pos)}</b></span>
-      <span style="color:#64748b;font-size:11px">· Δ3 ${deltaChip(r.w[3].delta, threshold)} · Δ7 ${deltaChip(r.w[7].delta, threshold)} · Δ14 ${deltaChip(r.w[14].delta, threshold)}</span>
+      <span style="color:#334155">· L${a.win}: <b>${fmtPos(r.w[a.win].posPrev)} → ${fmtPos(r.w[a.win].pos)}</b></span>
+      <span style="color:#64748b;font-size:11px">· ${WINDOWS.map((n) => `Δ${n} ${deltaChip(r.w[n].delta, threshold)}`).join(' · ')}</span>
     </div>
     <div style="margin-top:3px;font-size:12px;color:#0f172a;line-height:1.45">${a.advice}</div>
     <div style="margin-top:2px;font-size:11px">${trend}${a.camps.length ? ` · camp: <span style="color:#334155">${a.camps.join(' | ')}</span>` : ''}</div>
@@ -62,7 +63,7 @@ export function renderPositionDigestHtml(d: PositionDigest, dashboardUrl: string
 
   const headline =
     all.length === 0
-      ? `<span style="color:#047857"><b>Không có keyword chính nào đổi vị trí quá ${t} bậc trong 7 ngày.</b></span> Brand vẫn top 1.`
+      ? `<span style="color:#047857"><b>Không có keyword chính nào đổi vị trí quá ${t} bậc trong 3/7/14/30 ngày.</b></span> Brand vẫn top 1.`
       : `<b>Paid:</b> ${paidDrops} tụt, ${paid.length - paidDrops} lên. <b>Organic:</b> ${orgDrops} tụt, ${organic.length - orgDrops} lên. ${highCount > 0 ? `<span style="color:#b91c1c"><b>${highCount} ưu tiên</b> (brand, tụt ≥2 bậc hoặc nhiều users).</span>` : ''}`;
 
   const section = (title: string, sub: string, items: ActionItem[], empty: string) => `
@@ -71,18 +72,79 @@ export function renderPositionDigestHtml(d: PositionDigest, dashboardUrl: string
     </div>
     <div style="padding:6px 16px 6px">${items.length ? items.map((a) => card(a, t)).join('') : `<div style="font-size:12px;color:#64748b;padding:2px 0">${empty}</div>`}</div>`;
 
+  // ---- Xu hướng: tổng users tracked và bảng gọn top keyword theo users ----
+  const pctTxt = (cur: number, prev: number) => {
+    if (prev <= 0) return '<span style="color:#94a3b8">—</span>';
+    const p = (cur - prev) / prev;
+    const color = p >= 0.1 ? '#059669' : p <= -0.1 ? '#dc2626' : '#64748b';
+    return `<span style="color:${color};font-weight:600">${p > 0 ? '+' : ''}${Math.round(p * 100)}%</span>`;
+  };
+  const tot = (surface: 'organic' | 'paid' | null, n: 7 | 14) => {
+    let cur = 0;
+    let prev = 0;
+    for (const g of d.groups) {
+      if (surface && g.surface !== surface) continue;
+      cur += g.all.w[n].users;
+      prev += g.all.w[n].usersPrev;
+    }
+    return { cur, prev };
+  };
+  const o7 = tot('organic', 7);
+  const p7 = tot('paid', 7);
+  const o14 = tot('organic', 14);
+  const p14 = tot('paid', 14);
+  const trendLine = `Users keyword chính 7 ngày: organic <b>${o7.cur}</b> (${pctTxt(o7.cur, o7.prev)} so với 7 ngày trước), paid <b>${p7.cur}</b> (${pctTxt(p7.cur, p7.prev)}). 14 ngày: organic ${pctTxt(o14.cur, o14.prev)}, paid ${pctTxt(p14.cur, p14.prev)}.`;
+
+  const posCell = (r: DigestRow, n: 7 | 14 | 30) =>
+    `<td style="padding:3px 6px;text-align:right;white-space:nowrap"><b>${fmtPos(r.w[n].pos)}</b> <span style="font-size:11px">${deltaChip(r.w[n].delta, t)}</span></td>`;
+  const usersCellTxt = (r: DigestRow, n: 7 | 14 | 30) =>
+    `<td style="padding:3px 6px;text-align:right;white-space:nowrap">${r.w[n].users} <span style="font-size:11px">${pctTxt(r.w[n].users, r.w[n].usersPrev)}</span></td>`;
+  const trendRows = (surface: 'organic' | 'paid') =>
+    d.groups
+      .filter((g) => g.surface === surface)
+      .sort((a, b) => b.all.w[7].users - a.all.w[7].users)
+      .slice(0, 12)
+      .map(
+        (g) => `<tr style="border-top:1px solid #f1f5f9">
+          <td style="padding:3px 6px"><b>${g.keyword}</b>${g.isBrand ? ' <span style="font-size:10px;color:#4f46e5">BRAND</span>' : ''}${g.countries[0] ? ` <span style="font-size:10px;color:#94a3b8">${g.countries.slice(0, 2).map((c) => `${c.country} #${fmtPos(c.w[7].pos)}`).join(' · ')}</span>` : ''}</td>
+          ${posCell(g.all, 7)}${posCell(g.all, 14)}${posCell(g.all, 30)}${usersCellTxt(g.all, 7)}${usersCellTxt(g.all, 30)}
+        </tr>`,
+      )
+      .join('');
+  const trendTable = (surface: 'organic' | 'paid', label: string) => `
+    <div style="font-size:11px;font-weight:700;color:${surface === 'paid' ? '#b45309' : '#0f766e'};margin:8px 0 2px">${label}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.04em">
+        <th style="padding:3px 6px;text-align:left">Keyword · nước lớn nhất</th>
+        <th style="padding:3px 6px;text-align:right">Vị trí L7 · Δ7</th>
+        <th style="padding:3px 6px;text-align:right">Vị trí L14 · Δ14</th>
+        <th style="padding:3px 6px;text-align:right">Vị trí L30 · Δ30</th>
+        <th style="padding:3px 6px;text-align:right">Users L7 · Δ</th>
+        <th style="padding:3px 6px;text-align:right">Users L30 · Δ</th>
+      </tr>
+      ${trendRows(surface) || '<tr><td colspan="6" style="padding:4px 6px;color:#94a3b8">—</td></tr>'}
+    </table>`;
+
   const html = `<!doctype html><html><body style="margin:0;padding:16px;background:#f1f5f9;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
-  <div style="max-width:820px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">
+  <div style="max-width:860px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">
     <div style="padding:14px 16px;border-bottom:1px solid #e2e8f0">
-      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em">TrueProfit ASO · biến động vị trí keyword chính</div>
+      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em">TrueProfit ASO · vị trí keyword chính</div>
       <div style="font-size:16px;font-weight:700;margin-top:2px">${dmy(d.dataDate)}</div>
       <p style="margin:8px 0 0;font-size:13px;line-height:1.5">${headline}${d.daysAvailable < 28 ? ` <span style="color:#b45309">Mới có ${d.daysAvailable} ngày data nên Δ14 chưa so được.</span>` : ''}</p>
+      <p style="margin:6px 0 0;font-size:12px;line-height:1.5;color:#334155">${trendLine}</p>
     </div>
-    ${section('PAID · cần action', 'tụt trước, lên sau · kèm camp đang chạy và gợi ý bid', paid, 'Không có keyword paid nào đổi vị trí quá ngưỡng.')}
-    ${section('ORGANIC · xu hướng', 'tụt trước, lên sau · không action bid, chỉ theo dõi', organic, 'Không có keyword organic nào đổi vị trí quá ngưỡng.')}
+    ${section('1 · PAID · cần action', 'keyword paid đổi vị trí từ ' + t + ' bậc ở bất kỳ cửa sổ 3/7/14/30 ngày · tụt trước, lên sau · kèm camp đang chạy và gợi ý bid', paid, 'Không có keyword paid nào đổi vị trí quá ngưỡng.')}
+    ${section('2 · ORGANIC · biến động', 'keyword organic đổi vị trí từ ' + t + ' bậc ở bất kỳ cửa sổ 3/7/14/30 ngày · không action bid, chỉ theo dõi', organic, 'Không có keyword organic nào đổi vị trí quá ngưỡng.')}
+    <div style="padding:12px 16px 2px;border-top:1px solid #e2e8f0">
+      <div style="font-size:13px;font-weight:700;color:#0f172a">3 · Xu hướng 30 ngày <span style="font-weight:400;font-size:11px;color:#64748b">top keyword theo users, mọi nước gộp · vị trí và users, Δ so với kỳ liền trước · tụt/lên dưới ngưỡng vẫn hiện để thấy chiều đi</span></div>
+    </div>
+    <div style="padding:0 16px 10px">
+      ${trendTable('organic', 'ORGANIC')}
+      ${trendTable('paid', 'PAID')}
+    </div>
     <div style="padding:12px 16px;border-top:1px solid #e2e8f0;font-size:12px">
       <a href="${dashboardUrl}/positions" style="color:#4f46e5">Bảng đầy đủ vị trí + users theo nước</a> · <a href="${dashboardUrl}/bid-cap" style="color:#4f46e5">Bid Recommendations</a>
-      <div style="margin-top:6px;font-size:10px;color:#94a3b8">Vị trí = trung bình App Store Search theo ngày, trọng số theo users; Δ so với cửa sổ cùng độ dài liền trước, dương là tụt. Chỉ báo keyword đổi vị trí từ ${t} bậc trong 7 ngày hoặc brand rời top 1. Keyword chính = mọi keyword Brand + top 30 theo users L30; bỏ ${d.summary.excludedCountries.join(', ')}. Camp lấy từ Master KW Lookup, bỏ camp pause. Gửi tự động 09:00 mỗi ngày.</div>
+      <div style="margin-top:6px;font-size:10px;color:#94a3b8">Vị trí = trung bình App Store Search theo ngày, trọng số theo users; Δ so với cửa sổ cùng độ dài liền trước, dương là tụt. Chỉ báo keyword đổi vị trí từ ${t} bậc ở bất kỳ cửa sổ 3/7/14/30 ngày hoặc brand rời top 1. Keyword chính = mọi keyword Brand + top 30 theo users L30; bỏ ${d.summary.excludedCountries.join(', ')}. Camp lấy từ Master KW Lookup, bỏ camp pause. Gửi tự động 09:00 mỗi ngày.</div>
     </div>
   </div></body></html>`;
   return { subject, html };
