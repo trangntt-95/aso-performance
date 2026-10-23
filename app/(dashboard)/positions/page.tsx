@@ -1,4 +1,5 @@
 import { PositionsView } from '@/components/positions/PositionsView';
+import { PositionDigestPanel } from '@/components/positions/PositionDigestPanel';
 import { DataGapNote } from '@/components/shared/DataGapNote';
 import { SheetSources } from '@/components/shared/SheetSources';
 import type { DataSourceKey } from '@/lib/market/dataGaps';
@@ -10,6 +11,7 @@ const SOURCES: readonly DataSourceKey[] = ['countryTabs', 'bidCap'];
 export default function PositionsPage() {
   return (
     <div className="space-y-4">
+      <PositionDigestPanel />
       <PositionsView />
       <DataGapNote sources={SOURCES} />
       <SheetSources sources={SOURCES} />

@@ -49,10 +49,29 @@ export interface DigestGroup {
   moreCountries: number;
 }
 
+export type ActionKind = 'paid_drop' | 'organic_drop' | 'brand_not_top' | 'win';
+
+export interface ActionItem {
+  kind: ActionKind;
+  /** 'high' = cần làm hôm nay; 'mid' = theo dõi, nhỏ hoặc ít users. */
+  severity: 'high' | 'mid';
+  row: DigestRow;
+  /** Xu hướng 3 ngày gần nhất so với Δ7: 'worse' tiếp tục tụt, 'recovering' đã hồi, 'flat'. */
+  trend3: 'worse' | 'recovering' | 'flat';
+  /** Camp paid đang chạy cho keyword này (Master KW Lookup, bỏ camp pause), tối đa 2. */
+  camps: string[];
+  /** Một câu gợi ý. */
+  advice: string;
+}
+
 export interface PositionDigest {
   dataDate: string;
   daysAvailable: number;
   groups: DigestGroup[];
+  actions: ActionItem[];
+  wins: ActionItem[];
+  /** Dòng không có gì đáng nói, để liệt kê gọn. */
+  stable: DigestRow[];
   summary: {
     keywords: number;
     countryRows: number;
@@ -233,7 +252,84 @@ export function buildPositionDigest(
     return b.all.w[7].users - a.all.w[7].users;
   });
 
+  // Camp paid đang chạy cho từng keyword (Master KW Lookup trừ camp pause).
+  const paused = new Set((data.pausedKw ?? []).map((r) => r.camp.trim().toLowerCase()));
+  const campsOf = new Map<string, string[]>();
+  for (const m of data.masterKwLookup ?? []) {
+    const k = m.keyword.trim().toLowerCase();
+    const camp = m.camp.trim();
+    if (!k || !camp || paused.has(camp.toLowerCase())) continue;
+    const list = campsOf.get(k) ?? [];
+    if (!list.includes(camp) && list.length < 2) list.push(camp);
+    campsOf.set(k, list);
+  }
+
+  const classify = (r: DigestRow): ActionItem | null => {
+    const d7 = r.w[7].delta;
+    const d3 = r.w[3].delta;
+    const trend3: ActionItem['trend3'] = d3 === null ? 'flat' : d3 >= 0.5 ? 'worse' : d3 <= -0.5 ? 'recovering' : 'flat';
+    const users = r.w[7].users;
+    const place = r.country ?? 'mọi nước';
+    const camps = campsOf.get(r.keyword) ?? [];
+    const campTxt = camps.length ? ` (${camps.join(' | ')})` : ' (chưa thấy camp active trong Master)';
+    if (d7 !== null && d7 >= threshold) {
+      const big = d7 >= 2 || users >= 10 || r.isBrand;
+      if (r.surface === 'paid') {
+        return {
+          kind: 'paid_drop',
+          severity: big ? 'high' : 'mid',
+          row: r,
+          trend3,
+          camps,
+          advice: `Paid tụt ${d7.toFixed(1)} bậc ở ${place}${trend3 === 'worse' ? ', 3 ngày gần nhất còn tụt tiếp' : trend3 === 'recovering' ? ', 3 ngày gần nhất đã hồi' : ''}. Kiểm tra bid/budget camp${campTxt}; nếu Max bid cap còn dư thì nâng bid 10–15%.`,
+        };
+      }
+      return {
+        kind: 'organic_drop',
+        severity: big ? 'high' : 'mid',
+        row: r,
+        trend3,
+        camps,
+        advice: `Organic tụt ${d7.toFixed(1)} bậc ở ${place}${trend3 === 'worse' ? ', còn tụt tiếp' : trend3 === 'recovering' ? ', đã hồi 3 ngày gần nhất' : ''}. Xem đối thủ mới / metadata; ${camps.length ? `đang có paid${campTxt} nên giữ bid để không mất install` : 'chưa có paid cho keyword này, cân nhắc bật paid để giữ chỗ'}.`,
+      };
+    }
+    if (r.isBrand && r.surface === 'organic' && r.w[7].pos !== null && r.w[7].pos > 1.5 && users >= 3) {
+      return {
+        kind: 'brand_not_top',
+        severity: 'high',
+        row: r,
+        trend3,
+        camps,
+        advice: `Brand không đứng top 1 ở ${place} (vị trí ${r.w[7].pos.toFixed(1)}). Có đối thủ mua brand hoặc app khác trùng tên; bật/kiểm tra camp brand${campTxt}.`,
+      };
+    }
+    if (d7 !== null && d7 <= -threshold) {
+      return {
+        kind: 'win',
+        severity: users >= 10 || r.isBrand ? 'high' : 'mid',
+        row: r,
+        trend3,
+        camps,
+        advice: `Lên ${Math.abs(d7).toFixed(1)} bậc ở ${place}. ${r.surface === 'paid' ? 'Bid hiện tại đang hiệu quả, giữ nguyên.' : 'Organic đang mạnh, nếu có paid thì có thể hạ bid thử.'}`,
+      };
+    }
+    return null;
+  };
+
   const countryRows = groups.flatMap((g) => g.countries);
+  const everyRow = groups.flatMap((g) => [g.all, ...g.countries]);
+  const classified = everyRow.map((r) => ({ r, a: classify(r) }));
+  const sevRank = (a: ActionItem) => (a.severity === 'high' ? 0 : 1);
+  const actions = classified
+    .map((x) => x.a)
+    .filter((a): a is ActionItem => !!a && a.kind !== 'win')
+    .sort((a, b) => sevRank(a) - sevRank(b) || (b.row.w[7].delta ?? 0) - (a.row.w[7].delta ?? 0) || b.row.w[7].users - a.row.w[7].users);
+  const wins = classified
+    .map((x) => x.a)
+    .filter((a): a is ActionItem => !!a && a.kind === 'win')
+    .sort((a, b) => (a.row.w[7].delta ?? 0) - (b.row.w[7].delta ?? 0));
+  const stable = classified.filter((x) => !x.a && x.r.country === null).map((x) => x.r);
+
   const scored = countryRows.concat(groups.map((g) => g.all)).filter((r) => r.w[7].delta !== null).sort(byWorst7);
   const worsened7 = countryRows.filter((r) => r.w[7].delta !== null && r.w[7].delta >= threshold).length;
   const improved7 = countryRows.filter((r) => r.w[7].delta !== null && r.w[7].delta <= -threshold).length;
@@ -245,6 +341,9 @@ export function buildPositionDigest(
     dataDate,
     daysAvailable: dates.length,
     groups,
+    actions,
+    wins,
+    stable,
     summary: {
       keywords: groups.length,
       countryRows: countryRows.length,

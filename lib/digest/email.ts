@@ -1,101 +1,88 @@
-// Dựng HTML email cho báo cáo vị trí và gửi qua Resend (REST, không cần SDK).
+// HTML email báo cáo vị trí và gửi qua Resend (REST, không cần SDK).
+//
+// Trang 23/10/2026: email CHỈ chứa keyword có biến động vị trí, tách hai
+// phần: PAID (để action, kèm camp + gợi ý bid) và ORGANIC (để xem xu hướng).
+// Không có users, không có bảng đầy đủ; bảng đầy đủ (vị trí + users) nằm ở
+// tab Vị trí keyword trên dashboard.
 
-import type { DigestRow, PositionDigest, Win } from './positions';
+import type { ActionItem, DigestRow, PositionDigest } from './positions';
 
 const fmtPos = (p: number | null) => (p === null ? '—' : p.toFixed(1));
-const fmtDelta = (d: number | null) => (d === null ? '' : `${d > 0 ? '+' : ''}${d.toFixed(1)}`);
+const fmtDelta = (d: number | null) => (d === null ? '—' : `${d > 0 ? '+' : ''}${d.toFixed(1)}`);
 const dmy = (isoDate: string) => isoDate.split('-').reverse().join('/');
 const where = (r: DigestRow) => (r.country ? r.country : 'mọi nước');
 
-function deltaCell(d: number | null, threshold: number): string {
-  if (d === null) return '<td style="padding:4px 6px;text-align:right;color:#94a3b8">—</td>';
+function deltaChip(d: number | null, threshold: number): string {
+  if (d === null) return '<span style="color:#94a3b8">—</span>';
   const color = d >= threshold ? '#dc2626' : d <= -threshold ? '#059669' : '#64748b';
-  const bg = d >= threshold ? '#fef2f2' : d <= -threshold ? '#ecfdf5' : 'transparent';
   const arrow = d >= threshold ? '▼' : d <= -threshold ? '▲' : '';
-  return `<td style="padding:4px 6px;text-align:right;color:${color};background:${bg};font-weight:${Math.abs(d) >= threshold ? 600 : 400}">${arrow}${fmtDelta(d)}</td>`;
+  return `<span style="color:${color};font-weight:${Math.abs(d) >= threshold ? 700 : 400}">${arrow}${fmtDelta(d)}</span>`;
 }
 
-function winCells(r: DigestRow, n: Win, threshold: number): string {
-  const s = r.w[n];
-  return `<td style="padding:4px 6px;text-align:right;font-variant-numeric:tabular-nums">${fmtPos(s.pos)}</td>${deltaCell(s.delta, threshold)}`;
-}
-
-function usersCell(r: DigestRow): string {
-  const u = r.w[7];
-  const d = u.usersPrev > 0 ? (u.users - u.usersPrev) / u.usersPrev : null;
-  const color = d === null ? '#94a3b8' : d >= 0.1 ? '#059669' : d <= -0.1 ? '#dc2626' : '#64748b';
-  return `<td style="padding:4px 6px;text-align:right">${u.users}<span style="font-size:10px;color:${color}"> ${d === null ? '' : `${d > 0 ? '+' : ''}${Math.round(d * 100)}%`}</span></td>`;
+function card(a: ActionItem, threshold: number): string {
+  const r = a.row;
+  const isWin = a.kind === 'win';
+  const high = a.severity === 'high';
+  const border = isWin ? '#a7f3d0' : high ? '#fecaca' : '#fde68a';
+  const bg = isWin ? '#f0fdf4' : high ? '#fff1f2' : '#fffbeb';
+  const tag = isWin ? '#047857' : high ? '#b91c1c' : '#b45309';
+  const label = isWin ? 'LÊN' : a.kind === 'brand_not_top' ? 'BRAND MẤT TOP 1' : high ? 'TỤT · ƯU TIÊN' : 'TỤT';
+  const trend =
+    a.trend3 === 'worse'
+      ? '<span style="color:#b91c1c">↘ 3 ngày gần nhất còn tụt</span>'
+      : a.trend3 === 'recovering'
+        ? '<span style="color:#047857">↗ 3 ngày gần nhất đã hồi</span>'
+        : '<span style="color:#64748b">→ 3 ngày gần nhất đi ngang</span>';
+  return `<div style="border:1px solid ${border};background:${bg};border-radius:8px;padding:9px 12px;margin:0 0 6px">
+    <div style="font-size:13px;line-height:1.5">
+      <span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:${tag}">${label}</span>
+      &nbsp;<b>${r.keyword}</b>${r.isBrand ? ' <span style="font-size:10px;color:#4f46e5">BRAND</span>' : ''}
+      <span style="color:#334155">· ${where(r)}</span>
+      <span style="color:#334155">· vị trí <b>${fmtPos(r.w[7].posPrev)} → ${fmtPos(r.w[7].pos)}</b></span>
+      <span style="color:#64748b;font-size:11px">· Δ3 ${deltaChip(r.w[3].delta, threshold)} · Δ7 ${deltaChip(r.w[7].delta, threshold)} · Δ14 ${deltaChip(r.w[14].delta, threshold)}</span>
+    </div>
+    <div style="margin-top:3px;font-size:12px;color:#0f172a;line-height:1.45">${a.advice}</div>
+    <div style="margin-top:2px;font-size:11px">${trend}${a.camps.length ? ` · camp: <span style="color:#334155">${a.camps.join(' | ')}</span>` : ''}</div>
+  </div>`;
 }
 
 export function renderPositionDigestHtml(d: PositionDigest, dashboardUrl: string): { subject: string; html: string } {
-  const { summary } = d;
-  const subject = `ASO vị trí keyword ${dmy(d.dataDate)}: ${summary.worsened7} tụt · ${summary.improved7} lên (L7, theo nước)`;
+  const t = d.summary.threshold;
+  const all = d.actions.concat(d.wins);
+  const paid = all.filter((a) => a.row.surface === 'paid');
+  const organic = all.filter((a) => a.row.surface === 'organic');
+  const paidDrops = paid.filter((a) => a.kind !== 'win').length;
+  const orgDrops = organic.filter((a) => a.kind !== 'win').length;
+  const highCount = d.actions.filter((a) => a.severity === 'high').length;
 
-  const lead = [
-    `<b>${summary.keywords}</b> keyword×kênh, <b>${summary.countryRows}</b> dòng nước, data tới <b>${dmy(d.dataDate)}</b>.`,
-    `Trong 7 ngày: <span style="color:#dc2626"><b>${summary.worsened7}</b> dòng nước tụt</span> từ ${summary.threshold} bậc, <span style="color:#059669"><b>${summary.improved7}</b> lên</span> từ ${summary.threshold} bậc.`,
-    summary.worst
-      ? `Tụt mạnh nhất: <b>${summary.worst.keyword}</b> (${summary.worst.surface}, ${where(summary.worst)}) ${fmtPos(summary.worst.w[7].posPrev)} → ${fmtPos(summary.worst.w[7].pos)}.`
-      : 'Không có dòng nào tụt quá ngưỡng.',
-    summary.best ? `Lên mạnh nhất: <b>${summary.best.keyword}</b> (${summary.best.surface}, ${where(summary.best)}) ${fmtPos(summary.best.w[7].posPrev)} → ${fmtPos(summary.best.w[7].pos)}.` : '',
-    d.daysAvailable < 28 ? `<span style="color:#b45309">Mới có ${d.daysAvailable} ngày data nên cột L14 so với kỳ trước chưa đủ.</span>` : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const subject =
+    all.length === 0
+      ? `✅ ASO vị trí ${dmy(d.dataDate)}: không có keyword nào biến động`
+      : `${highCount > 0 ? '🚨' : '⚠️'} ASO vị trí ${dmy(d.dataDate)}: paid ${paidDrops} tụt · organic ${orgDrops} tụt · ${d.wins.length} lên`;
 
-  const head = `
-    <tr style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:.04em">
-      <th style="padding:6px;text-align:left">Keyword · nước</th>
-      <th style="padding:6px;text-align:left">Kênh</th>
-      <th style="padding:6px;text-align:right">L3</th><th style="padding:6px;text-align:right">Δ3</th>
-      <th style="padding:6px;text-align:right">L7</th><th style="padding:6px;text-align:right">Δ7</th>
-      <th style="padding:6px;text-align:right">L14</th><th style="padding:6px;text-align:right">Δ14</th>
-      <th style="padding:6px;text-align:right">Users L7</th>
-    </tr>`;
+  const headline =
+    all.length === 0
+      ? `<span style="color:#047857"><b>Không có keyword chính nào đổi vị trí quá ${t} bậc trong 7 ngày.</b></span> Brand vẫn top 1.`
+      : `<b>Paid:</b> ${paidDrops} tụt, ${paid.length - paidDrops} lên. <b>Organic:</b> ${orgDrops} tụt, ${organic.length - orgDrops} lên. ${highCount > 0 ? `<span style="color:#b91c1c"><b>${highCount} ưu tiên</b> (brand, tụt ≥2 bậc hoặc nhiều users).</span>` : ''}`;
 
-  const body = d.groups
-    .map((g) => {
-      const headRow = `<tr style="border-top:2px solid #e2e8f0;background:#fff">
-        <td style="padding:6px 6px 4px"><b>${g.keyword}</b>${g.isBrand ? ' <span style="font-size:10px;color:#4f46e5">BRAND</span>' : ''} <span style="font-size:10px;color:#94a3b8">${g.category}</span><div style="font-size:10px;color:#64748b">mọi nước</div></td>
-        <td style="padding:6px 6px 4px;color:${g.surface === 'paid' ? '#b45309' : '#0f766e'}">${g.surface}</td>
-        ${winCells(g.all, 3, summary.threshold)}${winCells(g.all, 7, summary.threshold)}${winCells(g.all, 14, summary.threshold)}
-        ${usersCell(g.all)}
-      </tr>`;
-      const countryRows = g.countries
-        .map(
-          (r) => `<tr style="background:#fcfcfd">
-        <td style="padding:3px 6px 3px 18px;color:#334155">↳ ${r.country}</td>
-        <td style="padding:3px 6px;color:#94a3b8;font-size:11px">${r.surface}</td>
-        ${winCells(r, 3, summary.threshold)}${winCells(r, 7, summary.threshold)}${winCells(r, 14, summary.threshold)}
-        ${usersCell(r)}
-      </tr>`,
-        )
-        .join('');
-      const more =
-        g.moreCountries > 0
-          ? `<tr style="background:#fcfcfd"><td colspan="9" style="padding:2px 6px 6px 18px;font-size:10px;color:#94a3b8">+${g.moreCountries} nước khác quá ít users để tính</td></tr>`
-          : '';
-      return headRow + countryRows + more;
-    })
-    .join('');
+  const section = (title: string, sub: string, items: ActionItem[], empty: string) => `
+    <div style="padding:12px 16px 2px">
+      <div style="font-size:13px;font-weight:700;color:#0f172a">${title} <span style="font-weight:400;font-size:11px;color:#64748b">${sub}</span></div>
+    </div>
+    <div style="padding:6px 16px 6px">${items.length ? items.map((a) => card(a, t)).join('') : `<div style="font-size:12px;color:#64748b;padding:2px 0">${empty}</div>`}</div>`;
 
   const html = `<!doctype html><html><body style="margin:0;padding:16px;background:#f1f5f9;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
-  <div style="max-width:900px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">
+  <div style="max-width:820px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">
     <div style="padding:14px 16px;border-bottom:1px solid #e2e8f0">
-      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em">TrueProfit ASO · báo cáo vị trí keyword theo nước</div>
+      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em">TrueProfit ASO · biến động vị trí keyword chính</div>
       <div style="font-size:16px;font-weight:700;margin-top:2px">${dmy(d.dataDate)}</div>
-      <p style="margin:8px 0 0;font-size:13px;line-height:1.5">${lead}</p>
+      <p style="margin:8px 0 0;font-size:13px;line-height:1.5">${headline}${d.daysAvailable < 28 ? ` <span style="color:#b45309">Mới có ${d.daysAvailable} ngày data nên Δ14 chưa so được.</span>` : ''}</p>
     </div>
-    <div style="padding:8px 16px 4px;font-size:11px;color:#64748b">
-      Vị trí = trung bình App Store Search theo ngày, trọng số theo users. Δ = so với cửa sổ cùng độ dài liền trước; <span style="color:#dc2626">▼ dương</span> là tụt, <span style="color:#059669">▲ âm</span> là lên. Mỗi keyword: dòng đậm là mọi nước gộp, các dòng ↳ là từng nước (nhiều users trước). Nhóm tụt mạnh nhất lên đầu. Bỏ ${summary.excludedCountries.join(', ')}.
-    </div>
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead>${head}</thead>
-      <tbody>${body || '<tr><td colspan="9" style="padding:12px;color:#94a3b8">Không có dòng nào.</td></tr>'}</tbody>
-    </table>
+    ${section('PAID · cần action', 'tụt trước, lên sau · kèm camp đang chạy và gợi ý bid', paid, 'Không có keyword paid nào đổi vị trí quá ngưỡng.')}
+    ${section('ORGANIC · xu hướng', 'tụt trước, lên sau · không action bid, chỉ theo dõi', organic, 'Không có keyword organic nào đổi vị trí quá ngưỡng.')}
     <div style="padding:12px 16px;border-top:1px solid #e2e8f0;font-size:12px">
-      <a href="${dashboardUrl}/positions" style="color:#4f46e5">Mở tab Vị trí keyword</a> · <a href="${dashboardUrl}" style="color:#4f46e5">Dashboard</a>
-      <div style="margin-top:6px;font-size:10px;color:#94a3b8">Keyword chính = mọi keyword Brand + top 30 theo users L30 (bỏ Noise/Test); dòng nước cần từ 5 users trong 2 tuần (Brand: 3). Gửi tự động 09:00 mỗi ngày sau khi pipeline chạy xong.</div>
+      <a href="${dashboardUrl}/positions" style="color:#4f46e5">Bảng đầy đủ vị trí + users theo nước</a> · <a href="${dashboardUrl}/bid-cap" style="color:#4f46e5">Bid Recommendations</a>
+      <div style="margin-top:6px;font-size:10px;color:#94a3b8">Vị trí = trung bình App Store Search theo ngày, trọng số theo users; Δ so với cửa sổ cùng độ dài liền trước, dương là tụt. Chỉ báo keyword đổi vị trí từ ${t} bậc trong 7 ngày hoặc brand rời top 1. Keyword chính = mọi keyword Brand + top 30 theo users L30; bỏ ${d.summary.excludedCountries.join(', ')}. Camp lấy từ Master KW Lookup, bỏ camp pause. Gửi tự động 09:00 mỗi ngày.</div>
     </div>
   </div></body></html>`;
   return { subject, html };
