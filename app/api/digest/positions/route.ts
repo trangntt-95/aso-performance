@@ -50,7 +50,7 @@ export async function GET(req: Request) {
 
   try {
     const sent = await sendViaResend({ to, subject, html });
-    return NextResponse.json({ ok: true, to, subject, id: sent.id, rows: digest.rows.length, dataDate: digest.dataDate });
+    return NextResponse.json({ ok: true, to, subject, id: sent.id, keywords: digest.groups.length, countryRows: digest.summary.countryRows, dataDate: digest.dataDate });
   } catch (err) {
     console.error('[digest/positions] send failed', err);
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
