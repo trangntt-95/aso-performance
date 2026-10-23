@@ -20,31 +20,58 @@ function deltaChip(d: number | null, threshold: number): string {
   return `<span style="color:${color};font-weight:${Math.abs(d) >= threshold ? 700 : 400}">${arrow}${fmtDelta(d)}</span>`;
 }
 
-function card(a: ActionItem, threshold: number): string {
+/** Gợi ý ngắn cho ô cuối bảng (câu dài nằm ở tooltip title). */
+function shortAdvice(a: ActionItem): string {
+  const camp = a.camps.length ? a.camps[0] : null;
+  switch (a.kind) {
+    case 'paid_drop':
+      return camp ? `Kiểm tra bid/budget · ${camp}` : 'Kiểm tra bid · chưa thấy camp active';
+    case 'organic_drop':
+      return a.camps.length ? 'Xem đối thủ/metadata · giữ bid paid' : 'Xem đối thủ/metadata · cân nhắc bật paid';
+    case 'brand_not_top':
+      return camp ? `Bật/kiểm tra camp brand · ${camp}` : 'Bật camp brand';
+    case 'win':
+      return a.row.surface === 'paid' ? 'Giữ bid' : a.camps.length ? 'Có thể hạ bid thử' : 'Theo dõi';
+  }
+}
+
+const TD = 'padding:5px 6px;vertical-align:top;border-top:1px solid #e2e8f0';
+const TH = 'padding:5px 6px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;background:#f8fafc';
+
+function actionRow(a: ActionItem, threshold: number): string {
   const r = a.row;
   const isWin = a.kind === 'win';
   const high = a.severity === 'high';
-  const border = isWin ? '#a7f3d0' : high ? '#fecaca' : '#fde68a';
-  const bg = isWin ? '#f0fdf4' : high ? '#fff1f2' : '#fffbeb';
+  const rowBg = isWin ? '#f0fdf4' : high ? '#fff1f2' : '#fffbeb';
   const tag = isWin ? '#047857' : high ? '#b91c1c' : '#b45309';
-  const label = isWin ? 'LÊN' : a.kind === 'brand_not_top' ? 'BRAND MẤT TOP 1' : high ? 'TỤT · ƯU TIÊN' : 'TỤT';
-  const trend =
-    a.trend3 === 'worse'
-      ? '<span style="color:#b91c1c">↘ 3 ngày gần nhất còn tụt</span>'
-      : a.trend3 === 'recovering'
-        ? '<span style="color:#047857">↗ 3 ngày gần nhất đã hồi</span>'
-        : '<span style="color:#64748b">→ 3 ngày gần nhất đi ngang</span>';
-  return `<div style="border:1px solid ${border};background:${bg};border-radius:8px;padding:9px 12px;margin:0 0 6px">
-    <div style="font-size:13px;line-height:1.5">
-      <span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:${tag}">${label}</span>
-      &nbsp;<b>${r.keyword}</b>${r.isBrand ? ' <span style="font-size:10px;color:#4f46e5">BRAND</span>' : ''}
-      <span style="color:#334155">· ${where(r)}</span>
-      <span style="color:#334155">· L${a.win}: <b>${fmtPos(r.w[a.win].posPrev)} → ${fmtPos(r.w[a.win].pos)}</b></span>
-      <span style="color:#64748b;font-size:11px">· ${WINDOWS.map((n) => `Δ${n} ${deltaChip(r.w[n].delta, threshold)}`).join(' · ')}</span>
-    </div>
-    <div style="margin-top:3px;font-size:12px;color:#0f172a;line-height:1.45">${a.advice}</div>
-    <div style="margin-top:2px;font-size:11px">${trend}${a.camps.length ? ` · camp: <span style="color:#334155">${a.camps.join(' | ')}</span>` : ''}</div>
-  </div>`;
+  const label = isWin ? '▲ LÊN' : a.kind === 'brand_not_top' ? '⚑ BRAND' : high ? '▼ TỤT !' : '▼ TỤT';
+  const trend = a.trend3 === 'worse' ? '<span style="color:#b91c1c">↘ còn tụt</span>' : a.trend3 === 'recovering' ? '<span style="color:#047857">↗ đã hồi</span>' : '<span style="color:#94a3b8">→ ngang</span>';
+  return `<tr style="background:${rowBg}" title="${a.advice.replace(/"/g, '&quot;')}">
+    <td style="${TD};white-space:nowrap;font-size:10px;font-weight:700;color:${tag}">${label}</td>
+    <td style="${TD}"><b>${r.keyword}</b>${r.isBrand ? ' <span style="font-size:9px;color:#4f46e5">BRAND</span>' : ''}</td>
+    <td style="${TD};color:#334155;white-space:nowrap">${where(r)}</td>
+    <td style="${TD};text-align:center;white-space:nowrap">L${a.win}</td>
+    <td style="${TD};text-align:right;white-space:nowrap">${fmtPos(r.w[a.win].posPrev)} → <b>${fmtPos(r.w[a.win].pos)}</b></td>
+    ${WINDOWS.map((n) => `<td style="${TD};text-align:right;font-size:11px">${deltaChip(r.w[n].delta, threshold)}</td>`).join('')}
+    <td style="${TD};font-size:11px;white-space:nowrap">${trend}</td>
+    <td style="${TD};font-size:11px;color:#334155">${shortAdvice(a)}${a.camps.length > 1 ? ` <span style="color:#94a3b8">+${a.camps.length - 1}</span>` : ''}</td>
+  </tr>`;
+}
+
+function actionTable(items: ActionItem[], threshold: number): string {
+  return `<table style="width:100%;border-collapse:collapse;font-size:12px">
+    <tr>
+      <th style="${TH}"></th>
+      <th style="${TH}">Keyword</th>
+      <th style="${TH}">Nước</th>
+      <th style="${TH};text-align:center" title="Cửa sổ biến động mạnh nhất">Cửa sổ</th>
+      <th style="${TH};text-align:right">Vị trí trước → nay</th>
+      ${WINDOWS.map((n) => `<th style="${TH};text-align:right">Δ${n}</th>`).join('')}
+      <th style="${TH}">3 ngày</th>
+      <th style="${TH}">Gợi ý · camp</th>
+    </tr>
+    ${items.map((a) => actionRow(a, threshold)).join('')}
+  </table>`;
 }
 
 export function renderPositionDigestHtml(d: PositionDigest, dashboardUrl: string): { subject: string; html: string } {
@@ -70,7 +97,7 @@ export function renderPositionDigestHtml(d: PositionDigest, dashboardUrl: string
     <div style="padding:12px 16px 2px">
       <div style="font-size:13px;font-weight:700;color:#0f172a">${title} <span style="font-weight:400;font-size:11px;color:#64748b">${sub}</span></div>
     </div>
-    <div style="padding:6px 16px 6px">${items.length ? items.map((a) => card(a, t)).join('') : `<div style="font-size:12px;color:#64748b;padding:2px 0">${empty}</div>`}</div>`;
+    <div style="padding:6px 16px 6px">${items.length ? actionTable(items, t) : `<div style="font-size:12px;color:#64748b;padding:2px 0">${empty}</div>`}</div>`;
 
   // ---- Xu hướng: tổng users tracked và bảng gọn top keyword theo users ----
   const pctTxt = (cur: number, prev: number) => {
