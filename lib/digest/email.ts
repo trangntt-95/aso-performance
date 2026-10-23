@@ -46,13 +46,25 @@ function actionRow(a: ActionItem, threshold: number): string {
   const tag = isWin ? '#047857' : high ? '#b91c1c' : '#b45309';
   const label = isWin ? '▲ LÊN' : a.kind === 'brand_not_top' ? '⚑ BRAND' : high ? '▼ TỤT !' : '▼ TỤT';
   const trend = a.trend3 === 'worse' ? '<span style="color:#b91c1c">↘ còn tụt</span>' : a.trend3 === 'recovering' ? '<span style="color:#047857">↗ đã hồi</span>' : '<span style="color:#94a3b8">→ ngang</span>';
+  // Mỗi cửa sổ: VỊ TRÍ tuyệt đối hiện tại, tô đỏ nếu tụt so với kỳ trước, xanh nếu
+  // lên, xám nếu đứng; ô của cửa sổ biến động mạnh nhất viền đậm. Trước→nay và Δ
+  // nằm trong tooltip (Trang 23/10/2026: "nhìn bảng là biết cửa sổ nào tăng giảm").
+  const posCells = WINDOWS.map((n) => {
+    const s = r.w[n];
+    const d = s.delta;
+    const color = d === null ? '#64748b' : d >= threshold ? '#dc2626' : d <= -threshold ? '#059669' : '#64748b';
+    const arrow = d === null ? '' : d >= threshold ? '▼' : d <= -threshold ? '▲' : '';
+    const main = n === a.win;
+    const tip = s.pos === null ? 'chưa có vị trí' : `L${n}: ${fmtPos(s.posPrev)} → ${fmtPos(s.pos)} (${fmtDelta(d)}) · ${s.users} users (trước ${s.usersPrev})`;
+    return `<td style="${TD};text-align:right;white-space:nowrap;color:${color};font-weight:${main || (d !== null && Math.abs(d) >= threshold) ? 700 : 400};${main ? 'outline:2px solid ' + color + ';outline-offset:-2px;' : ''}" title="${tip}">${arrow}${fmtPos(s.pos)}</td>`;
+  }).join('');
+  const uw = r.w[a.win];
   return `<tr style="background:${rowBg}" title="${a.advice.replace(/"/g, '&quot;')}">
     <td style="${TD};white-space:nowrap;font-size:10px;font-weight:700;color:${tag}">${label}</td>
     <td style="${TD}"><b>${r.keyword}</b>${r.isBrand ? ' <span style="font-size:9px;color:#4f46e5">BRAND</span>' : ''}</td>
     <td style="${TD};color:#334155;white-space:nowrap">${where(r)}</td>
-    <td style="${TD};text-align:center;white-space:nowrap">L${a.win}</td>
-    <td style="${TD};text-align:right;white-space:nowrap">${fmtPos(r.w[a.win].posPrev)} → <b>${fmtPos(r.w[a.win].pos)}</b></td>
-    ${WINDOWS.map((n) => `<td style="${TD};text-align:right;font-size:11px">${deltaChip(r.w[n].delta, threshold)}</td>`).join('')}
+    ${posCells}
+    <td style="${TD};text-align:right;white-space:nowrap" title="Users trong cửa sổ biến động mạnh nhất (L${a.win}) và kỳ liền trước">${uw.users} <span style="font-size:10px;color:#94a3b8">/ ${uw.usersPrev}</span></td>
     <td style="${TD};font-size:11px;white-space:nowrap">${trend}</td>
     <td style="${TD};font-size:11px;color:#334155">${shortAdvice(a)}${a.camps.length > 1 ? ` <span style="color:#94a3b8">+${a.camps.length - 1}</span>` : ''}</td>
   </tr>`;
@@ -64,14 +76,14 @@ function actionTable(items: ActionItem[], threshold: number): string {
       <th style="${TH}"></th>
       <th style="${TH}">Keyword</th>
       <th style="${TH}">Nước</th>
-      <th style="${TH};text-align:center" title="Cửa sổ biến động mạnh nhất">Cửa sổ</th>
-      <th style="${TH};text-align:right">Vị trí trước → nay</th>
-      ${WINDOWS.map((n) => `<th style="${TH};text-align:right">Δ${n}</th>`).join('')}
+      ${WINDOWS.map((n) => `<th style="${TH};text-align:right" title="Vị trí trung bình ${n} ngày gần nhất; đỏ = tụt so với ${n} ngày trước, xanh = lên">Vị trí L${n}</th>`).join('')}
+      <th style="${TH};text-align:right" title="Users trong cửa sổ biến động mạnh nhất / kỳ liền trước">Users nay / trước</th>
       <th style="${TH}">3 ngày</th>
       <th style="${TH}">Gợi ý · camp</th>
     </tr>
     ${items.map((a) => actionRow(a, threshold)).join('')}
-  </table>`;
+  </table>
+  <div style="font-size:10px;color:#94a3b8;margin-top:4px">Ô viền đậm = cửa sổ biến động mạnh nhất. <span style="color:#dc2626">Đỏ</span> = tụt về vị trí đó so với kỳ liền trước, <span style="color:#059669">xanh</span> = lên. Rê chuột để xem trước → nay.</div>`;
 }
 
 export function renderPositionDigestHtml(d: PositionDigest, dashboardUrl: string): { subject: string; html: string } {
