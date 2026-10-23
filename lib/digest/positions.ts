@@ -76,7 +76,10 @@ function windowAvg(rows: HistoryDailyRow[], dates: Set<string>): { pos: number |
   return { pos, users };
 }
 
-export function buildPositionDigest(data: SheetPayload, opts: { topN?: number; threshold?: number } = {}): PositionDigest | null {
+export function buildPositionDigest(
+  data: SheetPayload,
+  opts: { topN?: number; threshold?: number; minUsers7?: number } = {},
+): PositionDigest | null {
   const topN = opts.topN ?? 30;
   const threshold = opts.threshold ?? 1;
   const daily = data.historyDaily ?? [];
@@ -139,11 +142,15 @@ export function buildPositionDigest(data: SheetPayload, opts: { topN?: number; t
       w[n] = { pos: cur.pos, posPrev: prev.pos, delta, users: cur.users, usersPrev: prev.users };
     }
     if (!any) continue;
+    // Dòng 1–2 users mỗi tuần thì vị trí nhảy ngẫu nhiên, không đáng báo;
+    // Brand thì giữ hết vì đó là thứ Trang muốn canh.
+    const isBrand = brand.has(k);
+    if (!isBrand && w[7].users + w[7].usersPrev < (opts.minUsers7 ?? 5)) continue;
     rows.push({
       keyword: k,
       category: catOf.get(k) ?? '',
       surface: surface === 'search_ad' ? 'paid' : 'organic',
-      isBrand: brand.has(k),
+      isBrand,
       w,
     });
   }
