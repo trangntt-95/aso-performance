@@ -1323,6 +1323,10 @@ export interface DateKpi {
   getAppL: number | null;
   getAppDeltaPct: number | null;
   cr: number | null;
+  /** CR của kỳ liền trước cùng độ dài, và % thay đổi (cr / crPrev − 1). null khi
+   *  không so được (thiếu ngày, hoặc kỳ trước không có install). */
+  crPrev: number | null;
+  crDeltaPct: number | null;
   /** Coverage of the picked range and of the prior period it's compared against. */
   coverage: RangeCoverage;
   priorCoverage: RangeCoverage;
@@ -1367,6 +1371,8 @@ export function kpisForRange(
     getAppL: null,
     getAppDeltaPct: null,
     cr: null,
+    crPrev: null,
+    crDeltaPct: null,
     coverage,
     priorCoverage,
     comparable: false,
@@ -1376,6 +1382,7 @@ export function kpisForRange(
   const cur = sumDailyRows(dailyRowsInRange(data, from, to, opts, catMap));
   const prev = sumDailyRows(dailyRowsInRange(data, prevFrom, prevTo, opts, catMap));
   const cr = cur.crDenom > 0 && cur.getApp !== null ? cur.getApp / cur.crDenom : null;
+  const crPrev = prev.crDenom > 0 && prev.getApp !== null ? prev.getApp / prev.crDenom : null;
   // A period missing days sums fewer days than it claims, so a delta against it
   // measures the gap in the data, not a change in traffic. Withhold it.
   const comparable = coverage.missing.length === 0 && priorCoverage.missing.length === 0;
@@ -1390,6 +1397,10 @@ export function kpisForRange(
         ? (cur.getApp - prev.getApp) / prev.getApp
         : null,
     cr,
+    crPrev,
+    // CR là tỷ lệ nên chỉ cần kỳ trước có install; vẫn giữ điều kiện comparable
+    // vì một kỳ thiếu ngày thì CR cũng lệch (ngày thiếu thường là ngày có install).
+    crDeltaPct: comparable && cr !== null && crPrev !== null && crPrev > 0 ? cr / crPrev - 1 : null,
     coverage,
     priorCoverage,
     comparable,

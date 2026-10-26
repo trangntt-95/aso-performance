@@ -652,10 +652,11 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
   const dispGetAppDelta = inDateMode ? dateKpi?.getAppDeltaPct ?? null : kpis.getAppDeltaPct;
   const dispCr = inDateMode ? dateKpi?.cr ?? null : totalCr;
   const dispCrDelta = inDateMode
-    ? null
+    ? dateKpi?.crDeltaPct ?? null
     : totalCr !== null && totalCrPrior !== null && totalCrPrior > 0
     ? totalCr / totalCrPrior - 1
     : null;
+  const dispCrPrev = inDateMode ? dateKpi?.crPrev ?? null : totalCrPrior;
   const kpiHelper = 'vs kỳ trước';
   const kpiSuffix = inDateMode ? dateLabel : window;
 
@@ -991,7 +992,7 @@ export function OverviewDashboard({ embedded = false }: OverviewProps = {}) {
               label={`CR Total · ${kpiSuffix}`}
               value={dispCr !== null ? formatPercent(dispCr) : '—'}
               deltaPct={dispCrDelta}
-              helper="paid + organic"
+              helper={`paid + organic${dispCrPrev !== null ? ` · kỳ trước ${formatPercent(dispCrPrev)}` : ''}`}
               Icon={Megaphone}
             />
             <AdsTargetTile
