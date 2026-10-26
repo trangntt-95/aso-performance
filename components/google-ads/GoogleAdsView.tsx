@@ -32,7 +32,7 @@ import { cn } from '@/lib/utils';
 // from the install conversion ACTIONS only — using the blended number would make
 // the channel look several times cheaper than it is.
 
-type SortKey = 'cost' | 'clicks' | 'impressions' | 'installs' | 'cpc' | 'cpi' | 'is' | 'lostBudget' | 'name';
+type SortKey = 'cost' | 'clicks' | 'impressions' | 'installs' | 'cpc' | 'cpi' | 'cr' | 'is' | 'lostBudget' | 'name';
 type SortDir = 'asc' | 'desc';
 
 function SortHead({
@@ -162,6 +162,7 @@ export function GoogleAdsView() {
         case 'installs': return r.installs;
         case 'cpc': return r.cpc;
         case 'cpi': return r.cpi;
+        case 'cr': return r.cr;
         case 'is': return r.is;
         case 'lostBudget': return r.lostBudget;
         case 'name': return r.name.toLowerCase();
@@ -490,6 +491,7 @@ export function GoogleAdsView() {
               <SortHead label="CPC" col="cpc" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
               <SortHead label="Install" col="installs" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="Chỉ đếm hành động install thật, không phải tổng conversions" />
               <SortHead label="CPI" col="cpi" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+              <SortHead label="CR" col="cr" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="Install ÷ clicks của campaign" />
               <SortHead label="IS" col="is" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="Impression share — phần lượt hiển thị lấy được" />
               <SortHead label="Mất do NS" col="lostBudget" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} title="Phần lượt hiển thị mất vì hết ngân sách" />
               <th className="px-2 py-2 text-right font-medium" title="Phần lượt hiển thị mất vì thứ hạng thấp">Mất do TH</th>
@@ -528,6 +530,9 @@ export function GoogleAdsView() {
                   <td className="whitespace-nowrap px-2 py-2 text-right font-mono text-[11px] text-slate-700">
                     {money(r.cpi, { compact: true })}
                   </td>
+                  <td className={cn('px-2 py-2 text-right font-mono text-[11px]', r.cr !== null && r.cr >= 0.1 ? 'font-semibold text-emerald-700' : 'text-slate-600')}>
+                    {r.cr === null ? '—' : formatPercent(r.cr)}
+                  </td>
                   <td className="px-2 py-2 text-right font-mono text-[11px] text-slate-600">
                     {r.is === null ? '—' : formatPercent(r.is)}
                   </td>
@@ -547,7 +552,7 @@ export function GoogleAdsView() {
         </table>
         <div className="border-t px-3 py-2 text-[10px] text-slate-400">
           <b>Chặn bởi</b> = nguyên nhân mất lượt hiển thị lớn nhất: ngân sách (từ 15% trở lên) hay thứ hạng (từ 25%).
-          <b> IS</b> = phần lượt hiển thị lấy được. <b>→ App</b> = tỉ lệ click dẫn về trang app Shopify.
+          <b> CR</b> = install ÷ clicks. <b>IS</b> = phần lượt hiển thị lấy được. <b>→ App</b> = tỉ lệ click dẫn về trang app Shopify.
           <b> Click tiêu đề cột để sắp xếp.</b>
         </div>
       </div>

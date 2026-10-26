@@ -109,6 +109,8 @@ export interface CampaignRow {
   ctr: number | null;
   cpc: number | null;
   cpi: number | null;
+  /** CR click → install (installs / clicks). null khi chưa có click. */
+  cr: number | null;
   /** Average daily budget across the days the campaign ran. */
   budget: number | null;
   /** Averaged impression share and where the rest went. */
@@ -309,6 +311,7 @@ export function buildGoogleAdsReport(p: GoogleAdsPayload): GoogleAdsReport | nul
       ctr: e.impressions > 0 ? e.clicks / e.impressions : null,
       cpc: e.clicks > 0 ? e.cost / e.clicks : null,
       cpi: installs > 0 ? e.cost / installs : null,
+      cr: e.clicks > 0 ? installs / e.clicks : null,
       budget: e.budgetN > 0 ? e.budgetSum / e.budgetN : null,
       is,
       lostBudget,
