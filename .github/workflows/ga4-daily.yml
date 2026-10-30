@@ -1,0 +1,33 @@
+# GA4 → sheet hằng ngày, chạy trên GitHub Actions (không cần máy Trang, không cần Claude).
+# Secrets cần đặt ở Settings → Secrets and variables → Actions:
+#   GOOGLE_SERVICE_ACCOUNT_KEY  – JSON key của service account đã được cấp Viewer trên GA4 property 348654457
+#   NET_VALUE_UPLOAD_TOKEN      – token ghi sheet (giống Vercel env cùng tên)
+name: GA4 daily → sheet
+
+on:
+  schedule:
+    - cron: '20 1 * * *'   # 08:20 VN
+    - cron: '20 5 * * *'   # 12:20 VN (dự phòng; script tự dừng nếu GA4 chưa có ngày hôm qua)
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Số ngày GA4 kéo về'
+        default: '370'
+
+jobs:
+  ga4:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Chạy pipeline GA4 → sheet
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          NET_VALUE_UPLOAD_TOKEN: ${{ secrets.NET_VALUE_UPLOAD_TOKEN }}
+          GA4_DAYS: ${{ inputs.days || '370' }}
+        run: bash scripts/net-value/ga4-daily.sh
