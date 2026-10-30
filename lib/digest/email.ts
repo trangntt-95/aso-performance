@@ -20,21 +20,6 @@ function deltaChip(d: number | null, threshold: number): string {
   return `<span style="color:${color};font-weight:${Math.abs(d) >= threshold ? 700 : 400}">${arrow}${fmtDelta(d)}</span>`;
 }
 
-/** Gợi ý ngắn cho ô cuối bảng (câu dài nằm ở tooltip title). */
-function shortAdvice(a: ActionItem): string {
-  const camp = a.camps.length ? a.camps[0] : null;
-  switch (a.kind) {
-    case 'paid_drop':
-      return camp ? `Kiểm tra bid/budget · ${camp}` : 'Kiểm tra bid · chưa thấy camp active';
-    case 'organic_drop':
-      return a.camps.length ? 'Xem đối thủ/metadata · giữ bid paid' : 'Xem đối thủ/metadata · cân nhắc bật paid';
-    case 'brand_not_top':
-      return camp ? `Bật/kiểm tra camp brand · ${camp}` : 'Bật camp brand';
-    case 'win':
-      return a.row.surface === 'paid' ? 'Giữ bid' : a.camps.length ? 'Có thể hạ bid thử' : 'Theo dõi';
-  }
-}
-
 const TD = 'padding:5px 6px;vertical-align:top;border-top:1px solid #e2e8f0';
 const TH = 'padding:5px 6px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;background:#f8fafc';
 
@@ -59,14 +44,13 @@ function actionRow(a: ActionItem, threshold: number): string {
     return `<td style="${TD};text-align:right;white-space:nowrap;color:${color};font-weight:${main || (d !== null && Math.abs(d) >= threshold) ? 700 : 400};${main ? 'outline:2px solid ' + color + ';outline-offset:-2px;' : ''}" title="${tip}">${arrow}${fmtPos(s.pos)}</td>`;
   }).join('');
   const uw = r.w[a.win];
-  return `<tr style="background:${rowBg}" title="${a.advice.replace(/"/g, '&quot;')}">
+  return `<tr style="background:${rowBg}">
     <td style="${TD};white-space:nowrap;font-size:10px;font-weight:700;color:${tag}">${label}</td>
     <td style="${TD}"><b>${r.keyword}</b>${r.isBrand ? ' <span style="font-size:9px;color:#4f46e5">BRAND</span>' : ''}</td>
     <td style="${TD};color:#334155;white-space:nowrap">${where(r)}</td>
     ${posCells}
     <td style="${TD};text-align:right;white-space:nowrap" title="Users trong cửa sổ biến động mạnh nhất (L${a.win}) và kỳ liền trước">${uw.users} <span style="font-size:10px;color:#94a3b8">/ ${uw.usersPrev}</span></td>
     <td style="${TD};font-size:11px;white-space:nowrap">${trend}</td>
-    <td style="${TD};font-size:11px;color:#334155">${shortAdvice(a)}${a.camps.length > 1 ? ` <span style="color:#94a3b8">+${a.camps.length - 1}</span>` : ''}</td>
   </tr>`;
 }
 
@@ -79,7 +63,6 @@ function actionTable(items: ActionItem[], threshold: number): string {
       ${WINDOWS.map((n) => `<th style="${TH};text-align:right" title="Vị trí trung bình ${n} ngày gần nhất; đỏ = tụt so với ${n} ngày trước, xanh = lên">Vị trí L${n}</th>`).join('')}
       <th style="${TH};text-align:right" title="Users trong cửa sổ biến động mạnh nhất / kỳ liền trước">Users nay / trước</th>
       <th style="${TH}">3 ngày</th>
-      <th style="${TH}">Gợi ý · camp</th>
     </tr>
     ${items.map((a) => actionRow(a, threshold)).join('')}
   </table>
