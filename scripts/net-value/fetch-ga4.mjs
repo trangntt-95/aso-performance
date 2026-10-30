@@ -26,6 +26,10 @@ const startDate = iso(new Date(Date.parse(endDate) - (days - 1) * 86400000));
 
 function credentials() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  // Kiểu Vercel: EMAIL + private key PEM (như lib/sheets/client.ts).
+  if (raw && process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && raw.includes('PRIVATE KEY')) {
+    return { client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL, private_key: raw.replace(/\\n/g, '\n') };
+  }
   if (raw && raw.trim()) {
     const s = raw.trim();
     const txt = s.startsWith('{') ? s : Buffer.from(s, 'base64').toString('utf8');

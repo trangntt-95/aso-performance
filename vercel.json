@@ -1,6 +1,12 @@
 {
   "crons": [
-    { "path": "/api/net-value?refresh=1", "schedule": "0 1 * * *" },
-    { "path": "/api/digest/positions", "schedule": "0 2 * * *" }
+    {
+      "path": "/api/ga4-daily/run",
+      "schedule": "20 1 * * *"
+    },
+    {
+      "path": "/api/digest/positions",
+      "schedule": "0 2 * * *"
+    }
   ]
 }
