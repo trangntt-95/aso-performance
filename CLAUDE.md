@@ -37,6 +37,16 @@ Next.js 14 App Router, TypeScript, Tailwind, recharts. Chủ project: Trang (the
 - `0 2 * * *` → `/api/digest/positions` (09:00 VN)
 
 ## Pipeline hàng ngày (GA4 → BigQuery → sheet)
+**Nguyên tắc (Trang 30/10/2026): GitHub là gốc, Claude không được là mắt xích bắt buộc.** Dữ liệu chia 2 phần:
+- **GA4 (users/install/vị trí theo keyword × nước × ngày → 14 tab GA4_*_auto): KHÔNG cần Claude/MCP.**
+  `scripts/net-value/fetch-ga4.mjs` gọi GA4 Data API bằng service account (cùng định dạng JSON với SQL bước 14 cũ) →
+  `scripts/net-value/ga4-daily.sh` (fetch → build-ga4-daily → push → build-ga4-windows → push → xác nhận, in `GA4_PIPELINE_OK`).
+  Chạy bằng GitHub Actions `.github/workflows/ga4-daily.yml` (08:20 + 12:20 VN; secrets GOOGLE_SERVICE_ACCOUNT_KEY,
+  NET_VALUE_UPLOAD_TOKEN). SA = vercel-sheet-reader@green-alchemy-501610-i0 (Viewer trên GA4 348654457; key JSON ID 369c993a
+  nằm trong Downloads của Trang và bản copy gitignored trong repo). Kiểm chứng 30/10/2026: số khớp bản BigQuery, ~90 token quota/ngày.
+  Chạy tay: `GOOGLE_APPLICATION_CREDENTIALS=<key.json> bash scripts/net-value/ga4-daily.sh`.
+- **NPI / doanh thu theo nước / Max bid cap: cần BigQuery `trueda.trueprofit` (partner_transactions), chỉ có qua MCP TrueProfit DA**
+  → vẫn chạy bằng Claude (cloud routine dưới đây, hoặc Task Scheduler local). Đổi chậm nên hỏng vài ngày không sao.
 **Từ 30/10/2026 chạy bằng cloud routine** claude.ai/code/routines "ASO pipeline daily (GA4 → sheet) 08:05 VN"
 (trig_01Cw7mQnbC9EGAKUxZPVC69t, cron 5 1 * * * UTC, model opus-5-5, connector TrueProfit_GA_MCP + TrueProfit_DA, env Default
 với biến NET_VALUE_UPLOAD_TOKEN và network cho appstore-performance.vercel.app). Routine KHÔNG clone repo: bước -2 curl
