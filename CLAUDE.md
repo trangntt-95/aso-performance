@@ -43,8 +43,8 @@ với biến NET_VALUE_UPLOAD_TOKEN và network cho appstore-performance.vercel.
 script từ https://appstore-performance.vercel.app/pipeline/*.mjs (prebuild chép scripts/net-value → public/pipeline).
 Sửa script → deploy Vercel là routine dùng bản mới. Debug: RemoteTrigger list_runs / get_run_log.
 
-Prompt 18 bước: `scripts/net-value/prompt.md` (bản chạy local) và `scripts/net-value/routine-prompt.md` (bản cloud routine,
-token lấy từ env `NET_VALUE_UPLOAD_TOKEN`). Cần 2 connector claude.ai: **TrueProfit-GA-MCP** (`ga_report_to_bq`) và
+Prompt 18 bước: `scripts/net-value/prompt.md` (bản chạy local) và `scripts/net-value/routine-prompt.cloud.md` (bản cloud
+routine đang dùng, token từ env `NET_VALUE_UPLOAD_TOKEN`; đổi prompt thì cập nhật routine qua RemoteTrigger update). Cần 2 connector claude.ai: **TrueProfit-GA-MCP** (`ga_report_to_bq`) và
 **TrueProfit-DA** (`run_query`). Scripts build/push trong `scripts/net-value/*.mjs`; push lên sheet qua
 `/api/ga4-daily`, `/api/ga4-windows`, `/api/net-value`, `/api/countries`, `/api/bidcap` với header `x-upload-token`.
 - Chạy local: Task Scheduler "ASO net value daily" 08:05/12:05/16:05 → `scripts/net-value/daily.ps1` → `claude -p`,
