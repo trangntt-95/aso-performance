@@ -48,3 +48,12 @@ next-env.d.ts
 scripts/net-value/.token
 .net-value-run/
 logs/
+
+# local-only: credentials, exports, sibling repos (ThuChi has its own GitHub repo)
+*.iam.gserviceaccount.json
+green-alchemy-*.json
+ads-analyst.zip
+/exports/
+/ThuChi/
+/thu-chi/
+/tool-results/
