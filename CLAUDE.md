@@ -37,6 +37,12 @@ Next.js 14 App Router, TypeScript, Tailwind, recharts. Chủ project: Trang (the
 - `0 2 * * *` → `/api/digest/positions` (09:00 VN)
 
 ## Pipeline hàng ngày (GA4 → BigQuery → sheet)
+**Từ 30/10/2026 chạy bằng cloud routine** claude.ai/code/routines "ASO pipeline daily (GA4 → sheet) 08:05 VN"
+(trig_01Cw7mQnbC9EGAKUxZPVC69t, cron 5 1 * * * UTC, model opus-5-5, connector TrueProfit_GA_MCP + TrueProfit_DA, env Default
+với biến NET_VALUE_UPLOAD_TOKEN và network cho appstore-performance.vercel.app). Routine KHÔNG clone repo: bước -2 curl
+script từ https://appstore-performance.vercel.app/pipeline/*.mjs (prebuild chép scripts/net-value → public/pipeline).
+Sửa script → deploy Vercel là routine dùng bản mới. Debug: RemoteTrigger list_runs / get_run_log.
+
 Prompt 18 bước: `scripts/net-value/prompt.md` (bản chạy local) và `scripts/net-value/routine-prompt.md` (bản cloud routine,
 token lấy từ env `NET_VALUE_UPLOAD_TOKEN`). Cần 2 connector claude.ai: **TrueProfit-GA-MCP** (`ga_report_to_bq`) và
 **TrueProfit-DA** (`run_query`). Scripts build/push trong `scripts/net-value/*.mjs`; push lên sheet qua
