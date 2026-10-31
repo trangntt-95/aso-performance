@@ -43,7 +43,8 @@ Next.js 14 App Router, TypeScript, Tailwind, recharts. Chủ project: Trang (the
   `scripts/net-value/ga4-daily.sh` (fetch → build-ga4-daily → push → build-ga4-windows → push → xác nhận, in `GA4_PIPELINE_OK`).
   **Đường chính: Vercel Cron `20 1 * * *` → `/api/ga4-daily/run`** (route kéo GA4 bằng `lib/ga4/fetchDaily.ts` với
   GOOGLE_SERVICE_ACCOUNT_EMAIL/KEY của Vercel, rồi chạy script build/push bằng node con; `?dry=1&days=7` để thử,
-  auth = header `x-upload-token` hoặc CRON_SECRET; SA của Vercel app-sheets-reader@fluid-root-490509-p3 PHẢI có Viewer GA4).
+  auth = header `x-upload-token` hoặc CRON_SECRET; SA của Vercel app-sheets-reader@fluid-root-490509-p3 đã có Viewer GA4 từ 31/10/2026;
+  lần chạy thật đầu tiên trên Vercel 31/10/2026: 50 giây, 14 tab, GA4_daily_auto 5705 dòng).
   Đường dự phòng: GitHub Actions `.github/workflows/ga4-daily.yml` (08:20 + 12:20 VN; secrets GOOGLE_SERVICE_ACCOUNT_KEY,
   NET_VALUE_UPLOAD_TOKEN). SA = vercel-sheet-reader@green-alchemy-501610-i0 (Viewer trên GA4 348654457; key JSON ID 369c993a
   nằm trong Downloads của Trang và bản copy gitignored trong repo). Kiểm chứng 30/10/2026: số khớp bản BigQuery, ~90 token quota/ngày.
