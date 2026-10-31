@@ -5,9 +5,11 @@
 name: GA4 daily → sheet
 
 on:
-  schedule:
-    - cron: '20 1 * * *'   # 08:20 VN
-    - cron: '20 5 * * *'   # 12:20 VN (dự phòng; script tự dừng nếu GA4 chưa có ngày hôm qua)
+  # Đường chính là Vercel Cron (/api/ga4-daily/run). Workflow này chỉ là dự phòng, chạy tay;
+  # muốn chạy theo lịch thì thêm secrets rồi bỏ comment:
+  # schedule:
+  #   - cron: '20 1 * * *'   # 08:20 VN
+  #   - cron: '20 5 * * *'   # 12:20 VN
   workflow_dispatch:
     inputs:
       days:
