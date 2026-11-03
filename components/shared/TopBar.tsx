@@ -15,6 +15,7 @@ const TITLES: Record<string, string> = {
   '/install-origin': 'Nguồn Install',
   '/google-ads': 'Google Ads',
   '/meta-proveny': 'Meta Ads · app Proveny',
+  '/google-ads-proveny': 'Google Ads · app Proveny',
   '/bid-cap': 'Bid Recommendations',
   '/paid-categories': 'By Category',
   '/changelog': 'Change log',

@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, Megaphone, Search, X } from 'lucide-react';
 import { useSheetData } from '@/lib/hooks/useSheetData';
+import { useGoogleAdsProveny } from '@/lib/hooks/useGoogleAdsProveny';
+import { GADS_ACCOUNTS, type GadsAccountKey } from '@/lib/market/googleAdsAccounts';
+import type { SheetPayload } from '@/lib/sheets/types';
 import { DateFieldDMY } from '@/components/shared/DateFieldDMY';
 import { filterGoogleAdsPayload, googleAdsDateBounds, presetRange, type DateRange, type GadsPreset } from '@/lib/market/googleAdsFilter';
 import { GoogleAdsPulse } from './GoogleAdsPulse';
@@ -74,8 +77,22 @@ function Group({ n, title, sub }: { n: number; title: string; sub: string }) {
   );
 }
 
-export function GoogleAdsView() {
-  const { data, isLoading, error } = useSheetData();
+export function GoogleAdsView({ account = 'trueprofit' }: { account?: GadsAccountKey } = {}) {
+  const cfg = GADS_ACCOUNTS[account];
+  // TrueProfit: export nằm trong payload /api/sheets. Proveny: route riêng
+  // /api/google-ads-proveny; bọc thành SheetPayload chỉ có googleAds vì mọi
+  // builder bên dưới chỉ đọc data.googleAds (deep đọc thêm perGeo* với ?? []).
+  const sheet = useSheetData();
+  const proveny = useGoogleAdsProveny(account === 'proveny');
+  const data: SheetPayload | undefined =
+    account === 'proveny'
+      ? proveny.data
+        ? ({ googleAds: proveny.data.googleAds } as unknown as SheetPayload)
+        : undefined
+      : sheet.data;
+  const isLoading = account === 'proveny' ? proveny.isLoading : sheet.isLoading;
+  const error = account === 'proveny' ? proveny.error : sheet.error;
+  const provenyNotConfigured = account === 'proveny' && proveny.data?.configured === false;
 
   // ── Lọc ngày cho CẢ tab (Trang 16/10/2026). Mặc định tháng này (tới ngày cuối
   // có data); deep-link ?from&to. Mọi bảng bên dưới đọc export đã lọc; riêng khối
@@ -215,9 +232,14 @@ export function GoogleAdsView() {
   if (!report) {
     return (
       <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-        <b>Chưa có dữ liệu Google Ads.</b> Trang này đọc sheet &quot;Google ads - Appscript&quot;. Nếu biến môi trường{' '}
-        <code className="text-[10px]">GOOGLE_SHEET_ID_GADS</code> chưa cấu hình, sheet chưa share cho service account,
-        hoặc tab <code className="text-[10px]">campaign_daily</code> còn trống thì bảng sẽ không có gì.
+        <b>Chưa có dữ liệu Google Ads · {cfg.app}.</b>{' '}
+        {provenyNotConfigured
+          ? 'Biến môi trường GOOGLE_SHEET_ID_GADS_PROVENY chưa được đặt trên Vercel. '
+          : 'Trang này đọc sheet export của Google Ads Script. '}
+        Cần: (1) tạo sheet mới, share Editor cho service account app-sheets-reader@fluid-root-490509-p3.iam.gserviceaccount.com;
+        (2) cài cùng Google Ads Script của TrueProfit vào tài khoản Google Ads {cfg.app}, trỏ SPREADSHEET_ID sang sheet mới và chạy;
+        (3) đặt <code className="text-[10px]">{cfg.envVar}</code> = id sheet trên Vercel rồi deploy lại.
+        Tab <code className="text-[10px]">campaign_daily</code> còn trống thì bảng cũng không có gì.
       </div>
     );
   }
@@ -232,7 +254,7 @@ export function GoogleAdsView() {
         <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
         <div className="space-y-0.5">
           <div>
-            <b>Google Ads</b> — {formatDMYRange(report.from, report.to)} ({report.days} ngày) · tài khoản{' '}
+            <b>Google Ads · app {cfg.app}</b> — {formatDMYRange(report.from, report.to)} ({report.days} ngày) · tài khoản{' '}
             <b>{report.account || '—'}</b> · tiền tệ <b>{report.currency || '—'}</b>
           </div>
           <div className="text-[11px] text-indigo-800">
@@ -371,10 +393,10 @@ export function GoogleAdsView() {
                       {d.destination === 'appstore'
                         ? 'Trang app Shopify'
                         : d.destination === 'website'
-                          ? 'Website trueprofit.io'
+                          ? `Website ${cfg.websiteHosts[0]}`
                           : 'Khác'}
                     </span>
-                    {d.destination === 'appstore' && (
+                    {d.destination === 'appstore' && cfg.crossChannel && (
                       <div className="text-[9px] text-slate-400">cùng listing mà các tab ASO đang đo</div>
                     )}
                   </td>
@@ -569,11 +591,14 @@ export function GoogleAdsView() {
       <Group
         n={4}
         title="Người dùng gõ gì, mình đã mua đúng chưa"
-        sub="cùng cụm từ trên hai bề mặt · cụm đã hiện nhưng chưa thành keyword"
+        sub={cfg.crossChannel
+          ? 'cùng cụm từ trên hai bề mặt · cụm đã hiện nhưng chưa thành keyword'
+          : 'cụm đã hiện nhưng chưa thành keyword (không so chéo với ASO vì đây là app khác)'}
       />
 
-      {/* Same phrase on both surfaces — the cross-channel view. */}
-      <BrandDemandTable data={filteredData} />
+      {/* Same phrase on both surfaces — the cross-channel view. Chỉ có nghĩa với
+          TrueProfit (ASO + Google Ads cùng app); Proveny không có dữ liệu ASO. */}
+      {cfg.crossChannel && <BrandDemandTable data={filteredData} />}
 
       {/* Search terms */}
       <div className="rounded-lg border border-slate-200 bg-white p-3">

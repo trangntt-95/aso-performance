@@ -48,6 +48,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/install-origin', label: 'Nguồn Install', Icon: Route, shortLabel: 'Nguồn' },
   { href: '/google-ads', label: 'Google Ads', Icon: Megaphone, shortLabel: 'GAds' },
   { href: '/meta-proveny', label: 'Meta Ads · Proveny', Icon: Clapperboard, shortLabel: 'Proveny' },
+  { href: '/google-ads-proveny', label: 'Google Ads · Proveny', Icon: Megaphone, shortLabel: 'GAds·P' },
   { href: '/bid-cap', label: 'Bid Recommendations', Icon: DollarSign, shortLabel: 'Bids' },
   { href: '/paid-categories', label: 'By Category', Icon: LayoutGrid, shortLabel: 'ByCat' },
   { href: '/changelog', label: 'Change log', Icon: History, shortLabel: 'Log' },

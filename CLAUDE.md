@@ -1,6 +1,6 @@
 # ASO Performance Dashboard — ghi chú cho Claude Code
 
-Dashboard ASO cho app **TrueProfit** (Shopify App Store) + tab Meta Ads của app **Proveny** (riêng, không liên quan TrueProfit).
+Dashboard ASO cho app **TrueProfit** (Shopify App Store) + tab Meta Ads / Google Ads của app **Proveny** (riêng, không liên quan TrueProfit).
 Next.js 14 App Router, TypeScript, Tailwind, recharts. Chủ project: Trang (they/them), trả lời bằng tiếng Việt.
 
 - Prod: https://appstore-performance.vercel.app (Vercel project `appstore-performance`, team trang-s-projects12026, Hobby plan)
@@ -24,7 +24,11 @@ Next.js 14 App Router, TypeScript, Tailwind, recharts. Chủ project: Trang (the
   `lib/sheets/*FromGa4.ts` / `historyFromDaily.ts`, không còn phụ thuộc Apps Script.
 - Net value per install (NPI) = net 120 ngày đầu sau cài, chỉ shop đã chín (Trang chốt 05/10/2026). SQL ở `scripts/net-value/prompt.md` bước 2.
 - Shopify Ads export: đọc TAB ĐẦU TIÊN theo vị trí, cột camp là `Ad Name`; Trang export tay nên có thể cũ.
-- Google Ads: `lib/market/googleAdsReport.ts` (VND, install thật ≠ conversions).
+- Google Ads: `lib/market/googleAdsReport.ts` (VND, install thật ≠ conversions). Hai tài khoản chung một màn hình
+  `components/google-ads/GoogleAdsView` (prop `account`, cấu hình ở `lib/market/googleAdsAccounts.ts`):
+  TrueProfit (`/google-ads`, sheet `GOOGLE_SHEET_ID_GADS`, nằm trong payload /api/sheets) và Proveny (`/google-ads-proveny`,
+  route riêng `/api/google-ads-proveny`, sheet `GOOGLE_SHEET_ID_GADS_PROVENY`, cache 10 phút, không so chéo ASO).
+  Cả hai dùng cùng Google Ads Script export (cùng schema tab `campaign_daily`…). Proveny chưa có sheet → tab hiện hướng dẫn cấu hình.
 - Meta Proveny: `lib/meta/graph.ts` gọi Graph API v21 bằng System User token (env `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`),
   cache 15 phút, fallback `data/meta-proveny.snapshot.json`. Events nằm ở `insights.conversions`; result event theo adset `promoted_object`.
 - Email digest vị trí keyword: `lib/digest/positions.ts` + `lib/digest/email.ts`, route `/api/digest/positions`

@@ -57,10 +57,14 @@ function auth() {
 }
 
 /** Rows keyed by tab name; empty when the sheet isn't configured or readable. */
-export async function fetchGoogleAdsTabs(): Promise<Record<string, unknown[][]>> {
+export async function fetchGoogleAdsTabs(
+  // Mặc định là sheet export của TrueProfit; tab Google Ads · Proveny truyền
+  // id sheet riêng (GOOGLE_SHEET_ID_GADS_PROVENY) — cùng Ads Script, cùng schema.
+  sheetId: string | undefined = process.env.GOOGLE_SHEET_ID_GADS,
+): Promise<Record<string, unknown[][]>> {
   // Trimmed: a value set through a shell pipe can carry a trailing newline,
   // which the Sheets API rejects as a malformed spreadsheet id.
-  const id = process.env.GOOGLE_SHEET_ID_GADS?.trim();
+  const id = sheetId?.trim();
   const jwt = auth();
   if (!id || !jwt) return {};
   try {
@@ -141,14 +145,20 @@ function rowsOf(raw: unknown[][] | undefined): { at: (n: string) => number; body
  * to the rest of the dashboard: about half of Google Ads spend goes straight to
  * the Shopify app listing that every ASO table already measures.
  */
-function destinationOf(url: string): AdDestination {
+function destinationOf(url: string, websiteHosts: readonly string[]): AdDestination {
   const u = url.toLowerCase();
   if (u.includes('apps.shopify.com')) return 'appstore';
-  if (u.includes('trueprofit.io')) return 'website';
+  if (websiteHosts.some((h) => u.includes(h))) return 'website';
   return 'other';
 }
 
-export function parseGoogleAds(raw: Record<string, unknown[][]>): GoogleAdsPayload {
+export interface ParseGoogleAdsOptions {
+  /** Host của website app (trueprofit.io, proveny.io…) để gắn nhãn đích "website". */
+  websiteHosts?: readonly string[];
+}
+
+export function parseGoogleAds(raw: Record<string, unknown[][]>, opts: ParseGoogleAdsOptions = {}): GoogleAdsPayload {
+  const websiteHosts = opts.websiteHosts ?? ['trueprofit.io'];
   if (!raw || Object.keys(raw).length === 0) return EMPTY_GOOGLE_ADS;
   const out: GoogleAdsPayload = {
     ...EMPTY_GOOGLE_ADS,
@@ -264,7 +274,7 @@ export function parseGoogleAds(raw: Record<string, unknown[][]>): GoogleAdsPaylo
       const date = isoDate(r[at('date')]);
       const name = str(r[at('campaign_name')]);
       if (!date || !name) continue;
-      const dest = destinationOf(str(r[at('landing_page')]));
+      const dest = destinationOf(str(r[at('landing_page')]), websiteHosts);
       const key = `${date}|${name}|${dest}`;
       const e = acc.get(key) ?? { impressions: 0, clicks: 0, cost: 0, conversions: 0 };
       e.impressions += num(r[at('impressions')]);

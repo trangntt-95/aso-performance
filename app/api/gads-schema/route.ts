@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { fetchGoogleAdsTabs } from '@/lib/sheets/googleAds';
 
 // What the Google Ads export actually contains right now: tab names, their
@@ -9,9 +9,12 @@ import { fetchGoogleAdsTabs } from '@/lib/sheets/googleAds';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const raw = await fetchGoogleAdsTabs();
+    // ?account=proveny → sheet export của Proveny (GOOGLE_SHEET_ID_GADS_PROVENY).
+    const account = req.nextUrl.searchParams.get('account');
+    const sheetId = account === 'proveny' ? process.env.GOOGLE_SHEET_ID_GADS_PROVENY : process.env.GOOGLE_SHEET_ID_GADS;
+    const raw = await fetchGoogleAdsTabs(sheetId);
     const tabs = Object.entries(raw).map(([tab, rows]) => ({
       tab,
       rows: Math.max(0, rows.length - 1),

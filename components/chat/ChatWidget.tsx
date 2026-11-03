@@ -20,6 +20,7 @@ const PAGE_BY_PATH: Record<string, string> = {
   '/overbid-camps': 'Overbid Camps',
   '/camp-health': 'Camp Health',
   '/google-ads': 'Google Ads',
+  '/google-ads-proveny': 'Google Ads · Proveny',
   '/bid-cap': 'Bid Recommendations',
   '/install-origin': 'Nguồn Install',
   '/paid-categories': 'By Category',
