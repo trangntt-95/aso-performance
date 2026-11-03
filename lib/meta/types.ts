@@ -1,7 +1,7 @@
 // Meta Ads của app PROVENY — một account quảng cáo riêng (FireGroup Technology
 // JSC), không dính gì tới TrueProfit ASO. Payload này chỉ nuôi tab /meta-proveny.
 //
-// Mọi số là 30 ngày gần nhất trừ `daily` (theo ngày). Tiền USD.
+// Mọi số theo `dateRange` (mặc định 30 ngày gần nhất) trừ `daily` (theo ngày, kéo thêm kỳ trước). Tiền USD.
 
 export interface MetaDailyRow {
   date: string; // YYYY-MM-DD
@@ -136,7 +136,10 @@ export interface MetaProvenyPayload {
   /** `graph_api` = kéo trực tiếp từ Meta bằng token; `snapshot` = file tĩnh trong repo. */
   source: 'graph_api' | 'snapshot';
   fetchedAt: string;
+  /** Khoảng ngày đang xem: KPI, campaign, creative, geo, placement, tuổi-giới đều theo khoảng này. */
   dateRange: { since: string; until: string };
+  /** `daily` kéo rộng hơn dateRange (thêm một kỳ liền trước) để tính delta; snapshot cũ không có. */
+  dailyRange?: { since: string; until: string };
   /** Có khi Graph API lỗi và route trả snapshot thay thế. */
   stale?: { reason: string };
   daily: MetaDailyRow[];
